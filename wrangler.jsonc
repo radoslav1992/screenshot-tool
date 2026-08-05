@@ -11,12 +11,11 @@
   },
 
   // D1 — users, sessions, API keys, captures, usage counters.
-  // Create with: wrangler d1 create screenify-db  (then paste the id below)
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "screenify-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_name": "screenify",
+      "database_id": "3277d03c-58ac-4627-9af3-0d772a5d680c",
       "migrations_dir": "migrations"
     }
   ],
@@ -30,11 +29,10 @@
   ],
 
   // KV — API rate-limit counters and small ephemeral state.
-  // Create with: wrangler kv namespace create RATE
   "kv_namespaces": [
     {
       "binding": "RATE",
-      "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+      "id": "b066aa4a16914e28ac0a05ddd9722916"
     }
   ],
 

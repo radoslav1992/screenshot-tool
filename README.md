@@ -70,21 +70,22 @@ CI=1 npm run dev
 
 ## Deploying
 
-1. Create the resources and paste the ids into `wrangler.jsonc`:
+`wrangler.jsonc` already points at the project's Cloudflare resources: D1 `screenify`, R2
+`screenify-screenshots`, and the `RATE` KV namespace. To recreate them in another account:
 
-   ```bash
-   npx wrangler d1 create screenify-db
-   npx wrangler r2 bucket create screenify-shots
-   npx wrangler kv namespace create RATE
-   ```
+```bash
+npx wrangler d1 create screenify
+npx wrangler r2 bucket create screenify-screenshots
+npx wrangler kv namespace create RATE
+```
 
-2. Apply migrations to the remote database:
+1. Apply migrations to the remote database:
 
    ```bash
    npm run db:migrate
    ```
 
-3. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
+2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 
    ```bash
    npm run deploy

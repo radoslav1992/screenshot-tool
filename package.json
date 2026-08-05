@@ -10,8 +10,8 @@
     "preview": "astro preview",
     "deploy": "astro build && wrangler deploy",
     "check": "astro check",
-    "db:migrate:local": "wrangler d1 migrations apply screenify-db --local",
-    "db:migrate": "wrangler d1 migrations apply screenify-db --remote"
+    "db:migrate:local": "wrangler d1 migrations apply screenify --local",
+    "db:migrate": "wrangler d1 migrations apply screenify --remote"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

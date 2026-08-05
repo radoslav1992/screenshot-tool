@@ -22,11 +22,10 @@
   ],
 
   // R2 — rendered screenshot files.
-  // Create with: wrangler r2 bucket create screenify-shots
   "r2_buckets": [
     {
       "binding": "SHOTS",
-      "bucket_name": "screenify-shots"
+      "bucket_name": "screenify-screenshots"
     }
   ],
 

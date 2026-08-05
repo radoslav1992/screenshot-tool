@@ -1,0 +1,106 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options';
+import { formatBytes, formatRelative, getCapture, safeParseFiles } from '../../../lib/captures';
+
+const user = Astro.locals.user!;
+const capture = await getCapture(Astro.params.id ?? '');
+
+if (!capture || capture.user_id !== user.id) {
+  return Astro.redirect('/app/library', 302);
+}
+
+const files = safeParseFiles(capture.files);
+const origin = Astro.url.origin;
+const fileHref = (name: string, download = false) =>
+  `/f/${capture.id}/${name}?t=${capture.share_token}${download ? '&download=1' : ''}`;
+const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
+---
+
+<AppShell title={displayUrl(capture.url)} tab="library">
+  <header class="appbar" slot="appbar">
+    <a href="/app/library" class="appbar__title" style="color: var(--ink-2)">‹ Library</a>
+    <button type="button" class="btn btn--sm btn--outline" data-delete-capture={capture.id}>Delete</button>
+  </header>
+
+  <div class="p-20 stack gap-16">
+    <div>
+      <h1 class="h3 truncate">{displayUrl(capture.url)}</h1>
+      <p class="small muted" style="margin-top: 4px">
+        {deviceLabel(capture.device, capture.width, capture.height)} · {modeLabel(capture.mode)} ·
+        {capture.format.toUpperCase()} · <time data-relative datetime={capture.created_at}>{formatRelative(capture.created_at)}</time>
+      </p>
+    </div>
+
+    {
+      capture.status === 'error' && (
+        <div class="notice notice--error">{capture.error ?? 'This capture failed.'}</div>
+      )
+    }
+
+    {
+      capture.status === 'pending' && (
+        <div class="notice notice--info" id="pending-notice">
+          <span class="spinner" /> Rendering — this page refreshes when it is ready.
+        </div>
+      )
+    }
+
+    {
+      files.map((file) => (
+        <figure class="card" style="overflow: hidden; margin: 0">
+          {capture.format === 'pdf' ? (
+            <div class="p-20 center">
+              <div style="font-size: 34px">📄</div>
+              <p class="small muted" style="margin-top: 8px">{file.name} · {formatBytes(file.bytes)}</p>
+            </div>
+          ) : (
+            <a href={fileHref(file.name)} target="_blank" rel="noopener">
+              <img src={fileHref(file.name)} alt={`Capture of ${displayUrl(capture.url)}`} style="width: 100%; height: auto" />
+            </a>
+          )}
+          <figcaption class="shot__meta">
+            <div class="small muted truncate">
+              {file.name} · {file.width}×{file.height} · {formatBytes(file.bytes)}
+            </div>
+            <a class="icon-btn" href={fileHref(file.name, true)} aria-label={`Download ${file.name}`} download>
+              ⬇️
+            </a>
+          </figcaption>
+        </figure>
+      ))
+    }
+
+    {
+      shareUrl && (
+        <div class="card card--pad stack gap-8">
+          <div class="label">Share link</div>
+          <p class="xs muted">Anyone with this link can view the capture. It carries a per-capture token.</p>
+          <div class="input input--mono truncate" id="share-url" style="font-size: 12px">{shareUrl}</div>
+          <button type="button" class="btn btn--outline" data-copy data-copy-value={shareUrl}>Copy link</button>
+        </div>
+      )
+    }
+
+    <div class="stack gap-8">
+      <a class="btn btn--ink" href={`/app?url=${encodeURIComponent(capture.url)}`}>Capture again</a>
+      <a class="btn btn--outline" href={capture.url} target="_blank" rel="noopener noreferrer">Open original page</a>
+    </div>
+  </div>
+</AppShell>
+
+<script>
+  const deleteButton = document.querySelector<HTMLButtonElement>('[data-delete-capture]');
+  deleteButton?.addEventListener('click', async () => {
+    if (!window.confirm('Delete this capture and its files?')) return;
+    deleteButton.disabled = true;
+    const response = await fetch(`/api/captures/${deleteButton.dataset.deleteCapture}`, { method: 'DELETE' });
+    if (response.ok) window.location.assign('/app/library');
+    else deleteButton.disabled = false;
+  });
+
+  // A capture created with async=true finishes in the background.
+  if (document.getElementById('pending-notice')) {
+    window.setTimeout(() => window.location.reload(), 4000);
+  }
+</script>

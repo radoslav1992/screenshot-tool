@@ -1,0 +1,99 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+import { PLANS, PLAN_ORDER } from '../lib/plans';
+
+const user = Astro.locals.user;
+const plans = PLAN_ORDER.map((id) => PLANS[id]);
+---
+
+<Base title="Pricing">
+  <div class="shell shell--wide">
+    <div class="row-between" style="padding: 18px 20px">
+      <Logo />
+      <a class="label" href={user ? '/app' : '/login'}>{user ? 'Open app' : 'Log in'}</a>
+    </div>
+
+    <div style="padding: 28px 20px 8px; text-align: center">
+      <h1 class="h2">Simple pricing</h1>
+      <p class="small muted" style="margin-top: 8px">Start free. Upgrade when you need more shots.</p>
+
+      <div class="switch" style="margin-top: 16px" role="group" aria-label="Billing period">
+        <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+        <button type="button" data-period="yearly" aria-pressed="false">Yearly −20%</button>
+      </div>
+    </div>
+
+    <div class="p-20 stack gap-12 grid-3">
+      {
+        plans.map((plan) => (
+          <section class={plan.id === 'pro' ? 'plan plan--featured' : 'plan'}>
+            {plan.id === 'pro' && <div class="plan__badge">MOST POPULAR</div>}
+
+            <div class="plan__head">
+              <div class="plan__name">{plan.name}</div>
+              <div>
+                <span class="plan__price" data-price-for={plan.id} data-monthly={plan.priceMonthly} data-yearly={plan.priceYearly}>
+                  ${plan.priceMonthly}
+                </span>
+                <span class="plan__per" data-per>/mo</span>
+              </div>
+            </div>
+
+            <p class="small" style={plan.id === 'pro' ? 'color: var(--dim); margin-top: 4px' : 'color: var(--muted); margin-top: 4px'}>
+              {plan.tagline}
+            </p>
+
+            <ul class="plan__features">
+              {plan.features.map((feature) => (
+                <li data-included={String(feature.included)}>
+                  {feature.included ? '✓' : '✗'} {feature.text}
+                </li>
+              ))}
+            </ul>
+
+            <a
+              class={plan.id === 'pro' ? 'btn btn--lime' : 'btn btn--outline-ink'}
+              href={user ? '/app/account' : `/signup?plan=${plan.id}`}
+              style="margin-top: 16px; padding: 13px; font-size: 14px"
+            >
+              {user && user.plan === plan.id ? 'Current plan' : plan.cta}
+            </a>
+          </section>
+        ))
+      }
+    </div>
+
+    <p class="xs muted-2 center" style="padding: 6px 20px 12px">
+      Need more? <a href="mailto:hello@screenify.app" style="font-weight: 600">Talk to us</a> about custom volume.
+    </p>
+
+    <div class="px-20" style="padding-bottom: 28px">
+      <div class="notice notice--info">
+        Checkout is not connected in this deployment — plans are switched manually. Wire up your payment provider in
+        {' '}<span class="mono" style="font-size: 12px">src/lib/plans.ts</span>{' '}and the account routes when you are
+        ready.
+      </div>
+    </div>
+  </div>
+</Base>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-period]');
+  const prices = document.querySelectorAll<HTMLElement>('[data-price-for]');
+  const pers = document.querySelectorAll<HTMLElement>('[data-per]');
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      const yearly = button.dataset.period === 'yearly';
+      for (const other of buttons) other.setAttribute('aria-pressed', String(other === button));
+
+      for (const price of prices) {
+        const monthly = Number(price.dataset.monthly ?? 0);
+        const annual = Number(price.dataset.yearly ?? 0);
+        price.textContent = yearly ? `$${annual}` : `$${monthly}`;
+      }
+      for (const per of pers) per.textContent = yearly ? '/yr' : '/mo';
+    });
+  }
+</script>

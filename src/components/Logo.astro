@@ -1,0 +1,15 @@
+---
+interface Props {
+  variant?: 'ink' | 'lime';
+  href?: string;
+  wordColor?: string;
+}
+
+const { variant = 'ink', href = '/', wordColor } = Astro.props;
+const markClass = variant === 'lime' ? 'logo__mark logo__mark--lime' : 'logo__mark';
+---
+
+<a class="logo" href={href} style={wordColor ? `color: ${wordColor}` : undefined}>
+  <span class={markClass} aria-hidden="true">S</span>
+  <span class="logo__word">Screenify</span>
+</a>

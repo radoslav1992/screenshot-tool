@@ -1,0 +1,24 @@
+---
+interface Props {
+  tag: string;
+  code: string;
+  light?: boolean;
+  copyable?: boolean;
+}
+
+const { tag, code, light = false, copyable = true } = Astro.props;
+---
+
+<div class={light ? 'code code--light' : 'code'} data-code-block>
+  <div class="code__head">
+    <span class="code__tag">{tag}</span>
+    {
+      copyable && (
+        <button type="button" class="code__copy" data-copy data-copy-value={code} style={light ? 'color: var(--green)' : undefined}>
+          Copy
+        </button>
+      )
+    }
+  </div>
+  <pre>{code}</pre>
+</div>

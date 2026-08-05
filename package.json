@@ -1,0 +1,27 @@
+{
+  "name": "screenify",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Screenify — screenshots as a service. Astro PWA on Cloudflare Workers.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "deploy": "astro build && wrangler deploy",
+    "check": "astro check",
+    "db:migrate:local": "wrangler d1 migrations apply screenify-db --local",
+    "db:migrate": "wrangler d1 migrations apply screenify-db --remote"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.1.7",
+    "@cloudflare/puppeteer": "^1.3.0",
+    "astro": "^7.1.6"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@cloudflare/workers-types": "^5.20260801.1",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.119.0"
+  }
+}

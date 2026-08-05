@@ -1,0 +1,55 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+
+export const prerender = true;
+
+const year = new Date().getFullYear();
+---
+
+<Base title="Privacy">
+  <div class="shell">
+    <div class="row-between" style="padding: 18px 20px; border-bottom: 1px solid var(--line-2)">
+      <Logo />
+      <a class="label" href="/">Home</a>
+    </div>
+
+    <div class="p-20 stack gap-16">
+      <h1 class="h2">Privacy</h1>
+      <p class="small muted">
+        Placeholder copy for a self-hosted deployment — replace it with your own policy before launch. What the code
+        actually does is described below.
+      </p>
+
+      <section class="stack gap-8">
+        <h2 class="h4">What is stored</h2>
+        <ul class="stack gap-8 small muted">
+          <li>· Your email, display name and a PBKDF2 hash of your password (Cloudflare D1).</li>
+          <li>· Session records: a hash of the session cookie, its expiry and the user agent.</li>
+          <li>· API keys: a SHA-256 hash plus the visible prefix and last four characters.</li>
+          <li>· Captures: the URL, viewport, mode, format, timing and byte size.</li>
+          <li>· Rendered image and PDF files (Cloudflare R2).</li>
+          <li>· Per-minute API rate-limit counters (Cloudflare KV), which expire automatically.</li>
+        </ul>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Sharing</h2>
+        <p class="small muted">
+          Every capture has a share token embedded in its file URLs. Anyone holding a link can view that capture's
+          files. Deleting a capture removes the files from R2 and invalidates the links.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Deletion</h2>
+        <p class="small muted">
+          Delete a capture from its detail page or via <span class="mono">DELETE /v1/captures/:id</span>. That removes
+          both the database row and the stored files.
+        </p>
+      </section>
+
+      <p class="xs muted-2">© {year} Screenify · <a href="/terms">Terms</a></p>
+    </div>
+  </div>
+</Base>

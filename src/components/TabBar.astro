@@ -1,0 +1,29 @@
+---
+interface Props {
+  current: 'capture' | 'library' | 'api' | 'account';
+}
+
+const { current } = Astro.props;
+
+const tabs = [
+  { id: 'capture', href: '/app', icon: '📸', label: 'Capture' },
+  { id: 'library', href: '/app/library', icon: '🗂️', label: 'Library' },
+  { id: 'api', href: '/app/api', icon: '🔑', label: 'API' },
+  { id: 'account', href: '/app/account', icon: '👤', label: 'Account' },
+] as const;
+---
+
+<nav class="tabbar" aria-label="Primary">
+  {
+    tabs.map((tab) => (
+      <a
+        class="tabbar__item"
+        href={tab.href}
+        aria-current={current === tab.id ? 'page' : undefined}
+      >
+        <div class="tabbar__icon" aria-hidden="true">{tab.icon}</div>
+        <div class="tabbar__label">{tab.label}</div>
+      </a>
+    ))
+  }
+</nav>

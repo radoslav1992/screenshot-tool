@@ -1,0 +1,21 @@
+---
+import Base from './Base.astro';
+import TabBar from '../components/TabBar.astro';
+
+interface Props {
+  title: string;
+  tab: 'capture' | 'library' | 'api' | 'account';
+}
+
+const { title, tab } = Astro.props;
+---
+
+<Base title={title}>
+  <div class="shell shell--app">
+    <slot name="appbar" />
+    <div class="grow">
+      <slot />
+    </div>
+    <TabBar current={tab} />
+  </div>
+</Base>

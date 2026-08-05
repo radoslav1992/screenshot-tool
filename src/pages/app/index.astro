@@ -1,0 +1,155 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { DEVICE_LIST, FORMATS, MODES } from '../../lib/capture-options';
+import { getUsage } from '../../lib/captures';
+import { getPlan } from '../../lib/plans';
+
+const user = Astro.locals.user!;
+const usage = await getUsage(user);
+const plan = getPlan(user.plan);
+const prefillUrl = Astro.url.searchParams.get('url') ?? '';
+const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
+---
+
+<AppShell title="New capture" tab="capture">
+  <header class="appbar" slot="appbar">
+    <div class="logo">
+      <span class="logo__mark" aria-hidden="true">S</span>
+      <span class="appbar__title">New capture</span>
+    </div>
+    <a class="avatar" href="/app/account" aria-label="Account">{initials}</a>
+  </header>
+
+  <form id="capture-form" class="p-20 stack gap-20">
+    <div class="notice notice--error" id="capture-error" hidden></div>
+
+    <div class="field">
+      <label class="field__label" for="url">Page URL</label>
+      <div class="input-affix">
+        <input
+          class="input input--mono"
+          id="url"
+          name="url"
+          type="text"
+          inputmode="url"
+          autocomplete="url"
+          spellcheck="false"
+          required
+          placeholder="stripe.com/pricing"
+          value={prefillUrl}
+        />
+        <span class="input-affix__end" id="url-state" hidden>✓ reachable</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="field__label" style="margin-bottom: 8px">Device</div>
+      <div class="device-grid">
+        {
+          DEVICE_LIST.map((device, index) => (
+            <label class="device">
+              <input type="radio" name="device" value={device.id} checked={index === 0} />
+              <div class="device__icon" aria-hidden="true">{device.icon}</div>
+              <div class="device__name">{device.label}</div>
+              <div class="device__size">{device.width}×{device.height}</div>
+            </label>
+          ))
+        }
+      </div>
+
+      <p class="xs muted" style="margin-top: 8px">
+        Custom size?
+        <button type="button" id="custom-toggle" style="font-weight: 600; color: var(--green)">
+          Set width × height
+        </button>
+      </p>
+
+      <div id="custom-size" class="stack gap-8" hidden style="margin-top: 8px">
+        {
+          plan.customViewport ? null : (
+            <div class="notice notice--info">Custom viewports are a Pro feature. <a href="/pricing">See plans</a></div>
+          )
+        }
+        <div style="display: flex; gap: 8px">
+          <div class="field" style="flex: 1">
+            <label class="field__label" for="width">Width</label>
+            <input class="input input--mono" id="width" name="width" type="number" min="240" max="3840" placeholder="1280" disabled={!plan.customViewport} />
+          </div>
+          <div class="field" style="flex: 1">
+            <label class="field__label" for="height">Height</label>
+            <input class="input input--mono" id="height" name="height" type="number" min="240" max="4320" placeholder="800" disabled={!plan.customViewport} />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="field__label" style="margin-bottom: 8px">Capture mode</div>
+      <div class="mode-list">
+        {
+          MODES.map((mode) => (
+            <label class="mode">
+              <input type="radio" name="mode" value={mode.id} checked={mode.id === 'fullpage'} />
+              <span class="mode__dot" aria-hidden="true" />
+              <span class="mode__body">
+                <span class="mode__name" style="display: block">{mode.label}</span>
+                <span class="mode__hint">{mode.hint}</span>
+              </span>
+              <span class="mode__icon" aria-hidden="true">{mode.icon}</span>
+            </label>
+          ))
+        }
+      </div>
+    </div>
+
+    <details class="card card--pad" style="padding: 14px 16px">
+      <summary class="label" style="cursor: pointer">More options</summary>
+      <div class="stack gap-12" style="margin-top: 14px">
+        <div class="field">
+          <label class="field__label" for="format">Format</label>
+          <select class="input" id="format" name="format">
+            {
+              FORMATS.map((format) => (
+                <option value={format} disabled={!plan.formats.includes(format)}>
+                  {format.toUpperCase()}
+                  {plan.formats.includes(format) ? '' : ' — Pro'}
+                </option>
+              ))
+            }
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="delay">Wait before capture (ms)</label>
+          <input class="input input--mono" id="delay" name="delay" type="number" min="0" max="15000" step="250" value="0" />
+        </div>
+
+        <label class="row-between" style="cursor: pointer">
+          <span class="label">Block ads &amp; trackers</span>
+          <input type="checkbox" name="block_ads" value="1" checked />
+        </label>
+
+        <label class="row-between" style="cursor: pointer">
+          <span class="label">Prefer dark mode</span>
+          <input type="checkbox" name="dark_mode" value="1" />
+        </label>
+      </div>
+    </details>
+
+    <button type="submit" class="btn btn--ink" id="capture-submit">📸 Capture screenshot</button>
+
+    <p class="xs center" style="color: var(--muted-2); margin-top: -10px" id="quota-line">
+      {
+        usage.remaining > 0
+          ? `Uses 1 of ${usage.remaining.toLocaleString()} shots left this month`
+          : `No shots left this month — resets ${usage.renewsOn}`
+      }
+    </p>
+  </form>
+</AppShell>
+
+<script>
+  import { wireCaptureForm } from '../../scripts/capture';
+
+  wireCaptureForm();
+</script>

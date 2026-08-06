@@ -8,6 +8,7 @@ import {
   verifyPassword,
 } from '../../../lib/auth';
 import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
+import { toHttpError } from '../../../lib/errors';
 
 export const prerender = false;
 
@@ -43,8 +44,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
     return new Response(null, { status: 303, headers: { location: next, 'set-cookie': cookie } });
   } catch (error) {
-    const httpError =
-      error instanceof HttpError ? error : new HttpError(500, 'server_error', 'Could not sign you in.');
+    const httpError = toHttpError(error, 'login', 'Could not sign you in.');
     if (wantsJson) return httpError.toResponse();
     return new Response(null, {
       status: 303,

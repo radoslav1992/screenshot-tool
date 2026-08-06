@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { createSession, createUser, isSecureRequest, sessionCookie } from '../../../lib/auth';
-import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
+import { assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
+import { toHttpError } from '../../../lib/errors';
 
 export const prerender = false;
 
@@ -42,8 +43,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
     return new Response(null, { status: 303, headers: { location: next, 'set-cookie': cookie } });
   } catch (error) {
-    const httpError =
-      error instanceof HttpError ? error : new HttpError(500, 'server_error', 'Could not create the account.');
+    const httpError = toHttpError(error, 'signup', 'Could not create the account.');
     if (wantsJson) return httpError.toResponse();
     return new Response(null, {
       status: 303,

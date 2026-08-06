@@ -96,6 +96,21 @@ npx wrangler kv namespace create RATE
    npm run deploy
    ```
 
+### Checking a deployment
+
+`GET /api/health` reports whether each binding is wired up and whether the D1 schema exists. It
+returns booleans and setup hints only — no data, no credentials.
+
+```bash
+curl https://your-domain/api/health
+# {"ok":true,"checks":{"database":{"ok":true,…},"storage":{"ok":true},"kv":{"ok":true},
+#  "renderer":{"ok":true,"engine":"binding"}}}
+```
+
+A deployment whose schema was never applied answers `503` with `missing: ["users", …]`, and signup
+fails with `schema_missing` rather than a generic error. Server-side causes are logged with a
+context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
+
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and
 `CF_API_TOKEN` (a token with *Browser Rendering: Edit*) as secrets to use the REST fallback — it
 covers `visible`, `fullpage` and `pdf`, but not `series`.

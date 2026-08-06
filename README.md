@@ -87,8 +87,11 @@ npx wrangler kv namespace create RATE
 
    No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console (Cloudflare dashboard →
    Storage & Databases → D1 → *screenify-data* → Console) and run it. It contains the same schema
-   plus the `d1_migrations` bookkeeping row, so a later `npm run db:migrate` reports *No migrations
+   plus the `d1_migrations` bookkeeping rows, so a later `npm run db:migrate` reports *No migrations
    to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
+
+   **Upgrading a database that already has the 0001 schema?** Run `db/0002-upgrade.sql` instead —
+   `apply-manually.sql` creates tables but cannot add columns to existing ones.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 
@@ -157,6 +160,42 @@ Full reference: `/docs`.
 - Fonts (Sora, IBM Plex Sans/Mono) are self-hosted latin subsets, so the shell renders offline and
   no third-party request is made.
 
+## Abuse and cost controls
+
+The free tier is generous (200 screenshots/month, about $0.06 of infrastructure), so the limits that
+matter are the ones protecting the render pool and storage rather than the monthly count.
+
+- **Retention.** A cron trigger (`0 3 * * *`) sweeps captures past their plan's `historyDays`
+  (free 7, Pro 30, Business 365), deleting the D1 rows and the R2 objects, and purging spent
+  verification tokens and expired sessions. Each run is capped at 500 captures so a backlog is
+  worked off over several nights rather than blowing a single invocation's budget.
+  The handler lives in `src/worker.ts`, which re-exports the adapter's `fetch` and adds `scheduled`.
+- **Burst limiting.** The monthly quota bounds the total; a per-user hourly limit bounds the burst
+  (free 10/hour, Pro 120, Business 600), so one account cannot spend its allowance at once and
+  monopolise the account's concurrent browsers — the genuinely scarce resource.
+- **Browser sessions.** Every capture tries to connect to an already-running idle session before
+  launching one, which is free — the session exists either way. Keeping sessions *warm* after a
+  capture is not free and is off by default (`BROWSER_KEEP_ALIVE_MS=0`):
+
+  | | |
+  | --- | --- |
+  | Launch skipped by reuse | ~3s |
+  | Idle session billed at $0.09/browser-hour | $0.000025/s |
+  | 60s idle session | $0.0015 — about 5× a whole full-page capture |
+
+  So a warm session only pays for itself if the next capture arrives sooner than a launch takes —
+  roughly **one capture every 3 seconds sustained**, or ~29,000/day. Below that it costs more than
+  it saves. Set `BROWSER_KEEP_ALIVE_MS` (max 600000) once volume justifies it; the win at low volume
+  is latency, not cost. If sessions are held open but not actually reused they accumulate against
+  the concurrency cap, which surfaces as a `browser_unavailable` error naming the setting.
+
+- **Email verification.** Optional and off by default. Set `REQUIRE_EMAIL_VERIFICATION=1` *and*
+  configure a mailer (`EMAIL_FROM` plus the `RESEND_API_KEY` secret) to require a confirmed address
+  before capturing. The gate only engages when mail can actually be sent, so it can never lock
+  accounts out of a deployment with no mailer. If a send fails, the link is written to the log so an
+  operator can still complete the signup. Accounts that existed before the migration are
+  grandfathered as verified.
+
 ## Security notes
 
 - Passwords: PBKDF2-SHA256, 210k iterations, per-user salt.
@@ -183,7 +222,7 @@ Full reference: `/docs`.
 
 ```
 migrations/           D1 migrations, applied by wrangler
-db/                   the same schema as one paste-into-the-console script
+db/                   console-pasteable schema (full) and 0002 upgrade script
 public/               manifest, service worker, icons, self-hosted fonts
 src/components/       Logo, TabBar, ShotCard, CodeBlock
 src/layouts/          Base (head + PWA wiring), AppShell (tab bar)

@@ -3,9 +3,10 @@ import AppShell from '../../layouts/AppShell.astro';
 import { DEVICE_LIST, FORMATS, MODES } from '../../lib/capture-options';
 import { getUsage } from '../../lib/captures';
 import { getPlan } from '../../lib/plans';
+import { isVerified } from '../../lib/verification';
 
 const user = Astro.locals.user!;
-const usage = await getUsage(user);
+const [usage, verified] = await Promise.all([getUsage(user), isVerified(user.id)]);
 const plan = getPlan(user.plan);
 const prefillUrl = Astro.url.searchParams.get('url') ?? '';
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
@@ -21,6 +22,18 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
   </header>
 
   <form id="capture-form" class="p-20 stack gap-20">
+    {
+      !verified && (
+        <div class="notice notice--info" id="verify-banner">
+          <strong>Confirm your email to start capturing.</strong> We sent a link to {user.email}.
+          <button type="button" id="resend-verification" style="font-weight: 600; color: var(--green); margin-left: 4px">
+            Send it again
+          </button>
+          <span id="resend-state" class="xs muted-2" />
+        </div>
+      )
+    }
+
     <div class="notice notice--error" id="capture-error" hidden></div>
 
     <div class="field">
@@ -152,4 +165,28 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
   import { wireCaptureForm } from '../../scripts/capture';
 
   wireCaptureForm();
+
+  document.getElementById('resend-verification')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const state = document.getElementById('resend-state');
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { accept: 'application/json' },
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { sent?: boolean; error?: { message?: string } }
+        | null;
+      if (state) {
+        state.textContent = response.ok
+          ? payload?.sent
+            ? ' Sent — check your inbox.'
+            : ' Nothing to send.'
+          : ` ${payload?.error?.message ?? 'Could not send it.'}`;
+      }
+    } finally {
+      button.disabled = false;
+    }
+  });
 </script>

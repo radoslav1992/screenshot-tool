@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { createSession, createUser, isSecureRequest, sessionCookie } from '../../../lib/auth';
 import { assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { issueVerificationToken, sendVerificationEmail, verificationEnabled } from '../../../lib/verification';
 
 export const prerender = false;
 
@@ -32,6 +33,12 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const user = await createUser({ email, password, name: body.name });
+
+    if (verificationEnabled()) {
+      const issued = await issueVerificationToken(user, new URL(request.url).origin);
+      await sendVerificationEmail(user.email, issued.link);
+    }
+
     const { token, expiresAt } = await createSession(user.id, request.headers.get('user-agent') ?? '');
     const cookie = sessionCookie(token, expiresAt, isSecureRequest(request));
 

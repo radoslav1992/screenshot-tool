@@ -1,0 +1,139 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+import { MODES } from '../lib/capture-options';
+import { PLANS } from '../lib/plans';
+
+const user = Astro.locals.user;
+const captureHref = user ? '/app' : '/signup';
+const year = new Date().getFullYear();
+
+const curl = `curl api.screenify.app/v1/capture \\
+  -d url=yoursite.com \\
+  -d device=mobile -d mode=fullpage`;
+---
+
+<Base title="Screenify" themeColor="#0F110C">
+  <div class="shell shell--wide shell--dark">
+    <header class="hero">
+      <div class="row-between" style="padding: 18px 20px">
+        <Logo variant="lime" wordColor="var(--paper)" />
+        <button
+          type="button"
+          id="menu-toggle"
+          aria-expanded="false"
+          aria-controls="menu"
+          aria-label="Open menu"
+          style="width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(244,245,238,0.2); display: grid; place-items: center; color: var(--paper); font-size: 15px"
+        >
+          ☰
+        </button>
+      </div>
+
+      <nav class="menu-sheet" id="menu" hidden>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">API docs</a>
+        {
+          user ? (
+            <a href="/app">Open app</a>
+          ) : (
+            <>
+              <a href="/login">Log in</a>
+              <a href="/signup">Create account</a>
+            </>
+          )
+        }
+      </nav>
+
+      <div style="padding: 28px 20px 32px">
+        <span class="hero__badge">Screenshots as a service</span>
+        <h1 class="hero__title">Any page. Any device. One clean screenshot.</h1>
+        <p class="hero__sub">
+          Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.
+        </p>
+
+        <form class="urlbar" method="get" action={captureHref}>
+          <label class="sr-only" for="hero-url">Page URL</label>
+          <input
+            id="hero-url"
+            type="text"
+            name="url"
+            inputmode="url"
+            autocomplete="url"
+            spellcheck="false"
+            placeholder="🔗 yoursite.com"
+          />
+          <button type="submit">Capture</button>
+        </form>
+
+        <div style="display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap">
+          <span class="pill pill--ghost">💻 Desktop</span>
+          <span class="pill pill--ghost">📱 Mobile</span>
+          <span class="pill pill--ghost">Full page</span>
+          <span class="pill pill--ghost">Scroll series</span>
+        </div>
+      </div>
+    </header>
+
+    <main style="background: var(--paper); padding: 28px 20px; display: flex; flex-direction: column; gap: 16px">
+      <h2 class="h3">Three ways to capture</h2>
+
+      <div class="stack gap-10 grid-3">
+        {
+          MODES.map((mode) => (
+            <div class="feature">
+              <div class="feature__icon" aria-hidden="true">{mode.icon}</div>
+              <div>
+                <div class="title-sm">{mode.label}</div>
+                <div class="small muted" style="margin-top: 3px; line-height: 1.5">{mode.longHint}</div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      <section class="panel-dark" style="margin-top: 6px">
+        <div class="eyebrow" style="color: var(--lime)">For developers</div>
+        <div class="h4" style="color: var(--paper); margin-top: 8px">One POST away</div>
+        <pre
+          style="font: 400 12px/1.7 var(--mono); color: var(--dim); background: rgba(244,245,238,0.06); border-radius: 10px; padding: 12px; margin: 12px 0 0; overflow-x: auto">{curl}</pre>
+      </section>
+
+      <div class="stack gap-8" style="margin-top: 6px">
+        <a class="btn btn--lime" href={user ? '/app' : '/signup'}>
+          {user ? 'Open the app' : `Start free — ${PLANS.free.quota} shots/mo`}
+        </a>
+        <a class="btn btn--outline" href="/pricing">See pricing</a>
+      </div>
+
+      <p class="xs center" style="color: var(--muted-2); padding-top: 8px">
+        © {year} Screenify · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
+      </p>
+    </main>
+  </div>
+</Base>
+
+<script>
+  const toggle = document.getElementById('menu-toggle');
+  const menu = document.getElementById('menu');
+
+  toggle?.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!open));
+    if (menu) menu.hidden = open;
+  });
+
+  // Normalise what people paste before it reaches the capture form.
+  const form = document.querySelector<HTMLFormElement>('.urlbar');
+  form?.addEventListener('submit', (event) => {
+    const input = form.querySelector<HTMLInputElement>('input[name="url"]');
+    if (!input) return;
+    const value = input.value.trim();
+    if (!value) {
+      event.preventDefault();
+      input.focus();
+      return;
+    }
+    input.value = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  });
+</script>

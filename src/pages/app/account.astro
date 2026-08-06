@@ -1,0 +1,160 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { getUsage } from '../../lib/captures';
+import { getPlan } from '../../lib/plans';
+
+const user = Astro.locals.user!;
+const usage = await getUsage(user);
+const plan = getPlan(user.plan);
+const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
+const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
+const renews = new Date(usage.renewsOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const nextPlan = plan.id === 'business' ? null : plan.id === 'pro' ? 'Business' : 'Pro';
+---
+
+<AppShell title="Account" tab="account">
+  <header class="appbar" slot="appbar">
+    <div class="appbar__title">Account</div>
+    <span class="avatar">{initials}</span>
+  </header>
+
+  <div class="p-20 stack gap-16">
+    <div class="card" style="padding: 18px; display: flex; align-items: center; gap: 14px">
+      <span class="avatar avatar--lg">{initials}</span>
+      <div style="flex: 1; min-width: 0">
+        <div class="truncate" style="font: 700 15px var(--display)">{user.name || 'Your account'}</div>
+        <div class="xs muted truncate">{user.email}</div>
+      </div>
+      <button type="button" class="btn btn--sm btn--outline" id="edit-profile">Edit</button>
+    </div>
+
+    <form id="profile-form" class="card card--pad stack gap-12" hidden>
+      <div class="field">
+        <label class="field__label" for="name">Display name</label>
+        <input class="input" id="name" name="name" value={user.name} maxlength="60" />
+      </div>
+      <div class="notice notice--error" id="profile-error" hidden></div>
+      <div style="display: flex; gap: 8px">
+        <button type="submit" class="btn btn--ink">Save</button>
+        <button type="button" class="btn btn--outline" id="cancel-profile">Cancel</button>
+      </div>
+    </form>
+
+    <section class="panel-dark">
+      <div class="row-between">
+        <div style="font: 700 14px var(--display)">{plan.name} plan</div>
+        <div class="mono" style="font-size: 11px; color: var(--lime)">renews {renews}</div>
+      </div>
+
+      <div style="margin-top: 14px">
+        <div class="row-between xs" style="color: var(--dim); margin-bottom: 6px">
+          <span>Screenshots used</span>
+          <span style="color: var(--paper); font-weight: 600">
+            {usage.used.toLocaleString()} / {usage.quota.toLocaleString()}
+          </span>
+        </div>
+        <div class="meter"><div class="meter__fill" style={`width: ${pct}%`}></div></div>
+      </div>
+
+      <div class="stat-row" style="margin-top: 16px">
+        <div class="stat">
+          <div class="stat__value">{usage.viaApp.toLocaleString()}</div>
+          <div class="stat__label">via app</div>
+        </div>
+        <div class="stat">
+          <div class="stat__value">{usage.viaApi.toLocaleString()}</div>
+          <div class="stat__label">via API</div>
+        </div>
+        <div class="stat">
+          <div class="stat__value">{usage.daysLeft}</div>
+          <div class="stat__label">days left</div>
+        </div>
+      </div>
+
+      {
+        nextPlan && (
+          <a class="btn btn--lime" href="/pricing" style="margin-top: 16px; padding: 12px; font-size: 13px">
+            Upgrade to {nextPlan}
+          </a>
+        )
+      }
+    </section>
+
+    <div class="rows">
+      <a class="row" href="/pricing">
+        <span class="row__label">Billing &amp; invoices</span>
+        <span class="row__value" style="color: var(--muted-2)">›</span>
+      </a>
+      <div class="row">
+        <span class="row__label">Payment method</span>
+        <span class="row__value">Not connected ›</span>
+      </div>
+      <button type="button" class="row" id="install-app" hidden>
+        <span class="row__label">Install Screenify</span>
+        <span class="row__value">Add to home screen ›</span>
+      </button>
+      <a class="row" href="/docs">
+        <span class="row__label">API documentation</span>
+        <span class="row__value" style="color: var(--muted-2)">›</span>
+      </a>
+      <form method="post" action="/api/auth/logout">
+        <button type="submit" class="row" style="width: 100%">
+          <span class="row__label" style="color: var(--danger)">Sign out</span>
+          <span class="row__value" style="color: var(--muted-2)">›</span>
+        </button>
+      </form>
+    </div>
+
+    <p class="xs muted-2 center">
+      Screenify · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
+    </p>
+  </div>
+</AppShell>
+
+<script>
+  const form = document.getElementById('profile-form') as HTMLFormElement | null;
+
+  document.getElementById('edit-profile')?.addEventListener('click', () => {
+    if (form) form.hidden = !form.hidden;
+  });
+  document.getElementById('cancel-profile')?.addEventListener('click', () => {
+    if (form) form.hidden = true;
+  });
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const errorBox = document.getElementById('profile-error') as HTMLElement | null;
+    if (errorBox) errorBox.hidden = true;
+
+    const response = await fetch('/api/account', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ name: new FormData(form).get('name') }),
+    });
+
+    if (response.ok) {
+      window.location.reload();
+    } else if (errorBox) {
+      const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+      errorBox.textContent = payload?.error?.message ?? 'Could not save your profile.';
+      errorBox.hidden = false;
+    }
+  });
+
+  // Offer the PWA install prompt when the browser makes one available.
+  const installRow = document.getElementById('install-app') as HTMLButtonElement | null;
+  const showInstall = () => {
+    if (installRow && (window as any).__screenifyInstallPrompt) installRow.hidden = false;
+  };
+  document.addEventListener('screenify:installable', showInstall);
+  showInstall();
+
+  installRow?.addEventListener('click', async () => {
+    const prompt = (window as any).__screenifyInstallPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice;
+    (window as any).__screenifyInstallPrompt = null;
+    installRow.hidden = true;
+  });
+</script>

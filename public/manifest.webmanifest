@@ -1,0 +1,41 @@
+{
+  "name": "Screenify — screenshots as a service",
+  "short_name": "Screenify",
+  "description": "Paste a URL, pick a device, and get pixel-perfect captures in seconds.",
+  "id": "/",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#F4F5EE",
+  "theme_color": "#0F110C",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["productivity", "developer", "utilities"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "New capture",
+      "short_name": "Capture",
+      "url": "/app",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Library",
+      "short_name": "Library",
+      "url": "/app/library",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "share_target": {
+    "action": "/app",
+    "method": "GET",
+    "params": { "url": "url", "text": "url", "title": "title" }
+  }
+}

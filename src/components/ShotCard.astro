@@ -1,0 +1,98 @@
+---
+import { deviceIcon, deviceLabel, displayUrl } from '../lib/capture-options';
+import { formatBytes, formatRelative, safeParseFiles, type CaptureRow } from '../lib/captures';
+
+interface Props {
+  capture: CaptureRow;
+}
+
+const { capture } = Astro.props;
+const files = safeParseFiles(capture.files);
+const isSeries = capture.mode === 'series';
+const href = `/app/c/${capture.id}`;
+const first = files[0];
+const fileHref = (name: string, download = false) =>
+  `/f/${capture.id}/${name}?t=${capture.share_token}${download ? '&download=1' : ''}`;
+
+const badge = `${capture.mode === 'fullpage' ? 'Full page' : capture.mode === 'visible' ? 'Visible' : 'Series'} · ${capture.format}`.toUpperCase();
+
+const meta = [
+  `${deviceIcon(capture.device)} ${deviceLabel(capture.device, capture.width, capture.height)}`,
+  isSeries ? `Scroll series (${files.length})` : null,
+  formatRelative(capture.created_at),
+  !isSeries && capture.bytes ? formatBytes(capture.bytes) : null,
+]
+  .filter(Boolean)
+  .join(' · ');
+
+const strip = files.slice(0, 5);
+const overflow = files.length - strip.length;
+---
+
+<article class="shot" data-capture-id={capture.id}>
+  {
+    capture.status === 'error' ? (
+      <a class="shot__preview" href={href} style="background: linear-gradient(135deg, #f0e0da, #e6cdc3); display: grid; place-items: center">
+        <span style="font-size: 26px">⚠️</span>
+      </a>
+    ) : isSeries ? (
+      <a class="shot__strip" href={href}>
+        {strip.map((file, index) => (
+          <span class="shot__strip-item" style={`opacity: ${1 - index * 0.15}`}>
+            <img src={fileHref(file.name)} alt="" loading="lazy" decoding="async" />
+            {index === strip.length - 1 && overflow > 0 && <span class="shot__strip-more">+{overflow}</span>}
+          </span>
+        ))}
+      </a>
+    ) : (
+      <a class="shot__preview" href={href}>
+        {first && capture.format !== 'pdf' ? (
+          <img src={fileHref(first.name)} alt={`Screenshot of ${displayUrl(capture.url)}`} loading="lazy" decoding="async" />
+        ) : (
+          <span class="skeleton">
+            <span class="skeleton__bar skeleton__bar--head" />
+            <span class="skeleton__bar" style="width: 80%" />
+            <span class="skeleton__bar" style="width: 65%" />
+          </span>
+        )}
+        <span class="shot__badge">{badge}</span>
+      </a>
+    )
+  }
+
+  <div class="shot__meta">
+    <div style="min-width: 0">
+      <a class="shot__name truncate" href={href} style="display: block; color: var(--ink-2)">
+        {displayUrl(capture.url)}
+      </a>
+      <div class="shot__sub">
+        {
+          capture.status === 'error' ? (
+            <span style="color: var(--danger)">Failed · {capture.error?.slice(0, 60)}</span>
+          ) : (
+            meta
+          )
+        }
+      </div>
+    </div>
+
+    {
+      capture.status === 'done' && first && (
+        <div class="shot__actions">
+          <a class="icon-btn" href={fileHref(first.name, true)} aria-label="Download" download>
+            ⬇️
+          </a>
+          <button
+            type="button"
+            class="icon-btn"
+            data-copy
+            data-copy-value={`${Astro.url.origin}${fileHref(first.name)}`}
+            aria-label="Copy share link"
+          >
+            🔗
+          </button>
+        </div>
+      )
+    }
+  </div>
+</article>

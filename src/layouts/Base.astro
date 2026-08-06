@@ -1,0 +1,83 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  themeColor?: string;
+  bodyClass?: string;
+}
+
+const {
+  title,
+  description = 'Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.',
+  themeColor = '#F4F5EE',
+  bodyClass = '',
+} = Astro.props;
+
+const fullTitle = title === 'Screenify' ? title : `${title} · Screenify`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content={themeColor} />
+    <meta name="color-scheme" content="light" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Screenify" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <link rel="preload" href="/fonts/sora-var.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/ibm-plex-sans-var.woff2" as="font" type="font/woff2" crossorigin />
+
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script is:inline>
+      // Standalone (installed PWA) drops the desktop "phone frame" treatment.
+      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+        document.documentElement.dataset.standalone = 'true';
+      }
+    </script>
+  </head>
+  <body class={bodyClass}>
+    <slot />
+
+    <script is:inline>
+      if (document.documentElement.dataset.standalone === 'true') {
+        document.body.classList.add('is-standalone');
+      }
+
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {
+            /* offline support is a progressive enhancement */
+          });
+        });
+      }
+
+      // Remember the install prompt so the Account screen can offer it.
+      window.__screenifyInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        window.__screenifyInstallPrompt = event;
+        document.dispatchEvent(new CustomEvent('screenify:installable'));
+      });
+    </script>
+
+    <script>
+      import '../scripts/ui';
+    </script>
+  </body>
+</html>

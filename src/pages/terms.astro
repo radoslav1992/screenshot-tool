@@ -1,0 +1,51 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+
+export const prerender = true;
+
+const year = new Date().getFullYear();
+---
+
+<Base title="Terms">
+  <div class="shell">
+    <div class="row-between" style="padding: 18px 20px; border-bottom: 1px solid var(--line-2)">
+      <Logo />
+      <a class="label" href="/">Home</a>
+    </div>
+
+    <div class="p-20 stack gap-16">
+      <h1 class="h2">Terms of service</h1>
+      <p class="small muted">
+        This is placeholder copy for a self-hosted deployment. Replace it with your own terms before you take real
+        customers.
+      </p>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Acceptable use</h2>
+        <p class="small muted">
+          Capture pages you are allowed to access. Do not use Screenify to bypass paywalls or access controls, to
+          harvest personal data, or to place load on sites you do not own or have permission to test.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Quotas</h2>
+        <p class="small muted">
+          Each plan includes a monthly number of screenshots. A scroll series counts one screenshot per frame. Quotas
+          reset at the start of each calendar month (UTC).
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Availability</h2>
+        <p class="small muted">
+          Rendering depends on Cloudflare Browser Rendering. Captures may fail for pages that block automation, require
+          sign-in, or take too long to load.
+        </p>
+      </section>
+
+      <p class="xs muted-2">© {year} Screenify · <a href="/privacy">Privacy</a></p>
+    </div>
+  </div>
+</Base>

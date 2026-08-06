@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // `main` and `assets` are supplied by @astrojs/cloudflare at build time —
+  // do not set them here.
+  "name": "screenify",
+  "compatibility_date": "2026-04-15",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // D1 — users, sessions, API keys, captures, usage counters.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "screenify-data",
+      "database_id": "3277d03c-58ac-4627-9af3-0d772a5d680c",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // R2 — rendered screenshot files.
+  "r2_buckets": [
+    {
+      "binding": "SHOTS",
+      "bucket_name": "screenify-screenshots"
+    }
+  ],
+
+  // KV — API rate-limit counters and small ephemeral state.
+  "kv_namespaces": [
+    {
+      "binding": "RATE",
+      "id": "b066aa4a16914e28ac0a05ddd9722916"
+    }
+  ],
+
+  // Browser Rendering — the actual screenshot engine (paid Workers plan).
+  "browser": {
+    "binding": "BROWSER"
+  },
+
+  "vars": {
+    "PUBLIC_SITE_URL": "http://localhost:4321",
+    // Comma-separated hostnames that may never be captured (SSRF hardening
+    // beyond the built-in private-range blocklist). Optional.
+    "CAPTURE_HOST_DENYLIST": ""
+  }
+
+  // Secrets (set with `wrangler secret put <NAME>`), all optional:
+  //   CF_ACCOUNT_ID   - enables the REST Browser Rendering fallback
+  //   CF_API_TOKEN    - token with "Browser Rendering: Edit" for that fallback
+}

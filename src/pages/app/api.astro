@@ -1,0 +1,190 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import CodeBlock from '../../components/CodeBlock.astro';
+import { env } from 'cloudflare:workers';
+import { getPlan } from '../../lib/plans';
+
+const user = Astro.locals.user!;
+const plan = getPlan(user.plan);
+
+const { results: keys } = await env.DB.prepare(
+  `SELECT id, prefix, last4, label, environment, created_at, last_used_at, revoked_at
+   FROM api_keys WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC`,
+)
+  .bind(user.id)
+  .all<{
+    id: string;
+    prefix: string;
+    last4: string;
+    label: string;
+    environment: string;
+    created_at: string;
+    last_used_at: string | null;
+  }>();
+
+const origin = Astro.url.origin;
+const curl = `curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $KEY" \\
+  -d url="https://stripe.com" \\
+  -d device="mobile" \\
+  -d mode="fullpage"`;
+
+const responseSample = `{
+  "id": "cap_8Yx2",
+  "status": "done",
+  "images": ["${origin}/f/cap_8Yx2/…"]
+}`;
+
+const params = [
+  { name: 'url', desc: 'Page to capture' },
+  { name: 'device', desc: 'desktop · tablet · mobile' },
+  { name: 'mode', desc: 'visible · fullpage · series' },
+  { name: 'format', desc: 'png · jpg · pdf' },
+];
+
+const monthLabel = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+---
+
+<AppShell title="API" tab="api">
+  <header class="appbar" slot="appbar">
+    <div class="appbar__title">API</div>
+    <span class="pill pill--quota">{plan.name} plan</span>
+  </header>
+
+  <div class="p-20 stack" style="gap: 18px">
+    {
+      !plan.api && (
+        <div class="notice notice--info">
+          API access is available on the Pro and Business plans. You can still create keys here once you upgrade.
+          <a href="/pricing" style="font-weight: 600"> See plans →</a>
+        </div>
+      )
+    }
+
+    <section>
+      <div class="row-between" style="margin-bottom: 8px">
+        <div class="label">Your keys</div>
+        <button type="button" class="label" style="color: var(--green)" id="new-key">+ New key</button>
+      </div>
+
+      <div class="notice notice--ok" id="new-key-box" hidden>
+        <div class="label" style="margin-bottom: 6px">Copy this key now — it is not shown again.</div>
+        <div class="mono truncate" id="new-key-value" style="font-size: 12px"></div>
+        <button type="button" class="btn btn--sm btn--outline" style="margin-top: 8px" data-copy id="new-key-copy">
+          Copy
+        </button>
+      </div>
+      <div class="notice notice--error" id="key-error" hidden></div>
+
+      <div class="stack gap-8" id="key-list">
+        {
+          keys?.length ? (
+            keys.map((key) => (
+              <div class="card" style="border-color: var(--line); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px" data-key-row={key.id}>
+                <div style="min-width: 0">
+                  <div class="mono truncate" style="font-weight: 500; font-size: 13px">
+                    {key.prefix}…{key.last4}
+                  </div>
+                  <div class="xs muted" style="margin-top: 3px">
+                    {key.label} · created {monthLabel(key.created_at)}
+                    {key.last_used_at ? ' · used' : ' · never used'}
+                  </div>
+                </div>
+                <div style="display: flex; gap: 6px; flex: none">
+                  <button type="button" class="btn btn--sm btn--outline btn--danger-text" data-revoke={key.id}>
+                    Revoke
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p class="small muted">No keys yet. Create one to start calling the API.</p>
+          )
+        }
+      </div>
+
+      <p class="xs muted-2" style="margin-top: 8px">
+        Secrets are shown once, at creation. Only a hash is stored, so a lost key has to be revoked and replaced.
+      </p>
+    </section>
+
+    <section>
+      <div class="label" style="margin-bottom: 8px">Quick start</div>
+      <CodeBlock tag="POST /v1/capture" code={curl} />
+      <div style="margin-top: 8px">
+        <CodeBlock tag="RESPONSE · 200" code={responseSample} light copyable={false} />
+      </div>
+    </section>
+
+    <section class="stack gap-6">
+      <div class="label" style="margin-bottom: 2px">Parameters</div>
+      {
+        params.map((param) => (
+          <div class="param-row">
+            <span class="param-row__name">{param.name}</span>
+            <span class="param-row__desc">{param.desc}</span>
+          </div>
+        ))
+      }
+    </section>
+
+    <p class="center label"><a href="/docs">Full API reference →</a></p>
+  </div>
+</AppShell>
+
+<script>
+  const list = document.getElementById('key-list');
+  const errorBox = document.getElementById('key-error') as HTMLElement | null;
+  const box = document.getElementById('new-key-box') as HTMLElement | null;
+  const value = document.getElementById('new-key-value');
+  const copyButton = document.getElementById('new-key-copy');
+
+  function fail(message: string) {
+    if (!errorBox) return;
+    errorBox.textContent = message;
+    errorBox.hidden = false;
+  }
+
+  document.getElementById('new-key')?.addEventListener('click', async () => {
+    if (errorBox) errorBox.hidden = true;
+    const label = window.prompt('Name this key', 'Production');
+    if (label === null) return;
+
+    const response = await fetch('/api/keys', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ label, environment: label.toLowerCase().includes('test') ? 'test' : 'live' }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | { secret?: string; error?: { message?: string } }
+      | null;
+    if (!response.ok || !payload?.secret) {
+      fail(payload?.error?.message ?? 'Could not create the key.');
+      return;
+    }
+
+    if (box && value && copyButton) {
+      value.textContent = payload.secret;
+      copyButton.setAttribute('data-copy-value', payload.secret);
+      box.hidden = false;
+    }
+    window.setTimeout(() => window.location.reload(), 12000);
+  });
+
+  list?.addEventListener('click', async (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-revoke]');
+    if (!button) return;
+    if (!window.confirm('Revoke this key? Requests using it will stop working immediately.')) return;
+
+    button.disabled = true;
+    const response = await fetch(`/api/keys/${button.dataset.revoke}`, { method: 'DELETE' });
+    if (response.ok) {
+      document.querySelector(`[data-key-row="${button.dataset.revoke}"]`)?.remove();
+    } else {
+      button.disabled = false;
+      fail('Could not revoke that key.');
+    }
+  });
+</script>

@@ -1,0 +1,262 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import { DEVICE_LIST, LIMITS } from '../lib/capture-options';
+import { API_RATE_LIMIT, PLANS } from '../lib/plans';
+
+const user = Astro.locals.user;
+const origin = Astro.url.origin;
+
+const quickstart = `curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $SCREENIFY_KEY" \\
+  -d url="https://stripe.com/pricing" \\
+  -d device="mobile" \\
+  -d mode="fullpage" \\
+  -d format="png"`;
+
+const asyncExample = `# Return immediately with status "pending", then poll:
+curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $SCREENIFY_KEY" \\
+  -d url="https://example.com" -d async=1
+
+curl ${origin}/v1/captures/cap_8Yx2 \\
+  -H "Authorization: Bearer $SCREENIFY_KEY"`;
+
+const jsExample = `const response = await fetch("${origin}/v1/capture", {
+  method: "POST",
+  headers: {
+    authorization: \`Bearer \${process.env.SCREENIFY_KEY}\`,
+    "content-type": "application/json",
+  },
+  body: JSON.stringify({
+    url: "https://example.com",
+    device: "desktop",
+    mode: "series",
+    max_frames: 8,
+  }),
+});
+
+const capture = await response.json();
+console.log(capture.images); // → array of file URLs`;
+
+const responseSample = `{
+  "id": "cap_8Yx2m1q0",
+  "status": "done",
+  "url": "https://stripe.com/pricing",
+  "display_url": "stripe.com/pricing",
+  "device": "mobile",
+  "viewport": { "width": 390, "height": 844, "scale": 3 },
+  "mode": "fullpage",
+  "format": "png",
+  "images": ["${origin}/f/cap_8Yx2m1q0/capture.png?t=…"],
+  "files": [
+    { "url": "…", "name": "capture.png", "bytes": 481233, "width": 390, "height": 5210 }
+  ],
+  "bytes": 481233,
+  "duration_ms": 4310,
+  "created_at": "2026-03-11T09:12:04.101Z",
+  "completed_at": "2026-03-11T09:12:08.411Z"
+}`;
+
+const errorSample = `{
+  "error": {
+    "type": "quota_exceeded",
+    "message": "You have used all 2,000 screenshots on the Pro plan this month."
+  }
+}`;
+
+const params = [
+  { name: 'url', type: 'string', required: true, desc: 'Page to capture. http/https only; private and loopback addresses are rejected.' },
+  { name: 'device', type: 'string', required: false, desc: 'desktop · tablet · mobile · custom. Default desktop.' },
+  { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
+  { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
+  { name: 'width', type: 'integer', required: false, desc: `Viewport width, ${LIMITS.minWidth}–${LIMITS.maxWidth}. Setting it switches device to custom.` },
+  { name: 'height', type: 'integer', required: false, desc: `Viewport height, ${LIMITS.minHeight}–${LIMITS.maxHeight}.` },
+  { name: 'scale', type: 'number', required: false, desc: `Device pixel ratio, ${LIMITS.minScale}–${LIMITS.maxScale}.` },
+  { name: 'delay', type: 'integer', required: false, desc: `Extra wait after load, in ms (max ${LIMITS.maxDelayMs}).` },
+  { name: 'quality', type: 'integer', required: false, desc: 'JPG quality 30–100. Default 85.' },
+  { name: 'block_ads', type: 'boolean', required: false, desc: 'Block known ad and analytics hosts. Default true.' },
+  { name: 'dark_mode', type: 'boolean', required: false, desc: 'Emulate prefers-color-scheme: dark. Default false.' },
+  { name: 'max_frames', type: 'integer', required: false, desc: `Cap on scroll-series frames (max ${LIMITS.maxSeriesFrames}).` },
+  { name: 'async', type: 'boolean', required: false, desc: 'Return 202 immediately and render in the background.' },
+];
+
+const errors = [
+  { code: '400 invalid_request', desc: 'A parameter is missing or out of range. `param` names the field.' },
+  { code: '401 invalid_api_key', desc: 'Missing, unknown or revoked key.' },
+  { code: '402 quota_exceeded', desc: 'Monthly screenshot quota is used up.' },
+  { code: '403 plan_required', desc: 'The feature needs a higher plan (API access, PDF, custom viewports).' },
+  { code: '404 not_found', desc: 'No capture with that id belongs to this key.' },
+  { code: '429 rate_limited', desc: 'Too many requests this minute. See the x-ratelimit-* headers.' },
+  { code: '502 render_failed', desc: 'The page could not be rendered.' },
+  { code: '504 render_timeout', desc: 'The page did not finish loading in time.' },
+];
+
+const endpoints = [
+  { method: 'POST', path: '/v1/capture', desc: 'Create a capture.' },
+  { method: 'GET', path: '/v1/captures', desc: 'List captures, newest first.' },
+  { method: 'GET', path: '/v1/captures/:id', desc: 'Fetch one capture.' },
+  { method: 'DELETE', path: '/v1/captures/:id', desc: 'Delete a capture and its files.' },
+  { method: 'GET', path: '/v1/account', desc: 'Plan and quota for the key owner.' },
+];
+---
+
+<Base title="API reference">
+  <div class="shell shell--wide">
+    <div class="row-between" style="padding: 18px 20px; border-bottom: 1px solid var(--line-2)">
+      <Logo />
+      <a class="label" href={user ? '/app/api' : '/signup'}>{user ? 'Your keys' : 'Get a key'}</a>
+    </div>
+
+    <div class="p-20 stack gap-20">
+      <header>
+        <h1 class="h2">API reference</h1>
+        <p class="small muted" style="margin-top: 8px">
+          One endpoint does the work: <span class="mono">POST /v1/capture</span>. Send a URL, get back file URLs.
+          Bodies may be JSON or form-encoded.
+        </p>
+      </header>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Authentication</h2>
+        <p class="small muted">
+          Every request needs a key from the <a href="/app/api">API screen</a>, sent as a bearer token. Keys are shown
+          once at creation — store them as a secret.
+        </p>
+        <CodeBlock tag="HEADER" code={'Authorization: Bearer sk_live_…'} />
+        <p class="xs muted">
+          API access is included on {PLANS.pro.name} and {PLANS.business.name}. Rate limits:
+          {PLANS.pro.name} {API_RATE_LIMIT.pro} req/min, {PLANS.business.name} {API_RATE_LIMIT.business} req/min.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Quick start</h2>
+        <CodeBlock tag="POST /v1/capture" code={quickstart} />
+        <CodeBlock tag="RESPONSE · 201" code={responseSample} light copyable={false} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Endpoints</h2>
+        <div class="rows">
+          {
+            endpoints.map((endpoint) => (
+              <div class="row">
+                <span class="mono" style="font-size: 12px; font-weight: 500">
+                  <span style="color: var(--green)">{endpoint.method}</span> {endpoint.path}
+                </span>
+                <span class="row__value" style="text-align: right">{endpoint.desc}</span>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="stack gap-6">
+        <h2 class="h4" style="margin-bottom: 4px">Parameters</h2>
+        {
+          params.map((param) => (
+            <div class="param-row">
+              <span class="param-row__name">
+                {param.name}
+                {param.required && <span style="color: var(--danger)"> *</span>}
+              </span>
+              <span class="param-row__desc">{param.desc}</span>
+            </div>
+          ))
+        }
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Devices</h2>
+        <div class="rows">
+          {
+            DEVICE_LIST.map((device) => (
+              <div class="row">
+                <span class="row__label">
+                  {device.icon} {device.label}
+                </span>
+                <span class="row__value mono">
+                  {device.width}×{device.height} @{device.scale}x
+                </span>
+              </div>
+            ))
+          }
+        </div>
+        <p class="xs muted">
+          Pass <span class="mono">width</span> and <span class="mono">height</span> for anything else — that switches
+          the capture to <span class="mono">device=custom</span> (Pro and above).
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Capture modes</h2>
+        <div class="rows">
+          <div class="row">
+            <span class="row__label">visible</span>
+            <span class="row__value" style="text-align: right">One frame of the viewport.</span>
+          </div>
+          <div class="row">
+            <span class="row__label">fullpage</span>
+            <span class="row__value" style="text-align: right">
+              The whole document in one tall image (capped at {LIMITS.maxFullPageHeight.toLocaleString()}px).
+            </span>
+          </div>
+          <div class="row">
+            <span class="row__label">series</span>
+            <span class="row__value" style="text-align: right">
+              Viewport-sized frames top to bottom. Each frame counts against your quota.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Long pages: async mode</h2>
+        <p class="small muted">
+          Captures normally run inline and return when the files are stored. For slow pages, pass
+          <span class="mono"> async=1</span> to get a <span class="mono">202</span> with
+          <span class="mono"> status: "pending"</span> and poll the capture until it is done.
+        </p>
+        <CodeBlock tag="ASYNC" code={asyncExample} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">JavaScript</h2>
+        <CodeBlock tag="NODE / WORKERS" code={jsExample} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Errors</h2>
+        <CodeBlock tag="RESPONSE · 402" code={errorSample} light copyable={false} />
+        <div class="rows" style="margin-top: 4px">
+          {
+            errors.map((entry) => (
+              <div class="row">
+                <span class="mono" style="font-size: 12px">{entry.code}</span>
+                <span class="row__value" style="text-align: right">{entry.desc}</span>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">File URLs</h2>
+        <p class="small muted">
+          Rendered files live at <span class="mono">/f/:captureId/:name</span> and carry a per-capture share token in
+          the <span class="mono">t</span> query parameter. Append <span class="mono">&amp;download=1</span> for a
+          download disposition. Delete the capture to revoke the links.
+        </p>
+      </section>
+
+      <div class="stack gap-8" style="padding-bottom: 24px">
+        <a class="btn btn--ink" href={user ? '/app/api' : '/signup'}>
+          {user ? 'Manage your keys' : 'Create a free account'}
+        </a>
+        <a class="btn btn--outline" href="/pricing">See pricing</a>
+      </div>
+    </div>
+  </div>
+</Base>

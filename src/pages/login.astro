@@ -1,0 +1,83 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+
+const next = Astro.url.searchParams.get('next') ?? '/app';
+const initialError = Astro.url.searchParams.get('error') ?? '';
+---
+
+<Base title="Log in">
+  <div class="shell">
+    <div style="padding: 24px 24px 32px; display: flex; flex-direction: column">
+      <div style="padding: 8px 0 36px">
+        <Logo />
+      </div>
+
+      <h1 class="h2">Welcome back</h1>
+      <p class="small muted" style="margin-top: 8px">Log in to capture, browse your library and manage keys.</p>
+
+      <div class="stack gap-12" style="margin-top: 28px">
+        <button type="button" class="btn btn--white" data-oauth="Google">
+          <span aria-hidden="true">🇬</span> Continue with Google
+        </button>
+        <button type="button" class="btn btn--white" data-oauth="GitHub">
+          <span aria-hidden="true">⌘</span> Continue with GitHub
+        </button>
+      </div>
+
+      <div class="divider"><span>or with email</span></div>
+
+      <form id="login-form" method="post" action="/api/auth/login" class="stack gap-12" novalidate>
+        <input type="hidden" name="next" value={next} />
+
+        <div class="notice notice--error" id="form-error" hidden={!initialError}>{initialError}</div>
+
+        <div class="field">
+          <label class="field__label" for="email">Email</label>
+          <input
+            class="input"
+            id="email"
+            name="email"
+            type="email"
+            required
+            autocomplete="email"
+            inputmode="email"
+            placeholder="you@studio.co"
+          />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="password">Password</label>
+          <div class="input-affix">
+            <input
+              class="input"
+              id="password"
+              name="password"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="••••••••••"
+            />
+            <button type="button" class="input-affix__button" data-toggle-password="#password" aria-label="Show password">
+              👁
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn--ink" style="margin-top: 8px">Log in</button>
+      </form>
+
+      <p class="small muted center" style="margin-top: 16px">
+        New here? <a href="/signup" style="font-weight: 600">Create an account</a>
+      </p>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { wireAuthForm, wirePasswordToggles, wireOauthPlaceholders } from '../scripts/auth';
+
+  wireAuthForm('#login-form', '#form-error');
+  wirePasswordToggles();
+  wireOauthPlaceholders('#form-error');
+</script>

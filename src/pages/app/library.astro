@@ -1,0 +1,56 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import ShotCard from '../../components/ShotCard.astro';
+import { getUsage, listCaptures } from '../../lib/captures';
+
+const user = Astro.locals.user!;
+const filter = Astro.url.searchParams.get('mode') ?? 'all';
+const [captures, usage] = await Promise.all([listCaptures(user.id, { mode: filter, limit: 40 }), getUsage(user)]);
+
+const filters = [
+  { id: 'all', label: 'All' },
+  { id: 'fullpage', label: 'Full page' },
+  { id: 'series', label: 'Series' },
+  { id: 'visible', label: 'Visible' },
+];
+---
+
+<AppShell title="Library" tab="library">
+  <header class="appbar" slot="appbar">
+    <div class="appbar__title">Library</div>
+    <span class="pill pill--quota">{usage.remaining.toLocaleString()} / {usage.quota.toLocaleString()} left</span>
+  </header>
+
+  <div class="chips" style="padding: 14px 20px 0">
+    {
+      filters.map((entry) => (
+        <a
+          class="chip"
+          href={entry.id === 'all' ? '/app/library' : `/app/library?mode=${entry.id}`}
+          aria-current={filter === entry.id ? 'true' : undefined}
+        >
+          {entry.label}
+        </a>
+      ))
+    }
+  </div>
+
+  {
+    captures.length === 0 ? (
+      <div class="empty">
+        <div class="empty__icon" aria-hidden="true">🗂️</div>
+        <p class="h4" style="margin-top: 10px">Nothing here yet</p>
+        <p class="small muted" style="margin-top: 6px">
+          {filter === 'all' ? 'Your captures will show up here.' : 'No captures in this filter yet.'}
+        </p>
+        <a class="btn btn--ink" href="/app" style="max-width: 220px; margin: 18px auto 0">Take a screenshot</a>
+      </div>
+    ) : (
+      <div style="padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px">
+        {captures.map((capture) => (
+          <ShotCard capture={capture} />
+        ))}
+      </div>
+    )
+  }
+</AppShell>

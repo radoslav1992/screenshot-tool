@@ -1,130 +1,151 @@
 ---
 import Base from '../layouts/Base.astro';
-import Logo from '../components/Logo.astro';
 import Icon from '../components/Icon.astro';
-import { MODES } from '../lib/capture-options';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import HeroVisual from '../components/HeroVisual.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import { FRAME_LIST, MODES } from '../lib/capture-options';
 import { PLANS } from '../lib/plans';
 
 const user = Astro.locals.user;
 const captureHref = user ? '/app' : '/signup';
-const year = new Date().getFullYear();
 
-const curl = `curl api.screenify.app/v1/capture \\
-  -d url=yoursite.com \\
-  -d device=mobile -d mode=fullpage`;
+const curl = `curl https://screenify.app/v1/capture \\
+  -H "Authorization: Bearer $KEY" \\
+  -d url="yoursite.com" \\
+  -d device="instagram-story"`;
+
+/** Frame previews are drawn to their real ratio, capped so the row stays even. */
+const frameBox = (frame: (typeof FRAME_LIST)[number]) => {
+  const ratio = frame.width / frame.height;
+  const height = 54;
+  return `height: ${height}px; width: ${Math.round(height * ratio)}px`;
+};
 ---
 
-<Base title="Screenify" themeColor="#0F110C">
-  <div class="shell shell--wide shell--dark">
-    <header class="hero">
-      <div class="row-between" style="padding: 18px 20px">
-        <Logo variant="lime" wordColor="var(--paper)" />
-        <button
-          type="button"
-          id="menu-toggle"
-          aria-expanded="false"
-          aria-controls="menu"
-          aria-label="Open menu"
-          style="width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(244,245,238,0.2); display: grid; place-items: center; color: var(--paper); font-size: 15px"
-        >
-          <Icon name="menu" size={18} />
-        </button>
+<Base title="Screenify" themeColor="#0F110C" description="Clean, exact screenshots of any page — from any device, or through the API.">
+  <div class="page">
+    <SiteHeader dark user={user} />
+
+    <section class="hero--full">
+      <div class="wrap hero__grid">
+        <div>
+          <span class="hero__badge">Screenshots as a service</span>
+          <h1 class="hero__title">Any page. Any device. One clean screenshot.</h1>
+          <p class="hero__lead">
+            No tabs, no bookmarks, no cropping afterwards. Paste a URL, pick a size, and get a pixel-exact capture in
+            seconds — from your phone, your desk, or your code.
+          </p>
+
+          <form class="urlbar" method="get" action={captureHref} style="max-width: 460px">
+            <label class="sr-only" for="hero-url">Page URL</label>
+            <span class="urlbar__icon"><Icon name="link" size={16} /></span>
+            <input
+              id="hero-url"
+              type="text"
+              name="url"
+              inputmode="url"
+              autocomplete="url"
+              spellcheck="false"
+              placeholder="yoursite.com"
+            />
+            <button type="submit">Capture</button>
+          </form>
+
+          <div class="hero__proof">
+            <span><Icon name="check" size={15} /> {PLANS.free.quota} free a month</span>
+            <span><Icon name="check" size={15} /> No card needed</span>
+            <span><Icon name="check" size={15} /> Works from any device</span>
+          </div>
+        </div>
+
+        <HeroVisual />
       </div>
+    </section>
 
-      <nav class="menu-sheet" id="menu" hidden>
-        <a href="/pricing">Pricing</a>
-        <a href="/docs">API docs</a>
-        {
-          user ? (
-            <a href="/app">Open app</a>
-          ) : (
-            <>
-              <a href="/login">Log in</a>
-              <a href="/signup">Create account</a>
-            </>
-          )
-        }
-      </nav>
+    <section class="section" id="modes">
+      <div class="wrap">
+        <div class="section__head section__head--center">
+          <h2 class="section__title">Three ways to capture</h2>
+          <p class="section__sub">
+            The same page, framed however you need it — a single screen, the whole thing, or every screen in order.
+          </p>
+        </div>
 
-      <div style="padding: 28px 20px 32px">
-        <span class="hero__badge">Screenshots as a service</span>
-        <h1 class="hero__title">Any page. Any device. One clean screenshot.</h1>
-        <p class="hero__sub">
-          Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.
-        </p>
-
-        <form class="urlbar" method="get" action={captureHref}>
-          <label class="sr-only" for="hero-url">Page URL</label>
-          <span class="urlbar__icon"><Icon name="link" size={16} /></span>
-          <input
-            id="hero-url"
-            type="text"
-            name="url"
-            inputmode="url"
-            autocomplete="url"
-            spellcheck="false"
-            placeholder="yoursite.com"
-          />
-          <button type="submit">Capture</button>
-        </form>
-
-        <div style="display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap">
-          <span class="pill pill--ghost"><Icon name="desktop" size={14} /> Desktop</span>
-          <span class="pill pill--ghost"><Icon name="mobile" size={14} /> Mobile</span>
-          <span class="pill pill--ghost">Full page</span>
-          <span class="pill pill--ghost">Scroll series</span>
+        <div class="cards-3">
+          {
+            MODES.map((mode) => (
+              <article class="mode-card">
+                <div class="mode-card__icon"><Icon name={mode.icon} size={22} /></div>
+                <h3 class="mode-card__title">{mode.label}</h3>
+                <p class="mode-card__body">{mode.longHint}</p>
+              </article>
+            ))
+          }
         </div>
       </div>
-    </header>
+    </section>
 
-    <main style="background: var(--paper); padding: 28px 20px; display: flex; flex-direction: column; gap: 16px">
-      <h2 class="h3">Three ways to capture</h2>
+    <section class="section section--tint" id="sizes">
+      <div class="wrap">
+        <div class="section__head section__head--center">
+          <h2 class="section__title">Sizes that need no cropping</h2>
+          <p class="section__sub">
+            Pick a ready-made frame and the file lands on the exact pixels the platform wants. Post it as it comes out.
+          </p>
+        </div>
 
-      <div class="stack gap-10 grid-3">
-        {
-          MODES.map((mode) => (
-            <div class="feature">
-              <div class="feature__icon"><Icon name={mode.icon} size={22} /></div>
-              <div>
-                <div class="title-sm">{mode.label}</div>
-                <div class="small muted" style="margin-top: 3px; line-height: 1.5">{mode.longHint}</div>
-              </div>
-            </div>
-          ))
-        }
+        <div class="size-grid">
+          {
+            FRAME_LIST.map((frame) => (
+              <article class="size-card">
+                <div class="size-card__frame" style={frameBox(frame)} />
+                <div class="size-card__name">{frame.label}</div>
+                <div class="size-card__px">{frame.output}</div>
+              </article>
+            ))
+          }
+        </div>
       </div>
+    </section>
 
-      <section class="panel-dark" style="margin-top: 6px">
-        <div class="eyebrow" style="color: var(--lime)">For developers</div>
-        <div class="h4" style="color: var(--paper); margin-top: 8px">One POST away</div>
-        <pre
-          style="font: 400 12px/1.7 var(--mono); color: var(--dim); background: rgba(244,245,238,0.06); border-radius: 10px; padding: 12px; margin: 12px 0 0; overflow-x: auto">{curl}</pre>
-      </section>
-
-      <div class="stack gap-8" style="margin-top: 6px">
-        <a class="btn btn--lime" href={user ? '/app' : '/signup'}>
-          {user ? 'Open the app' : `Start free — ${PLANS.free.quota} shots/mo`}
-        </a>
-        <a class="btn btn--outline" href="/pricing">See pricing</a>
+    <section class="section section--ink">
+      <div class="wrap split">
+        <div>
+          <div class="eyebrow" style="color: var(--lime)">For developers</div>
+          <h2 class="section__title" style="margin-top: 10px">One POST away</h2>
+          <p class="section__sub">
+            The same engine behind the app, as a JSON or form-encoded API. Bearer token, one endpoint, file URLs back.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn--lime" href="/docs">Read the API docs</a>
+          </div>
+        </div>
+        <CodeBlock tag="POST /v1/capture" code={curl} />
       </div>
+    </section>
 
-      <p class="xs center" style="color: var(--muted-2); padding-top: 8px">
-        © {year} Screenify · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
-      </p>
-    </main>
+    <section class="section">
+      <div class="wrap center">
+        <h2 class="section__title">Start free, upgrade when it earns it</h2>
+        <p class="section__sub" style="margin-inline: auto; max-width: 44ch">
+          {PLANS.free.quota} screenshots a month on the free plan — every device, every mode, every size. No card.
+        </p>
+        <div class="cta-row" style="justify-content: center">
+          <a class="btn btn--ink" href={user ? '/app' : '/signup'}>
+            {user ? 'Open the app' : 'Create a free account'}
+          </a>
+          <a class="btn btn--outline" href="/pricing">See pricing</a>
+        </div>
+      </div>
+    </section>
+
+    <SiteFooter />
   </div>
 </Base>
 
 <script>
-  const toggle = document.getElementById('menu-toggle');
-  const menu = document.getElementById('menu');
-
-  toggle?.addEventListener('click', () => {
-    const open = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', String(!open));
-    if (menu) menu.hidden = open;
-  });
-
   // Normalise what people paste before it reaches the capture form.
   const form = document.querySelector<HTMLFormElement>('.urlbar');
   form?.addEventListener('submit', (event) => {

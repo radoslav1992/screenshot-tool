@@ -766,6 +766,8 @@ button {
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chips::-webkit-scrollbar {
@@ -787,6 +789,58 @@ button {
   border-color: var(--ink);
   color: var(--paper);
   font-weight: 600;
+}
+
+/* Frames wrap rather than scroll: five options should all be visible at once,
+   and a horizontal scroller inside a flex column overflows the page unless the
+   whole ancestor chain is allowed to shrink. */
+.frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Frame chips are radio inputs wearing the chip look. */
+.chip--frame {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.chip--frame input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chip--frame:hover {
+  border-color: var(--ink);
+}
+
+.chip__size {
+  font-size: 10px;
+  color: var(--muted-2);
+}
+
+.chip--frame:has(input:checked) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.chip--frame:has(input:checked) .chip__size {
+  color: var(--lime);
+}
+
+.chip--frame:has(input:focus-visible) {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
 }
 
 /* Toggle (monthly / yearly) */
@@ -1189,6 +1243,7 @@ button {
 
 .urlbar {
   margin-top: 22px;
+  max-width: 100%;
   background: var(--surface-dark);
   border: 1px solid rgba(244, 245, 238, 0.12);
   border-radius: 16px;
@@ -1425,4 +1480,689 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+/* ==========================================================================
+   Marketing pages
+   --------------------------------------------------------------------------
+   The app deliberately stays a phone-width column — it is a mobile app. The
+   marketing pages are not, and stretching that same shell to 960px was what
+   made the site read as a narrow strip on a desktop. These are full-bleed:
+   backgrounds run edge to edge, content sits in a centred .wrap.
+   ========================================================================== */
+
+.page {
+  background: var(--paper);
+  min-height: 100dvh;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+
+@media (min-width: 900px) {
+  .wrap {
+    padding-inline: 40px;
+  }
+}
+
+.section {
+  padding-block: 56px;
+}
+
+@media (min-width: 900px) {
+  .section {
+    padding-block: 88px;
+  }
+}
+
+.section--ink {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.section--tint {
+  background: var(--canvas);
+}
+
+.section__head {
+  max-width: 46ch;
+  margin-bottom: 28px;
+}
+
+/* Centred heads read better above a full-width row of cards. */
+.section__head--center {
+  margin-inline: auto;
+  text-align: center;
+  margin-bottom: 34px;
+}
+
+.section__title {
+  font: 800 28px/1.15 var(--display);
+}
+
+.section__sub {
+  color: var(--muted);
+  margin-top: 10px;
+  line-height: 1.6;
+}
+
+.section--ink .section__sub {
+  color: var(--dim);
+}
+
+@media (min-width: 900px) {
+  .section__title {
+    font-size: 38px;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Site header                                                                */
+/* -------------------------------------------------------------------------- */
+.siteheader {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-2);
+}
+
+.siteheader--dark {
+  background: var(--ink);
+  border-bottom-color: rgba(244, 245, 238, 0.1);
+}
+
+.siteheader__inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-block: 14px;
+}
+
+.siteheader__nav {
+  display: none;
+  gap: 26px;
+  margin-left: 20px;
+  flex: 1;
+}
+
+.siteheader__nav a,
+.siteheader__login {
+  font: 600 14px var(--display);
+  color: var(--muted);
+}
+
+.siteheader--dark .siteheader__nav a,
+.siteheader--dark .siteheader__login {
+  color: var(--dim);
+}
+
+.siteheader__nav a:hover,
+.siteheader__login:hover {
+  color: var(--ink-2);
+}
+
+.siteheader--dark .siteheader__nav a:hover,
+.siteheader--dark .siteheader__login:hover {
+  color: var(--paper);
+}
+
+.siteheader__actions {
+  display: none;
+  align-items: center;
+  gap: 18px;
+  margin-left: auto;
+}
+
+.btn--pill-lime {
+  background: var(--lime);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font: 700 13px var(--display);
+}
+
+.btn--pill-lime:hover {
+  color: var(--ink);
+  background: #c2e84f;
+}
+
+.siteheader__toggle {
+  margin-left: auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+
+.siteheader--dark .siteheader__toggle {
+  border-color: rgba(244, 245, 238, 0.2);
+  color: var(--paper);
+}
+
+.siteheader__sheet {
+  border-top: 1px solid var(--line-2);
+  padding-block: 8px 16px;
+}
+
+.siteheader--dark .siteheader__sheet {
+  border-top-color: rgba(244, 245, 238, 0.1);
+  background: var(--surface-dark);
+}
+
+.siteheader__sheet a {
+  padding: 12px 0;
+  font: 600 15px var(--display);
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--line-3);
+}
+
+.siteheader--dark .siteheader__sheet a {
+  color: var(--paper);
+  border-bottom-color: rgba(244, 245, 238, 0.08);
+}
+
+.siteheader__sheet a:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 900px) {
+  .siteheader__nav,
+  .siteheader__actions {
+    display: flex;
+  }
+
+  .siteheader__toggle,
+  .siteheader__sheet {
+    display: none !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hero                                                                       */
+/* -------------------------------------------------------------------------- */
+.hero--full {
+  background: var(--ink);
+  color: var(--paper);
+  overflow: hidden;
+  position: relative;
+}
+
+/* A soft lime bloom keeps a large dark area from reading as a flat slab. */
+.hero--full::before {
+  content: '';
+  position: absolute;
+  top: -180px;
+  right: -140px;
+  width: 620px;
+  height: 620px;
+  background: radial-gradient(circle, rgba(207, 242, 94, 0.16), transparent 62%);
+  pointer-events: none;
+}
+
+.hero__grid {
+  display: grid;
+  gap: 40px;
+  padding-block: 52px 60px;
+  position: relative;
+}
+
+@media (min-width: 980px) {
+  .hero__grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 56px;
+    padding-block: 84px 96px;
+  }
+}
+
+.hero__title {
+  font: 800 38px/1.1 var(--display);
+  color: var(--paper);
+  margin-top: 18px;
+  text-wrap: balance;
+}
+
+@media (min-width: 700px) {
+  .hero__title {
+    font-size: 54px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .hero__title {
+    font-size: 62px;
+  }
+}
+
+.hero__lead {
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--dim);
+  margin-top: 16px;
+  max-width: 46ch;
+}
+
+.hero__proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 22px;
+  font-size: 13px;
+  color: var(--dim-2);
+}
+
+.hero__proof span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.hero__proof svg {
+  color: var(--lime);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hero visual                                                                */
+/* -------------------------------------------------------------------------- */
+.heroviz {
+  position: relative;
+  padding-bottom: 34px;
+}
+
+.heroviz__desktop {
+  background: #23271c;
+  border: 1px solid rgba(244, 245, 238, 0.14);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.45);
+  position: relative;
+}
+
+.heroviz__chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #191c13;
+}
+
+.heroviz__chrome span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(244, 245, 238, 0.22);
+}
+
+.heroviz__url {
+  margin-left: 10px;
+  flex: 1;
+  background: rgba(244, 245, 238, 0.08);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: 400 10px var(--mono);
+  color: var(--dim-2);
+}
+
+.heroviz__page {
+  background: var(--paper);
+  padding: 14px;
+}
+
+.heroviz__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.heroviz__logo {
+  width: 46px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--ink);
+}
+
+.heroviz__links {
+  display: flex;
+  gap: 8px;
+}
+
+.heroviz__links i {
+  width: 26px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.heroviz__burger {
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.heroviz__hero {
+  padding: 18px 0 14px;
+}
+
+.heroviz__h1 {
+  height: 15px;
+  width: 78%;
+  border-radius: 5px;
+  background: var(--ink);
+  margin-bottom: 7px;
+}
+
+.heroviz__h1--short {
+  width: 52%;
+}
+
+.heroviz__p {
+  height: 7px;
+  width: 88%;
+  border-radius: 4px;
+  background: var(--line);
+  margin-top: 9px;
+}
+
+.heroviz__p--short {
+  width: 64%;
+}
+
+.heroviz__cta {
+  width: 92px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--lime);
+  margin-top: 16px;
+}
+
+.heroviz__cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.heroviz__cards b {
+  height: 46px;
+  border-radius: 8px;
+  background: var(--white);
+  border: 1px solid var(--line-2);
+}
+
+.heroviz__cards--stack {
+  grid-template-columns: 1fr;
+}
+
+.heroviz__cards--stack b {
+  height: 30px;
+}
+
+.heroviz__page--sm .heroviz__h1 {
+  height: 11px;
+}
+
+.heroviz__page--sm .heroviz__cta {
+  width: 70px;
+  height: 20px;
+}
+
+.heroviz__phone {
+  position: absolute;
+  right: -6px;
+  bottom: 0;
+  width: 132px;
+  background: #23271c;
+  border: 5px solid #23271c;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.5);
+}
+
+@media (min-width: 520px) {
+  .heroviz__phone {
+    width: 158px;
+    right: 8px;
+  }
+}
+
+.heroviz__tag {
+  position: absolute;
+  font: 500 10px var(--mono);
+  background: var(--lime);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.heroviz__tag--desktop {
+  top: 12px;
+  right: 12px;
+  background: rgba(15, 17, 12, 0.82);
+  color: var(--lime);
+}
+
+.heroviz__tag--phone {
+  left: -8px;
+  bottom: 12px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Content blocks                                                             */
+/* -------------------------------------------------------------------------- */
+.cards-3 {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 760px) {
+  .cards-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.mode-card {
+  background: var(--white);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  padding: 24px;
+}
+
+.mode-card__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: var(--lime-tint);
+  color: var(--green-deep);
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+}
+
+.mode-card__title {
+  font: 700 17px var(--display);
+}
+
+.mode-card__body {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 6px;
+}
+
+.size-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (min-width: 760px) {
+  .size-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+.size-card {
+  background: var(--white);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 18px 14px;
+  text-align: center;
+}
+
+.size-card__frame {
+  margin: 0 auto 14px;
+  background: var(--lime-tint);
+  border: 1.5px solid var(--ink);
+  border-radius: 5px;
+}
+
+.size-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.size-card__name {
+  font: 700 14px var(--display);
+}
+
+.size-card__px {
+  font: 400 11px var(--mono);
+  color: var(--muted-2);
+  margin-top: 3px;
+}
+
+.split {
+  display: grid;
+  gap: 32px;
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+  }
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.cta-row .btn {
+  width: auto;
+  padding-inline: 26px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Footer                                                                     */
+/* -------------------------------------------------------------------------- */
+.sitefooter {
+  background: var(--ink);
+  color: var(--paper);
+  padding-block: 48px 28px;
+}
+
+.sitefooter__grid {
+  display: grid;
+  gap: 30px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 760px) {
+  .sitefooter__grid {
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+  }
+}
+
+.sitefooter__title {
+  font: 600 13px var(--display);
+  color: var(--paper);
+  margin-bottom: 12px;
+}
+
+.sitefooter a {
+  display: block;
+  color: var(--dim);
+  font-size: 14px;
+  padding: 5px 0;
+}
+
+.sitefooter a:hover {
+  color: var(--lime);
+}
+
+.sitefooter__brand a {
+  padding: 0;
+}
+
+.sitefooter__base {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(244, 245, 238, 0.1);
+  font-size: 12px;
+  color: var(--dim-2);
+}
+
+/* Pricing grid on the marketing page — cards sit side by side from tablet up. */
+.plan-grid {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 860px) {
+  .plan-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .plan--featured {
+    transform: scale(1.04);
+  }
+}
+
+.plan-grid .plan {
+  padding: 28px 24px;
+}
+
+.plan-grid .plan__features li[data-included='false'] {
+  color: var(--muted-2);
+}
+
+.plan-grid .plan__features svg {
+  margin-top: 2px;
+  color: var(--green);
+}
+
+.plan--featured .plan__features svg {
+  color: var(--lime);
+}
+
+.plan__features li[data-included='false'] svg {
+  color: var(--muted-2);
+}
+
+/* Docs read as prose, so cap the measure inside the full-bleed page. */
+.prose-wrap {
+  max-width: 780px;
 }

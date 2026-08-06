@@ -53,6 +53,17 @@ export function wireCaptureForm(): void {
     if (!customSize.hidden) customSize.querySelector<HTMLInputElement>('#width')?.focus();
   });
 
+  // A fixed output frame only makes sense as a single viewport-sized shot —
+  // a full-page capture of a 4:5 frame is not 4:5 any more. Switch the mode
+  // rather than silently producing something the wrong shape.
+  for (const input of form.querySelectorAll<HTMLInputElement>('#frame-chips input[name="device"]')) {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      const visible = form.querySelector<HTMLInputElement>('input[name="mode"][value="visible"]');
+      if (visible && !visible.checked) visible.checked = true;
+    });
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorBox.hidden = true;

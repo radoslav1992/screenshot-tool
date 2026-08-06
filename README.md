@@ -79,11 +79,17 @@ npx wrangler r2 bucket create screenify-screenshots
 npx wrangler kv namespace create RATE
 ```
 
-1. Apply migrations to the remote database:
+1. Apply the schema to the remote database:
 
    ```bash
    npm run db:migrate
    ```
+
+   No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console
+   (Cloudflare dashboard → Storage & Databases → D1 → *screenify* → Console) and run it. It contains
+   the same schema plus the `d1_migrations` bookkeeping row, so a later `npm run db:migrate` reports
+   *No migrations to apply* rather than trying to create the tables twice. It is idempotent — safe to
+   re-run.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 
@@ -162,7 +168,8 @@ Full reference: `/docs`.
 ## Project layout
 
 ```
-migrations/           D1 schema
+migrations/           D1 migrations, applied by wrangler
+db/                   the same schema as one paste-into-the-console script
 public/               manifest, service worker, icons, self-hosted fonts
 src/components/       Logo, TabBar, ShotCard, CodeBlock
 src/layouts/          Base (head + PWA wiring), AppShell (tab bar)

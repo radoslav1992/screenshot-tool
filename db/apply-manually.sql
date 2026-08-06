@@ -1,8 +1,8 @@
 -- Screenify: full schema for a fresh D1 database.
 --
 -- Use this when you cannot run `wrangler d1 migrations apply` — paste it into
--- the D1 console (Cloudflare dashboard → Storage & Databases → D1 → screenify →
--- Console) and run it as one statement batch.
+-- the D1 console (Cloudflare dashboard → Storage & Databases → D1 → screenify-data
+-- → Console) and run it as one statement batch.
 --
 -- It is 0001_init.sql plus the bookkeeping row wrangler keeps in `d1_migrations`,
 -- so a later `npm run db:migrate` sees 0001 as already applied and moves on to

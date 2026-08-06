@@ -70,11 +70,11 @@ CI=1 npm run dev
 
 ## Deploying
 
-`wrangler.jsonc` already points at the project's Cloudflare resources: D1 `screenify`, R2
+`wrangler.jsonc` already points at the project's Cloudflare resources: D1 `screenify-data`, R2
 `screenify-screenshots`, and the `RATE` KV namespace. To recreate them in another account:
 
 ```bash
-npx wrangler d1 create screenify
+npx wrangler d1 create screenify-data
 npx wrangler r2 bucket create screenify-screenshots
 npx wrangler kv namespace create RATE
 ```
@@ -85,11 +85,10 @@ npx wrangler kv namespace create RATE
    npm run db:migrate
    ```
 
-   No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console
-   (Cloudflare dashboard → Storage & Databases → D1 → *screenify* → Console) and run it. It contains
-   the same schema plus the `d1_migrations` bookkeeping row, so a later `npm run db:migrate` reports
-   *No migrations to apply* rather than trying to create the tables twice. It is idempotent — safe to
-   re-run.
+   No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console (Cloudflare dashboard →
+   Storage & Databases → D1 → *screenify-data* → Console) and run it. It contains the same schema
+   plus the `d1_migrations` bookkeeping row, so a later `npm run db:migrate` reports *No migrations
+   to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 

@@ -14,7 +14,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "screenify",
+      "database_name": "screenify-data",
       "database_id": "3277d03c-58ac-4627-9af3-0d772a5d680c",
       "migrations_dir": "migrations"
     }

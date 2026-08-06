@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { json } from '../../lib/http';
+import { hashPassword } from '../../lib/auth';
 
 export const prerender = false;
 
@@ -56,6 +57,20 @@ async function checkKv(): Promise<CheckResult> {
   }
 }
 
+/**
+ * Runs the real password hash. The Workers runtime caps PBKDF2 iterations and
+ * throws above the limit — and the local runtime does not, so that failure only
+ * appears once deployed. Checking it here makes it visible without CLI access.
+ */
+async function checkCrypto(): Promise<CheckResult> {
+  try {
+    await hashPassword('health-check-not-a-real-password');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function checkRenderer(): CheckResult & { engine: string } {
   if (env.BROWSER) return { ok: true, engine: 'binding' };
   if (env.CF_ACCOUNT_ID && env.CF_API_TOKEN) return { ok: true, engine: 'rest' };
@@ -72,12 +87,17 @@ function checkRenderer(): CheckResult & { engine: string } {
  * hints: no data, no credentials.
  */
 export const GET: APIRoute = async () => {
-  const [database, storage, kv] = await Promise.all([checkDatabase(), checkStorage(), checkKv()]);
+  const [database, storage, kv, cryptoCheck] = await Promise.all([
+    checkDatabase(),
+    checkStorage(),
+    checkKv(),
+    checkCrypto(),
+  ]);
   const renderer = checkRenderer();
-  const ok = database.ok && storage.ok && kv.ok && renderer.ok;
+  const ok = database.ok && storage.ok && kv.ok && cryptoCheck.ok && renderer.ok;
 
   return json(
-    { ok, checks: { database, storage, kv, renderer } },
+    { ok, checks: { database, storage, kv, crypto: cryptoCheck, renderer } },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
   );
 };

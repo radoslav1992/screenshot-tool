@@ -2,7 +2,7 @@
 import Base from '../layouts/Base.astro';
 import Logo from '../components/Logo.astro';
 import CodeBlock from '../components/CodeBlock.astro';
-import { DEVICE_LIST, LIMITS } from '../lib/capture-options';
+import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
 import { API_RATE_LIMIT, PLANS } from '../lib/plans';
 
 const user = Astro.locals.user;
@@ -68,7 +68,7 @@ const errorSample = `{
 
 const params = [
   { name: 'url', type: 'string', required: true, desc: 'Page to capture. http/https only; private and loopback addresses are rejected.' },
-  { name: 'device', type: 'string', required: false, desc: 'desktop · tablet · mobile · custom. Default desktop.' },
+  { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop.' },
   { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
   { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
   { name: 'width', type: 'integer', required: false, desc: `Viewport width, ${LIMITS.minWidth}–${LIMITS.maxWidth}. Setting it switches device to custom.` },
@@ -187,6 +187,29 @@ const endpoints = [
         <p class="xs muted">
           Pass <span class="mono">width</span> and <span class="mono">height</span> for anything else — that switches
           the capture to <span class="mono">device=custom</span> (Pro and above).
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Output frames</h2>
+        <p class="small muted">
+          Named sizes that land on an exact pixel output, so a capture is publishable without cropping. Pass one as
+          <span class="mono"> device</span>. They are named presets rather than custom viewports, so they are available
+          on every plan.
+        </p>
+        <div class="rows">
+          {
+            FRAME_LIST.map((frame) => (
+              <div class="row">
+                <span class="mono" style="font-size: 12px">{frame.id}</span>
+                <span class="row__value mono">{frame.output}</span>
+              </div>
+            ))
+          }
+        </div>
+        <p class="xs muted">
+          Frames are meant for <span class="mono">mode=visible</span>. A full-page or series capture ignores the frame's
+          height, so the result will not keep the aspect ratio.
         </p>
       </section>
 

@@ -1,7 +1,7 @@
 ---
 import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
-import { DEVICE_LIST, FORMATS, MODES } from '../../lib/capture-options';
+import { DEVICE_LIST, FORMATS, FRAME_LIST, MODES } from '../../lib/capture-options';
 import { getUsage } from '../../lib/captures';
 import { getPlan } from '../../lib/plans';
 import { isVerified } from '../../lib/verification';
@@ -71,7 +71,26 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
         }
       </div>
 
-      <p class="xs muted" style="margin-top: 8px">
+      <div style="margin-top: 14px">
+        <div class="row-between" style="margin-bottom: 8px">
+          <div class="field__label">Or a ready-made size</div>
+          <span class="xs muted-2">exact pixels, no cropping</span>
+        </div>
+        <div class="frames" id="frame-chips">
+          {
+            FRAME_LIST.map((frame) => (
+              <label class="chip chip--frame">
+                <input type="radio" name="device" value={frame.id} />
+                <Icon name={frame.icon} size={13} />
+                <span>{frame.label}</span>
+                <span class="chip__size mono">{frame.output}</span>
+              </label>
+            ))
+          }
+        </div>
+      </div>
+
+      <p class="xs muted" style="margin-top: 10px">
         Custom size?
         <button type="button" id="custom-toggle" style="font-weight: 600; color: var(--green)">
           Set width × height

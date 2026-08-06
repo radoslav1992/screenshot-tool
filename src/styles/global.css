@@ -766,6 +766,8 @@ button {
   gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chips::-webkit-scrollbar {
@@ -787,6 +789,58 @@ button {
   border-color: var(--ink);
   color: var(--paper);
   font-weight: 600;
+}
+
+/* Frames wrap rather than scroll: five options should all be visible at once,
+   and a horizontal scroller inside a flex column overflows the page unless the
+   whole ancestor chain is allowed to shrink. */
+.frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Frame chips are radio inputs wearing the chip look. */
+.chip--frame {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.chip--frame input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chip--frame:hover {
+  border-color: var(--ink);
+}
+
+.chip__size {
+  font-size: 10px;
+  color: var(--muted-2);
+}
+
+.chip--frame:has(input:checked) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.chip--frame:has(input:checked) .chip__size {
+  color: var(--lime);
+}
+
+.chip--frame:has(input:focus-visible) {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
 }
 
 /* Toggle (monthly / yearly) */

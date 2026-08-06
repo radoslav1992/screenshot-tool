@@ -71,6 +71,7 @@ export function wirePasswordToggles(): void {
       if (!input) return;
       const showing = input.type === 'text';
       input.type = showing ? 'password' : 'text';
+      button.dataset.showing = String(!showing);
       button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
     });
   }

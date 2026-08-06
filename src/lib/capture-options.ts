@@ -8,7 +8,7 @@ export type CaptureFormat = 'png' | 'jpg' | 'pdf';
 export interface DevicePreset {
   id: Exclude<DeviceId, 'custom'>;
   label: string;
-  icon: string;
+  icon: 'desktop' | 'tablet' | 'mobile';
   width: number;
   height: number;
   scale: number;
@@ -17,34 +17,40 @@ export interface DevicePreset {
 }
 
 export const DEVICES: Record<Exclude<DeviceId, 'custom'>, DevicePreset> = {
-  desktop: { id: 'desktop', label: 'Desktop', icon: '💻', width: 1440, height: 900, scale: 2, mobile: false },
-  tablet: { id: 'tablet', label: 'Tablet', icon: '📱', width: 834, height: 1194, scale: 2, mobile: true },
-  mobile: { id: 'mobile', label: 'Mobile', icon: '📲', width: 390, height: 844, scale: 3, mobile: true },
+  desktop: { id: 'desktop', label: 'Desktop', icon: 'desktop', width: 1440, height: 900, scale: 2, mobile: false },
+  tablet: { id: 'tablet', label: 'Tablet', icon: 'tablet', width: 834, height: 1194, scale: 2, mobile: true },
+  mobile: { id: 'mobile', label: 'Mobile', icon: 'mobile', width: 390, height: 844, scale: 3, mobile: true },
 };
 
 export const DEVICE_LIST = [DEVICES.desktop, DEVICES.tablet, DEVICES.mobile];
 
-export const MODES: Array<{ id: CaptureMode; label: string; hint: string; longHint: string; icon: string }> = [
+export const MODES: Array<{
+  id: CaptureMode;
+  label: string;
+  hint: string;
+  longHint: string;
+  icon: 'mode-visible' | 'mode-fullpage' | 'mode-series';
+}> = [
   {
     id: 'visible',
     label: 'Visible area',
     hint: 'One shot of what fits on screen',
     longHint: 'Just what fits on the screen. Quick and light.',
-    icon: '🖼️',
+    icon: 'mode-visible',
   },
   {
     id: 'fullpage',
     label: 'Full page',
     hint: 'Whole page in one tall image',
     longHint: 'The whole page, top to bottom, in one tall image.',
-    icon: '📜',
+    icon: 'mode-fullpage',
   },
   {
     id: 'series',
     label: 'Scroll series',
     hint: 'Screen-sized shots, top to bottom',
     longHint: 'Screen-sized shots in order — the full page as a sequence.',
-    icon: '🎞️',
+    icon: 'mode-series',
   },
 ];
 
@@ -235,8 +241,8 @@ export function deviceLabel(device: string, width: number, height: number): stri
   return DEVICES[device as Exclude<DeviceId, 'custom'>]?.label ?? device;
 }
 
-export function deviceIcon(device: string): string {
-  return DEVICES[device as Exclude<DeviceId, 'custom'>]?.icon ?? '🖥️';
+export function deviceIcon(device: string): 'desktop' | 'tablet' | 'mobile' {
+  return DEVICES[device as Exclude<DeviceId, 'custom'>]?.icon ?? 'desktop';
 }
 
 export function modeLabel(mode: string): string {

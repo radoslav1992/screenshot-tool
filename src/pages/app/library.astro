@@ -1,5 +1,6 @@
 ---
 import AppShell from '../../layouts/AppShell.astro';
+import Icon from '../../components/Icon.astro';
 import ShotCard from '../../components/ShotCard.astro';
 import { getUsage, listCaptures } from '../../lib/captures';
 
@@ -38,7 +39,7 @@ const filters = [
   {
     captures.length === 0 ? (
       <div class="empty">
-        <div class="empty__icon" aria-hidden="true">🗂️</div>
+        <div class="empty__icon"><Icon name="library" size={34} /></div>
         <p class="h4" style="margin-top: 10px">Nothing here yet</p>
         <p class="small muted" style="margin-top: 6px">
           {filter === 'all' ? 'Your captures will show up here.' : 'No captures in this filter yet.'}

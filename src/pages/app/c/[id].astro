@@ -1,5 +1,6 @@
 ---
 import AppShell from '../../../layouts/AppShell.astro';
+import Icon from '../../../components/Icon.astro';
 import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options';
 import { formatBytes, formatRelative, getCapture, safeParseFiles } from '../../../lib/captures';
 
@@ -51,7 +52,7 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
         <figure class="card" style="overflow: hidden; margin: 0">
           {capture.format === 'pdf' ? (
             <div class="p-20 center">
-              <div style="font-size: 34px">📄</div>
+              <Icon name="file" size={34} class="mx-auto" />
               <p class="small muted" style="margin-top: 8px">{file.name} · {formatBytes(file.bytes)}</p>
             </div>
           ) : (
@@ -64,7 +65,7 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
               {file.name} · {file.width}×{file.height} · {formatBytes(file.bytes)}
             </div>
             <a class="icon-btn" href={fileHref(file.name, true)} aria-label={`Download ${file.name}`} download>
-              ⬇️
+              <Icon name="download" size={16} />
             </a>
           </figcaption>
         </figure>

@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Logo from '../components/Logo.astro';
+import Icon from '../components/Icon.astro';
 import { consumeVerificationToken } from '../lib/verification';
 
 const token = Astro.url.searchParams.get('token') ?? '';
@@ -16,7 +17,7 @@ const signedInAsSameUser = ok && Astro.locals.user?.id === userId;
     </div>
 
     <div class="empty" style="margin: auto">
-      <div class="empty__icon" aria-hidden="true">{ok ? '✅' : '⚠️'}</div>
+      <div class="empty__icon"><Icon name={ok ? 'check' : 'alert'} size={34} /></div>
       <h1 class="h3" style="margin-top: 12px">{ok ? 'Email confirmed' : 'That link did not work'}</h1>
       <p class="small muted" style="margin-top: 8px; max-width: 34ch; margin-inline: auto">
         {

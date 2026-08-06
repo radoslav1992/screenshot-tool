@@ -6,7 +6,20 @@ import { HttpError } from './http';
 export const SESSION_COOKIE = 'sf_session';
 export const SESSION_TTL_DAYS = 30;
 
-const PBKDF2_ITERATIONS = 210_000;
+/**
+ * The Workers runtime refuses PBKDF2 above 100,000 iterations — it throws
+ * `DOMNotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+ * supported`. This is the platform ceiling, so it is also our cost factor.
+ *
+ * Note that the local runtime does not enforce this, so a higher value passes
+ * every local test and only fails once deployed. Do not raise it without
+ * confirming Cloudflare has lifted the cap.
+ *
+ * The count is stored in each hash, so raising it later re-stretches passwords
+ * on next login without invalidating existing ones.
+ */
+const PBKDF2_MAX_ITERATIONS = 100_000;
+const PBKDF2_ITERATIONS = PBKDF2_MAX_ITERATIONS;
 
 export interface SessionUser {
   id: string;
@@ -81,6 +94,14 @@ export async function verifyPassword(password: string, stored: string | null): P
   if (scheme !== 'pbkdf2' || !iterationsRaw || !saltRaw || !hashRaw) return false;
   const iterations = Number.parseInt(iterationsRaw, 10);
   if (!Number.isFinite(iterations) || iterations < 1000) return false;
+  if (iterations > PBKDF2_MAX_ITERATIONS) {
+    // Written by a build that used a cost factor this runtime cannot replay.
+    // Fail closed rather than throwing a 500 out of the login route.
+    console.error(
+      `[auth] stored hash uses ${iterations} PBKDF2 iterations, above the runtime maximum of ${PBKDF2_MAX_ITERATIONS}; the password cannot be verified and must be reset`,
+    );
+    return false;
+  }
   const derived = await pbkdf2(password, fromBase64(saltRaw), iterations);
   return timingSafeEqual(toHex(derived), toHex(fromBase64(hashRaw)));
 }

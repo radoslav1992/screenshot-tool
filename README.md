@@ -173,6 +173,22 @@ matter are the ones protecting the render pool and storage rather than the month
 - **Burst limiting.** The monthly quota bounds the total; a per-user hourly limit bounds the burst
   (free 10/hour, Pro 120, Business 600), so one account cannot spend its allowance at once and
   monopolise the account's concurrent browsers — the genuinely scarce resource.
+- **Browser sessions.** Every capture tries to connect to an already-running idle session before
+  launching one, which is free — the session exists either way. Keeping sessions *warm* after a
+  capture is not free and is off by default (`BROWSER_KEEP_ALIVE_MS=0`):
+
+  | | |
+  | --- | --- |
+  | Launch skipped by reuse | ~3s |
+  | Idle session billed at $0.09/browser-hour | $0.000025/s |
+  | 60s idle session | $0.0015 — about 5× a whole full-page capture |
+
+  So a warm session only pays for itself if the next capture arrives sooner than a launch takes —
+  roughly **one capture every 3 seconds sustained**, or ~29,000/day. Below that it costs more than
+  it saves. Set `BROWSER_KEEP_ALIVE_MS` (max 600000) once volume justifies it; the win at low volume
+  is latency, not cost. If sessions are held open but not actually reused they accumulate against
+  the concurrency cap, which surfaces as a `browser_unavailable` error naming the setting.
+
 - **Email verification.** Optional and off by default. Set `REQUIRE_EMAIL_VERIFICATION=1` *and*
   configure a mailer (`EMAIL_FROM` plus the `RESEND_API_KEY` secret) to require a confirmed address
   before capturing. The gate only engages when mail can actually be sent, so it can never lock

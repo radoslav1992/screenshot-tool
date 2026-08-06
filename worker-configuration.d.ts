@@ -11,6 +11,13 @@ declare namespace Cloudflare {
     PUBLIC_SITE_URL: string;
     CAPTURE_HOST_DENYLIST?: string;
 
+    /**
+     * Milliseconds to keep an idle browser session alive for reuse. 0 (default)
+     * closes it immediately. Idle sessions are billed, so raise this only under
+     * sustained load — see the README.
+     */
+    BROWSER_KEEP_ALIVE_MS?: string;
+
     /** "1" gates capturing on a confirmed email — only when a mailer is configured. */
     REQUIRE_EMAIL_VERIFICATION?: string;
     /** Sender address for confirmation emails. */

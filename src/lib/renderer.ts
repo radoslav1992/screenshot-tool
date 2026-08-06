@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { HttpError } from './http';
 import { LIMITS, type CaptureOptions } from './capture-options';
+import { acquireBrowser, releaseBrowser } from './browser-pool';
 
 export interface RenderedFile {
   data: Uint8Array;
@@ -116,10 +117,31 @@ function asRenderError(error: unknown): HttpError {
 
 async function renderWithBinding(options: CaptureOptions): Promise<RenderedFile[]> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
-  const browser = await puppeteer.launch(env.BROWSER as never);
+  const lease = await acquireBrowser(puppeteer);
+  let succeeded = false;
+  let page: any;
 
   try {
-    const page = await browser.newPage();
+    page = await lease.browser.newPage();
+    const files = await capturePage(page, options);
+    succeeded = true;
+    return files;
+  } finally {
+    // Always close the page. A reused session outlives the request, so a page
+    // left open would leak into the next capture.
+    if (page) {
+      try {
+        await page.close();
+      } catch {
+        /* the session may already be gone */
+      }
+    }
+    await releaseBrowser(lease, succeeded);
+  }
+}
+
+async function capturePage(page: any, options: CaptureOptions): Promise<RenderedFile[]> {
+  {
     await page.setViewport({
       width: options.width,
       height: options.height,
@@ -204,12 +226,6 @@ async function renderWithBinding(options: CaptureOptions): Promise<RenderedFile[
     }
 
     return files;
-  } finally {
-    try {
-      await browser.close();
-    } catch {
-      /* session teardown is best-effort */
-    }
   }
 }
 

@@ -1,10 +1,18 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // `main` and `assets` are supplied by @astrojs/cloudflare at build time —
-  // do not set them here.
+  // `assets` is supplied by @astrojs/cloudflare at build time — do not set it
+  // here. `main` points at our own entrypoint, which re-exports the adapter's
+  // fetch handler and adds the `scheduled` handler the cron trigger needs.
   "name": "screenify",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat"],
+
+  // Nightly retention sweep: deletes captures past their plan's history window
+  // and purges spent verification tokens and expired sessions.
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
 
   "observability": {
     "enabled": true
@@ -45,10 +53,17 @@
     "PUBLIC_SITE_URL": "http://localhost:4321",
     // Comma-separated hostnames that may never be captured (SSRF hardening
     // beyond the built-in private-range blocklist). Optional.
-    "CAPTURE_HOST_DENYLIST": ""
+    "CAPTURE_HOST_DENYLIST": "",
+    // Require a confirmed email before capturing. Only takes effect once a
+    // mailer is configured, so it can never lock accounts out of a deployment
+    // that cannot send mail. See EMAIL_FROM / RESEND_API_KEY below.
+    "REQUIRE_EMAIL_VERIFICATION": "0",
+    // Sender address for confirmation emails, e.g. "Screenify <no-reply@yourdomain>".
+    "EMAIL_FROM": ""
   }
 
   // Secrets (set with `wrangler secret put <NAME>`), all optional:
   //   CF_ACCOUNT_ID   - enables the REST Browser Rendering fallback
   //   CF_API_TOKEN    - token with "Browser Rendering: Edit" for that fallback
+  //   RESEND_API_KEY  - enables sending confirmation emails via Resend
 }

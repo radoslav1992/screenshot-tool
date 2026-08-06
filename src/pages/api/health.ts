@@ -10,7 +10,7 @@ interface CheckResult {
   detail?: string;
 }
 
-const TABLES = ['users', 'sessions', 'api_keys', 'captures', 'usage_counters'];
+const TABLES = ['users', 'sessions', 'api_keys', 'captures', 'usage_counters', 'email_verifications'];
 
 async function checkDatabase(): Promise<CheckResult & { tables?: string[]; missing?: string[] }> {
   if (!env.DB) return { ok: false, detail: 'No DB binding on this deployment.' };

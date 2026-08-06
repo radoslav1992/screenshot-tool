@@ -23,13 +23,13 @@ export const PLANS: Record<PlanId, Plan> = {
     priceMonthly: 0,
     priceYearly: 0,
     tagline: 'For trying things out',
-    quota: 100,
+    quota: 200,
     api: false,
     formats: ['png', 'jpg'],
     customViewport: false,
     historyDays: 7,
     features: [
-      { text: '100 screenshots / month', included: true },
+      { text: '200 screenshots / month', included: true },
       { text: 'All devices & capture modes', included: true },
       { text: 'PNG & JPG', included: true },
       { text: 'API access', included: false },
@@ -88,3 +88,21 @@ export const API_RATE_LIMIT: Record<PlanId, number> = {
   pro: 60,
   business: 300,
 };
+
+/**
+ * Captures per hour allowed from the app (session-authenticated), by plan.
+ *
+ * The monthly quota alone does not protect the render pool: a single account
+ * can spend its whole allowance in one burst and starve paying customers of the
+ * account's concurrent browsers. This bounds the burst rather than the total.
+ */
+export const APP_RATE_LIMIT: Record<PlanId, number> = {
+  free: 10,
+  pro: 120,
+  business: 600,
+};
+
+/** How long a capture's files are kept, by plan. */
+export function retentionDays(id: string | null | undefined): number {
+  return getPlan(id).historyDays;
+}

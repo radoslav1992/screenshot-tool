@@ -3,6 +3,9 @@ import { parseCaptureOptions } from '../../../lib/capture-options';
 import { createCaptureRow, listCaptures, runCapture, toDTO } from '../../../lib/captures';
 import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { assertVerified } from '../../../lib/verification';
+import { APP_RATE_LIMIT, getPlan } from '../../../lib/plans';
+import { checkRateLimit } from '../../../lib/rate-limit';
 
 export const prerender = false;
 
@@ -25,6 +28,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   try {
     assertSameOrigin(request);
+    await assertVerified(user);
+
+    // The monthly quota bounds the total; this bounds the burst, so one account
+    // cannot spend its allowance at once and monopolise the render pool.
+    const limit = APP_RATE_LIMIT[user.plan] ?? APP_RATE_LIMIT.free;
+    const rate = await checkRateLimit(`app:${user.id}`, limit, 3600);
+    if (!rate.ok) {
+      const minutes = Math.max(1, Math.ceil(rate.resetSeconds / 60));
+      throw new HttpError(
+        429,
+        'rate_limited',
+        `You can start ${limit} captures per hour on the ${getPlan(user.plan).name} plan. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      );
+    }
+
     const options = parseCaptureOptions(await readBody(request));
     const row = await createCaptureRow(user, options, 'app');
     const finished = await runCapture(row, options);

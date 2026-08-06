@@ -11,9 +11,16 @@ declare namespace Cloudflare {
     PUBLIC_SITE_URL: string;
     CAPTURE_HOST_DENYLIST?: string;
 
+    /** "1" gates capturing on a confirmed email — only when a mailer is configured. */
+    REQUIRE_EMAIL_VERIFICATION?: string;
+    /** Sender address for confirmation emails. */
+    EMAIL_FROM?: string;
+
     /** Optional: enables the REST Browser Rendering fallback. */
     CF_ACCOUNT_ID?: string;
     CF_API_TOKEN?: string;
+    /** Optional: enables sending confirmation emails via Resend. */
+    RESEND_API_KEY?: string;
   }
 }
 

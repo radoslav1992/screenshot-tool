@@ -4,24 +4,39 @@
 -- the D1 console (Cloudflare dashboard → Storage & Databases → D1 → screenify-data
 -- → Console) and run it as one statement batch.
 --
--- It is 0001_init.sql plus the bookkeeping row wrangler keeps in `d1_migrations`,
--- so a later `npm run db:migrate` sees 0001 as already applied and moves on to
--- any newer migration instead of re-running this one.
+-- It is the full migration history (0001 and 0002) plus the bookkeeping rows
+-- wrangler keeps in `d1_migrations`, so a later `npm run db:migrate` sees them
+-- as already applied and moves on to any newer migration.
+--
+-- For a database that already has the 0001 schema, run db/0002-upgrade.sql
+-- instead — this file creates tables but will not add columns to existing ones.
 --
 -- Safe to re-run: every statement uses IF NOT EXISTS and the final INSERT is
 -- OR IGNORE.
 
 CREATE TABLE IF NOT EXISTS users (
-  id            TEXT PRIMARY KEY,
-  email         TEXT NOT NULL,
-  email_lower   TEXT NOT NULL UNIQUE,
-  name          TEXT NOT NULL DEFAULT '',
-  password_hash TEXT,                                  -- NULL for OAuth-only accounts
-  plan          TEXT NOT NULL DEFAULT 'free',          -- free | pro | business
-  period_start  TEXT NOT NULL,                         -- ISO date the current quota window opened
-  created_at    TEXT NOT NULL,
-  updated_at    TEXT NOT NULL
+  id                TEXT PRIMARY KEY,
+  email             TEXT NOT NULL,
+  email_lower       TEXT NOT NULL UNIQUE,
+  name              TEXT NOT NULL DEFAULT '',
+  password_hash     TEXT,                              -- NULL for OAuth-only accounts
+  plan              TEXT NOT NULL DEFAULT 'free',      -- free | pro | business
+  period_start      TEXT NOT NULL,                     -- ISO date the current quota window opened
+  email_verified_at TEXT,                              -- NULL until the address is confirmed
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS email_verifications (
+  id         TEXT PRIMARY KEY,                          -- sha256 of the emailed token
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications(expires_at);
 
 CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,                          -- sha256 of the cookie token
@@ -70,6 +85,7 @@ CREATE TABLE IF NOT EXISTS captures (
 );
 CREATE INDEX IF NOT EXISTS idx_captures_user_created ON captures(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_captures_user_mode ON captures(user_id, mode);
+CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at);
 
 CREATE TABLE IF NOT EXISTS usage_counters (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -89,3 +105,4 @@ CREATE TABLE IF NOT EXISTS d1_migrations (
 );
 
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0001_init.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0002_verification_and_retention.sql');

@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { parseCaptureOptions } from '../../../lib/capture-options';
 import { createCaptureRow, listCaptures, runCapture, toDTO } from '../../../lib/captures';
 import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
+import { toHttpError } from '../../../lib/errors';
 
 export const prerender = false;
 
@@ -29,8 +30,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const finished = await runCapture(row, options);
     return json(toDTO(finished, new URL(request.url).origin), { status: finished.status === 'done' ? 201 : 200 });
   } catch (error) {
-    if (error instanceof HttpError) return error.toResponse();
-    console.error('capture failed', error);
-    return new HttpError(500, 'server_error', 'The capture could not be started.').toResponse();
+    return toHttpError(error, 'captures.create', 'The capture could not be started.').toResponse();
   }
 };

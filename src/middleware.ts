@@ -12,7 +12,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   // The public API authenticates with bearer keys, not cookies.
   const isPublicApi = path.startsWith('/v1/');
-  context.locals.user = isPublicApi ? null : await resolveSession(context.cookies.get(SESSION_COOKIE)?.value);
+  try {
+    context.locals.user = isPublicApi
+      ? null
+      : await resolveSession(context.cookies.get(SESSION_COOKIE)?.value);
+  } catch (error) {
+    // A database that is unreachable or missing its schema should not turn every
+    // page into a 500 — treat the visitor as signed out and let the route decide.
+    console.error('[middleware] session lookup failed', error);
+    context.locals.user = null;
+  }
 
   if (!context.locals.user && PROTECTED_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     const target = `${path}${context.url.search}`;

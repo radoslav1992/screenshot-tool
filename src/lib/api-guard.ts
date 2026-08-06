@@ -1,5 +1,6 @@
 import { authenticateApiKey, touchApiKey, type ApiKeyAuth } from './auth';
 import { CORS_HEADERS, HttpError } from './http';
+import { toHttpError } from './errors';
 import { API_RATE_LIMIT, getPlan } from './plans';
 import { checkRateLimit, rateLimitHeaders } from './rate-limit';
 
@@ -41,8 +42,7 @@ export function preflight(): Response {
 
 /** Turns any thrown value into a JSON API error response with CORS headers. */
 export function apiErrorResponse(error: unknown, headers: Record<string, string> = CORS_HEADERS): Response {
-  const httpError =
-    error instanceof HttpError ? error : new HttpError(500, 'server_error', 'Something went wrong on our side.');
+  const httpError = toHttpError(error, 'api', 'Something went wrong on our side.');
   const response = httpError.toResponse();
   for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
   return response;

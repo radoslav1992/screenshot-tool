@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../lib/http';
+import { toHttpError } from '../../lib/errors';
 
 export const prerender = false;
 
@@ -22,7 +23,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     return json({ id: user.id, name, email: user.email });
   } catch (error) {
-    if (error instanceof HttpError) return error.toResponse();
-    return new HttpError(500, 'server_error', 'Could not update your profile.').toResponse();
+    return toHttpError(error, 'account.update', 'Could not update your profile.').toResponse();
   }
 };

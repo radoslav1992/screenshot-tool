@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { issueApiKey } from '../../../lib/auth';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
+import { toHttpError } from '../../../lib/errors';
 
 export const prerender = false;
 
@@ -55,8 +56,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
       { status: 201 },
     );
   } catch (error) {
-    if (error instanceof HttpError) return error.toResponse();
-    console.error('key creation failed', error);
-    return new HttpError(500, 'server_error', 'Could not create the key.').toResponse();
+    return toHttpError(error, 'keys.create', 'Could not create the key.').toResponse();
   }
 };

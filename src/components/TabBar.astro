@@ -1,4 +1,6 @@
 ---
+import Icon from './Icon.astro';
+
 interface Props {
   current: 'capture' | 'library' | 'api' | 'account';
 }
@@ -6,10 +8,10 @@ interface Props {
 const { current } = Astro.props;
 
 const tabs = [
-  { id: 'capture', href: '/app', icon: '📸', label: 'Capture' },
-  { id: 'library', href: '/app/library', icon: '🗂️', label: 'Library' },
-  { id: 'api', href: '/app/api', icon: '🔑', label: 'API' },
-  { id: 'account', href: '/app/account', icon: '👤', label: 'Account' },
+  { id: 'capture', href: '/app', icon: 'camera', label: 'Capture' },
+  { id: 'library', href: '/app/library', icon: 'library', label: 'Library' },
+  { id: 'api', href: '/app/api', icon: 'key', label: 'API' },
+  { id: 'account', href: '/app/account', icon: 'user', label: 'Account' },
 ] as const;
 ---
 
@@ -21,8 +23,8 @@ const tabs = [
         href={tab.href}
         aria-current={current === tab.id ? 'page' : undefined}
       >
-        <div class="tabbar__icon" aria-hidden="true">{tab.icon}</div>
-        <div class="tabbar__label">{tab.label}</div>
+        <span class="tabbar__icon"><Icon name={tab.icon} size={22} /></span>
+        <span class="tabbar__label">{tab.label}</span>
       </a>
     ))
   }

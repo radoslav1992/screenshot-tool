@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Logo from '../components/Logo.astro';
+import Icon from '../components/Icon.astro';
 
 const next = Astro.url.searchParams.get('next') ?? '/app';
 const initialError = Astro.url.searchParams.get('error') ?? '';
@@ -18,10 +19,10 @@ const initialError = Astro.url.searchParams.get('error') ?? '';
 
       <div class="stack gap-12" style="margin-top: 28px">
         <button type="button" class="btn btn--white" data-oauth="Google">
-          <span aria-hidden="true">🇬</span> Continue with Google
+          <Icon name="google" size={16} /> Continue with Google
         </button>
         <button type="button" class="btn btn--white" data-oauth="GitHub">
-          <span aria-hidden="true">⌘</span> Continue with GitHub
+          <Icon name="github" size={16} /> Continue with GitHub
         </button>
       </div>
 
@@ -58,8 +59,15 @@ const initialError = Astro.url.searchParams.get('error') ?? '';
               autocomplete="current-password"
               placeholder="••••••••••"
             />
-            <button type="button" class="input-affix__button" data-toggle-password="#password" aria-label="Show password">
-              👁
+            <button
+              type="button"
+              class="input-affix__button"
+              data-toggle-password="#password"
+              data-showing="false"
+              aria-label="Show password"
+            >
+              <Icon name="eye" size={16} class="pw-on" />
+              <Icon name="eye-off" size={16} class="pw-off" />
             </button>
           </div>
         </div>

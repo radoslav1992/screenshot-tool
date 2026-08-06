@@ -39,7 +39,7 @@ document.addEventListener('click', async (event) => {
 
   const original = target.textContent;
   const ok = await copyText(value);
-  target.textContent = ok ? 'Copied' : 'Press ⌘C';
+  target.textContent = ok ? 'Copied' : 'Copy failed';
   window.setTimeout(() => {
     target.textContent = original;
   }, 1600);

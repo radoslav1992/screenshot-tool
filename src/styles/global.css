@@ -91,6 +91,28 @@ video {
   display: none !important;
 }
 
+/* Icons sit on the text baseline and take the colour of their context. */
+svg {
+  flex: none;
+}
+
+.pill svg,
+.btn svg,
+.row__value svg,
+.shot__sub svg {
+  vertical-align: -0.15em;
+}
+
+/* Password reveal: both glyphs render, CSS picks the one that matches state. */
+[data-toggle-password] .pw-off,
+[data-toggle-password][data-showing='true'] .pw-on {
+  display: none;
+}
+
+[data-toggle-password][data-showing='true'] .pw-off {
+  display: block;
+}
+
 a {
   color: var(--green);
   text-decoration: none;
@@ -334,6 +356,7 @@ button {
 .icon-btn {
   width: 34px;
   height: 34px;
+  color: var(--ink-2);
   border: 1px solid var(--line);
   border-radius: 10px;
   display: grid;
@@ -509,8 +532,9 @@ button {
 }
 
 .tabbar__icon {
-  font-size: 18px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  height: 22px;
 }
 
 .tabbar__label {
@@ -613,8 +637,9 @@ button {
 }
 
 .device__icon {
-  font-size: 18px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  height: 20px;
 }
 
 .device__name {
@@ -700,7 +725,13 @@ button {
 }
 
 .mode__icon {
-  font-size: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.mode:has(input:checked) .mode__icon {
+  color: var(--ink);
 }
 
 .mode input {
@@ -1166,12 +1197,19 @@ button {
   gap: 8px;
 }
 
+.urlbar__icon {
+  display: grid;
+  place-items: center;
+  padding-left: 10px;
+  color: var(--dim-2);
+}
+
 .urlbar input {
   flex: 1;
   min-width: 0;
   background: none;
   border: 0;
-  padding: 0 10px;
+  padding: 0 10px 0 8px;
   color: var(--paper);
   font: 400 14px var(--mono);
 }
@@ -1210,7 +1248,7 @@ button {
   background: var(--lime-tint);
   display: grid;
   place-items: center;
-  font-size: 18px;
+  color: var(--green-deep);
   flex: none;
 }
 
@@ -1299,7 +1337,9 @@ button {
 }
 
 .empty__icon {
-  font-size: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--muted-2);
 }
 
 .spinner {

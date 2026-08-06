@@ -1,5 +1,6 @@
 ---
 import AppShell from '../../layouts/AppShell.astro';
+import Icon from '../../components/Icon.astro';
 import { DEVICE_LIST, FORMATS, MODES } from '../../lib/capture-options';
 import { getUsage } from '../../lib/captures';
 import { getPlan } from '../../lib/plans';
@@ -62,7 +63,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
           DEVICE_LIST.map((device, index) => (
             <label class="device">
               <input type="radio" name="device" value={device.id} checked={index === 0} />
-              <div class="device__icon" aria-hidden="true">{device.icon}</div>
+              <div class="device__icon"><Icon name={device.icon} size={20} /></div>
               <div class="device__name">{device.label}</div>
               <div class="device__size">{device.width}×{device.height}</div>
             </label>
@@ -108,7 +109,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
                 <span class="mode__name" style="display: block">{mode.label}</span>
                 <span class="mode__hint">{mode.hint}</span>
               </span>
-              <span class="mode__icon" aria-hidden="true">{mode.icon}</span>
+              <span class="mode__icon"><Icon name={mode.icon} size={20} /></span>
             </label>
           ))
         }
@@ -149,7 +150,9 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
       </div>
     </details>
 
-    <button type="submit" class="btn btn--ink" id="capture-submit">📸 Capture screenshot</button>
+    <button type="submit" class="btn btn--ink" id="capture-submit">
+      <Icon name="camera" size={18} /> Capture screenshot
+    </button>
 
     <p class="xs center" style="color: var(--muted-2); margin-top: -10px" id="quota-line">
       {

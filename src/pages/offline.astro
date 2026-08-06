@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
 
 export const prerender = true;
 ---
@@ -7,7 +8,7 @@ export const prerender = true;
 <Base title="Offline">
   <div class="shell">
     <div class="empty" style="margin: auto">
-      <div class="empty__icon" aria-hidden="true">📡</div>
+      <div class="empty__icon"><Icon name="offline" size={34} /></div>
       <h1 class="h3" style="margin-top: 12px">You are offline</h1>
       <p class="small muted" style="margin-top: 8px; max-width: 30ch; margin-inline: auto">
         Screenify needs a connection to render captures. Your library will be here when you are back.

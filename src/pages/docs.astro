@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
-import Logo from '../components/Logo.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 import CodeBlock from '../components/CodeBlock.astro';
 import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
 import { API_RATE_LIMIT, PLANS } from '../lib/plans';
@@ -103,13 +104,10 @@ const endpoints = [
 ---
 
 <Base title="API reference">
-  <div class="shell shell--wide">
-    <div class="row-between" style="padding: 18px 20px; border-bottom: 1px solid var(--line-2)">
-      <Logo />
-      <a class="label" href={user ? '/app/api' : '/signup'}>{user ? 'Your keys' : 'Get a key'}</a>
-    </div>
+  <div class="page">
+    <SiteHeader user={user} />
 
-    <div class="p-20 stack gap-20">
+    <div class="wrap prose-wrap stack gap-20" style="padding-block: 48px 64px">
       <header>
         <h1 class="h2">API reference</h1>
         <p class="small muted" style="margin-top: 8px">
@@ -281,5 +279,7 @@ const endpoints = [
         <a class="btn btn--outline" href="/pricing">See pricing</a>
       </div>
     </div>
+
+    <SiteFooter />
   </div>
 </Base>

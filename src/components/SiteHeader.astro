@@ -1,0 +1,69 @@
+---
+import Logo from './Logo.astro';
+import Icon from './Icon.astro';
+
+interface Props {
+  /** The hero sits on ink, so the header inverts over it. */
+  dark?: boolean;
+  user?: { id: string } | null;
+}
+
+const { dark = false, user = null } = Astro.props;
+---
+
+<header class={dark ? 'siteheader siteheader--dark' : 'siteheader'}>
+  <div class="wrap siteheader__inner">
+    <Logo variant={dark ? 'lime' : 'ink'} wordColor={dark ? 'var(--paper)' : undefined} />
+
+    <nav class="siteheader__nav">
+      <a href="/#modes">How it works</a>
+      <a href="/#sizes">Sizes</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/docs">API</a>
+    </nav>
+
+    <div class="siteheader__actions">
+      {
+        user ? (
+          <a class="btn btn--sm btn--pill-lime" href="/app">Open app</a>
+        ) : (
+          <>
+            <a class="siteheader__login" href="/login">Log in</a>
+            <a class="btn btn--sm btn--pill-lime" href="/signup">Start free</a>
+          </>
+        )
+      }
+    </div>
+
+    <button
+      type="button"
+      class="siteheader__toggle"
+      id="menu-toggle"
+      aria-expanded="false"
+      aria-controls="menu"
+      aria-label="Open menu"
+    >
+      <Icon name="menu" size={18} />
+    </button>
+  </div>
+
+  <nav class="siteheader__sheet" id="menu" hidden>
+    <div class="wrap stack">
+      <a href="/#modes">How it works</a>
+      <a href="/#sizes">Sizes</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/docs">API docs</a>
+      {user ? <a href="/app">Open app</a> : <><a href="/login">Log in</a><a href="/signup">Create account</a></>}
+    </div>
+  </nav>
+</header>
+
+<script>
+  const toggle = document.getElementById('menu-toggle');
+  const menu = document.getElementById('menu');
+  toggle?.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!open));
+    if (menu) menu.hidden = open;
+  });
+</script>

@@ -1,0 +1,43 @@
+---
+import Logo from './Logo.astro';
+
+const year = new Date().getFullYear();
+---
+
+<footer class="sitefooter">
+  <div class="wrap">
+    <div class="sitefooter__grid">
+      <div class="sitefooter__brand">
+        <Logo variant="lime" wordColor="var(--paper)" />
+        <p class="small" style="color: var(--dim); margin-top: 12px; max-width: 30ch">
+          Clean, exact screenshots of any page — from any device, or through the API.
+        </p>
+      </div>
+
+      <div>
+        <div class="sitefooter__title">Product</div>
+        <a href="/#modes">Capture modes</a>
+        <a href="/#sizes">Ready-made sizes</a>
+        <a href="/pricing">Pricing</a>
+      </div>
+
+      <div>
+        <div class="sitefooter__title">Developers</div>
+        <a href="/docs">API reference</a>
+        <a href="/docs#authentication">Authentication</a>
+        <a href="/app/api">Your keys</a>
+      </div>
+
+      <div>
+        <div class="sitefooter__title">Legal</div>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+    </div>
+
+    <div class="sitefooter__base">
+      <span>© {year} Screenify</span>
+      <span>Built on Cloudflare</span>
+    </div>
+  </div>
+</footer>

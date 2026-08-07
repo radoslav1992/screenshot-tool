@@ -2,6 +2,8 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { json } from '../../lib/http';
 import { hashPassword } from '../../lib/auth';
+import { billingEnabled, priceIdFor, webhookConfigured } from '../../lib/billing';
+import { PAID_PLANS } from '../../lib/plans';
 
 export const prerender = false;
 
@@ -10,7 +12,15 @@ interface CheckResult {
   detail?: string;
 }
 
-const TABLES = ['users', 'sessions', 'api_keys', 'captures', 'usage_counters', 'email_verifications'];
+const TABLES = [
+  'users',
+  'sessions',
+  'api_keys',
+  'captures',
+  'usage_counters',
+  'email_verifications',
+  'billing_events',
+];
 
 async function checkDatabase(): Promise<CheckResult & { tables?: string[]; missing?: string[] }> {
   if (!env.DB) return { ok: false, detail: 'No DB binding on this deployment.' };
@@ -26,7 +36,8 @@ async function checkDatabase(): Promise<CheckResult & { tables?: string[]; missi
     return missing.length
       ? {
           ok: false,
-          detail: 'Schema not applied. Run `npm run db:migrate`, or paste db/apply-manually.sql into the D1 console.',
+          detail:
+            'Schema not applied or out of date. Run `npm run db:migrate`, or paste db/apply-manually.sql (fresh database) or the matching db/000N-upgrade.sql into the D1 console.',
           tables: present,
           missing,
         }
@@ -82,6 +93,40 @@ function checkRenderer(): CheckResult & { engine: string } {
 }
 
 /**
+ * Billing is optional, so this never fails the overall check — it reports which
+ * pieces are configured. It only names which price ids are present, never their
+ * values, and never touches the Stripe key.
+ */
+function checkBilling(): CheckResult & { enabled: boolean; webhook: boolean; purchasable: string[] } {
+  const enabled = billingEnabled();
+  const purchasable = PAID_PLANS.filter(
+    (plan) => priceIdFor(plan, 'monthly') || priceIdFor(plan, 'yearly'),
+  );
+
+  if (!enabled) {
+    return {
+      ok: true,
+      enabled: false,
+      webhook: false,
+      purchasable: [],
+      detail: 'Payments are off. Set STRIPE_SECRET_KEY to turn checkout on.',
+    };
+  }
+
+  const missing: string[] = [];
+  if (!webhookConfigured()) missing.push('STRIPE_WEBHOOK_SECRET is not set, so plan changes will never apply');
+  if (purchasable.length === 0) missing.push('no STRIPE_PRICE_* ids are set, so nothing can be bought');
+
+  return {
+    ok: true,
+    enabled: true,
+    webhook: webhookConfigured(),
+    purchasable,
+    ...(missing.length ? { detail: missing.join('; ') } : {}),
+  };
+}
+
+/**
  * GET /api/health — reports whether each Cloudflare binding is wired up and
  * whether the D1 schema has been applied. Returns only booleans and setup
  * hints: no data, no credentials.
@@ -94,10 +139,11 @@ export const GET: APIRoute = async () => {
     checkCrypto(),
   ]);
   const renderer = checkRenderer();
+  const billing = checkBilling();
   const ok = database.ok && storage.ok && kv.ok && cryptoCheck.ok && renderer.ok;
 
   return json(
-    { ok, checks: { database, storage, kv, crypto: cryptoCheck, renderer } },
+    { ok, checks: { database, storage, kv, crypto: cryptoCheck, renderer, billing } },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
   );
 };

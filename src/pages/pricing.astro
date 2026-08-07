@@ -4,9 +4,20 @@ import Icon from '../components/Icon.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import { PLANS, PLAN_ORDER } from '../lib/plans';
+import { billingEnabled, getBillingRow, hasActiveSubscription, planPurchasable } from '../lib/billing';
 
 const user = Astro.locals.user;
 const plans = PLAN_ORDER.map((id) => PLANS[id]);
+
+const checkout = billingEnabled();
+const purchasable = new Set(plans.filter((plan) => planPurchasable(plan.id)).map((plan) => plan.id));
+const cancelled = Astro.url.searchParams.get('checkout') === 'cancelled';
+
+// Someone Stripe is already billing switches plan in the portal — a second
+// Checkout would start a second subscription and charge for both. The billing
+// columns only exist after migration 0003, so a stale schema falls back to links.
+const subscribed =
+  checkout && user ? hasActiveSubscription(await getBillingRow(user.id).catch(() => null)) : false;
 ---
 
 <Base title="Pricing" description="Start free with 200 screenshots a month. Upgrade when you need more.">
@@ -24,6 +35,14 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
             <button type="button" data-period="yearly" aria-pressed="false">Yearly −20%</button>
           </div>
         </div>
+
+        {
+          cancelled && (
+            <div class="notice notice--info" style="max-width: 640px; margin: 0 auto 22px">
+              Checkout was cancelled — nothing was charged. Pick a plan whenever you are ready.
+            </div>
+          )
+        }
 
         <div class="plan-grid">
           {
@@ -54,13 +73,36 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
                   ))}
                 </ul>
 
-                <a
-                  class={plan.id === 'pro' ? 'btn btn--lime' : 'btn btn--outline-ink'}
-                  href={user ? '/app/account' : `/signup?plan=${plan.id}`}
-                  style="margin-top: 20px"
-                >
-                  {user && user.plan === plan.id ? 'Current plan' : plan.cta}
-                </a>
+                {
+                  user && user.plan === plan.id ? (
+                    <div class="plan__cta">
+                      <span class="btn btn--outline-ink is-current" aria-disabled="true">Current plan</span>
+                    </div>
+                  ) : subscribed && plan.id !== 'free' ? (
+                    <form class="plan__cta" method="post" action="/api/billing/portal">
+                      <button type="submit" class={plan.id === 'pro' ? 'btn btn--lime' : 'btn btn--outline-ink'}>
+                        Switch to {plan.name}
+                      </button>
+                    </form>
+                  ) : user && purchasable.has(plan.id) ? (
+                    <form class="plan__cta" method="post" action="/api/billing/checkout">
+                      <input type="hidden" name="plan" value={plan.id} />
+                      <input type="hidden" name="interval" value="monthly" data-interval />
+                      <button type="submit" class={plan.id === 'pro' ? 'btn btn--lime' : 'btn btn--outline-ink'}>
+                        {plan.cta}
+                      </button>
+                    </form>
+                  ) : (
+                    <div class="plan__cta">
+                      <a
+                        class={plan.id === 'pro' ? 'btn btn--lime' : 'btn btn--outline-ink'}
+                        href={user ? '/app/account' : `/signup?plan=${plan.id}`}
+                      >
+                        {plan.cta}
+                      </a>
+                    </div>
+                  )
+                }
               </section>
             ))
           }
@@ -70,11 +112,23 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
           Need more? <a href="mailto:hello@screenify.app" style="font-weight: 600">Talk to us</a> about custom volume.
         </p>
 
-        <div class="notice notice--info" style="max-width: 640px; margin: 22px auto 0">
-          Checkout is not connected in this deployment — plans are switched manually. Wire up your payment provider in
-          {' '}<span class="mono" style="font-size: 12px">src/lib/plans.ts</span>{' '}and the account routes when you are
-          ready.
-        </div>
+        {
+          checkout && (
+            <p class="xs muted-2 center" style="margin-top: 10px">
+              Secure checkout by Stripe. Cancel any time — you keep the plan until the period you paid for ends.
+            </p>
+          )
+        }
+
+        {
+          !checkout && (
+            <div class="notice notice--info" style="max-width: 640px; margin: 22px auto 0">
+              Checkout is not connected in this deployment — plans are switched manually. Set the
+              {' '}<span class="mono" style="font-size: 12px">STRIPE_SECRET_KEY</span>{' '}and
+              {' '}<span class="mono" style="font-size: 12px">STRIPE_PRICE_*</span>{' '}secrets to turn it on.
+            </div>
+          )
+        }
       </div>
     </section>
 
@@ -86,6 +140,7 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
   const buttons = document.querySelectorAll<HTMLButtonElement>('[data-period]');
   const prices = document.querySelectorAll<HTMLElement>('[data-price-for]');
   const pers = document.querySelectorAll<HTMLElement>('[data-per]');
+  const intervals = document.querySelectorAll<HTMLInputElement>('[data-interval]');
 
   for (const button of buttons) {
     button.addEventListener('click', () => {
@@ -98,6 +153,8 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
         price.textContent = yearly ? `$${annual}` : `$${monthly}`;
       }
       for (const per of pers) per.textContent = yearly ? '/yr' : '/mo';
+      // Checkout has to buy the price the visitor is looking at.
+      for (const input of intervals) input.value = yearly ? 'yearly' : 'monthly';
     });
   }
 </script>

@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { HttpError } from './http';
 import { LIMITS, type CaptureOptions } from './capture-options';
 import { acquireBrowser, releaseBrowser } from './browser-pool';
+import { applyWatermark, watermarkScript } from './watermark';
 
 export interface RenderedFile {
   data: Uint8Array;
@@ -176,6 +177,11 @@ async function capturePage(page: any, options: CaptureOptions): Promise<Rendered
     if (options.mode !== 'visible') await autoScroll(page, options.height);
     if (options.delayMs > 0) await sleep(options.delayMs);
 
+    // After the page has settled, so nothing the site renders on load can paint
+    // over the mark, and after auto-scroll, so the document height it anchors to
+    // is the final one.
+    if (options.watermark && options.format !== 'pdf') await applyWatermark(page, options.mode);
+
     const { contentType, ext } = contentTypeFor(options.format);
 
     if (options.format === 'pdf') {
@@ -298,6 +304,11 @@ async function renderWithRest(options: CaptureOptions): Promise<RenderedFile[]> 
     gotoOptions: { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS },
   };
   if (options.delayMs > 0) body.waitForTimeout = options.delayMs;
+  // The REST endpoint has no page handle, so the mark goes in as an injected
+  // script instead. Best-effort — the binding path is the supported one.
+  if (options.watermark && options.format !== 'pdf') {
+    body.addScriptTag = [{ content: watermarkScript(options.mode) }];
+  }
   if (options.format !== 'pdf') {
     body.screenshotOptions = {
       fullPage: options.mode === 'fullpage',

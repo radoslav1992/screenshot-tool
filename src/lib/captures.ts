@@ -170,11 +170,15 @@ export async function createCaptureRow(
 
   const plan = getPlan(user.plan);
   if (options.format === 'pdf' && !plan.formats.includes('pdf')) {
-    throw new HttpError(403, 'plan_required', 'PDF export is available on the Pro and Business plans.');
+    throw new HttpError(403, 'plan_required', 'PDF export is available on the paid plans.');
   }
   if (options.device === 'custom' && !plan.customViewport) {
-    throw new HttpError(403, 'plan_required', 'Custom viewports are available on the Pro and Business plans.');
+    throw new HttpError(403, 'plan_required', 'Custom viewports are available on the paid plans.');
   }
+
+  // The mark is a property of the plan, not of the request — decided here so no
+  // caller can ask for an unmarked capture it has not paid for.
+  options.watermark = plan.watermark;
 
   const row: CaptureRow = {
     id: prefixedId('cap', 12),

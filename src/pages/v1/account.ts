@@ -24,6 +24,7 @@ export const GET: APIRoute = async ({ request }) => {
         id: guard.auth.user.id,
         email: guard.auth.user.email,
         plan: plan.id,
+        watermark: plan.watermark,
         environment: guard.auth.environment,
         usage: {
           period: usage.period,

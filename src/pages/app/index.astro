@@ -3,12 +3,17 @@ import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import { DEVICE_LIST, FORMATS, FRAME_LIST, MODES } from '../../lib/capture-options';
 import { getUsage } from '../../lib/captures';
-import { getPlan } from '../../lib/plans';
+import { cheapestPlanWith, getPlan } from '../../lib/plans';
 import { isVerified } from '../../lib/verification';
 
 const user = Astro.locals.user!;
 const [usage, verified] = await Promise.all([getUsage(user), isVerified(user.id)]);
 const plan = getPlan(user.plan);
+
+// Name the plan someone actually has to buy, rather than a hard-coded tier.
+const sizePlan = cheapestPlanWith((entry) => entry.customViewport);
+const pdfPlan = cheapestPlanWith((entry) => entry.formats.includes('pdf'));
+const cleanPlan = cheapestPlanWith((entry) => !entry.watermark);
 const prefillUrl = Astro.url.searchParams.get('url') ?? '';
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 ---
@@ -100,7 +105,9 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
       <div id="custom-size" class="stack gap-8" hidden style="margin-top: 8px">
         {
           plan.customViewport ? null : (
-            <div class="notice notice--info">Custom viewports are a Pro feature. <a href="/pricing">See plans</a></div>
+            <div class="notice notice--info">
+              Custom viewports start on {sizePlan.name}, ${sizePlan.priceMonthly}/mo. <a href="/pricing">See plans</a>
+            </div>
           )
         }
         <div style="display: flex; gap: 8px">
@@ -145,7 +152,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
               FORMATS.map((format) => (
                 <option value={format} disabled={!plan.formats.includes(format)}>
                   {format.toUpperCase()}
-                  {plan.formats.includes(format) ? '' : ' — Pro'}
+                  {plan.formats.includes(format) ? '' : ` — ${pdfPlan.name}`}
                 </option>
               ))
             }
@@ -180,6 +187,15 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
           : `No shots left this month — resets ${usage.renewsOn}`
       }
     </p>
+
+    {
+      plan.watermark && (
+        <p class="xs center" style="color: var(--muted-2); margin-top: -12px">
+          Captures carry a small Screenify mark. <a href="/pricing">{cleanPlan.name}</a> removes it from
+          ${cleanPlan.priceMonthly}/mo.
+        </p>
+      )
+    }
   </form>
 </AppShell>
 

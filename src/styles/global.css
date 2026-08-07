@@ -2130,19 +2130,55 @@ button {
   align-items: start;
 }
 
-@media (min-width: 860px) {
+/* Two up as soon as there is room, then all four across on a real desktop. */
+@media (min-width: 680px) {
   .plan-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 20px;
+    /* Cards in a row match height, so the buttons line up across the row. */
+    align-items: stretch;
+  }
+}
+
+@media (min-width: 1040px) {
+  .plan-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
   }
 
   .plan--featured {
-    transform: scale(1.04);
+    transform: scale(1.03);
   }
 }
 
 .plan-grid .plan {
   padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 1040px) {
+  .plan-grid .plan {
+    padding: 26px 20px;
+  }
+}
+
+/* Pushed to the bottom of the card so a longer feature list never staggers it. */
+.plan__cta {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+/* The plan you are already on: shaped like the others, but inert. */
+.plan-grid .btn.is-current {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* …and readable on the dark featured card, where ink-on-ink would vanish. */
+.plan--featured .btn.is-current {
+  border-color: rgba(245, 243, 238, 0.35);
+  color: var(--paper);
 }
 
 .plan-grid .plan__features li[data-included='false'] {

@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Easy Screen Capture — screenshots as a service. Astro PWA on Cloudflare Workers.",
+  "description": "Easy Screen Capture \u2014 screenshots as a service. Astro PWA on Cloudflare Workers.",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -11,7 +11,8 @@
     "deploy": "astro build && wrangler deploy",
     "check": "astro check",
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
-    "db:migrate": "wrangler d1 migrations apply screenify-data --remote"
+    "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
+    "stripe:setup": "node scripts/stripe-setup.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

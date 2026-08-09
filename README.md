@@ -239,7 +239,18 @@ answers `503`, and the app behaves exactly as it did before billing existed.
 
 ### Turning it on
 
-1. Create four (or eight) **recurring prices** in Stripe — one monthly and one yearly per paid plan.
+1. Create the **products and recurring prices** — one monthly and one yearly per paid plan:
+
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_… npm run stripe:setup
+   ```
+
+   The script reads the plan ladder straight out of `src/lib/plans.ts`, so the prices always match
+   what the pricing page advertises. It is idempotent — every price carries a stable `lookup_key`
+   (`esc_plus_monthly` and friends), which it looks up before creating anything, so a second run
+   reports what exists rather than making duplicates. It prints the price ids formatted for the
+   next step. Run it once per mode: Stripe's test and live worlds share nothing.
+
 2. Add a webhook endpoint pointing at `https://<your-domain>/api/billing/webhook`, subscribed to
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`
    and `customer.subscription.deleted`. Copy its signing secret.
@@ -258,6 +269,38 @@ answers `503`, and the app behaves exactly as it did before billing existed.
 
    A plan with no price id configured is still listed on `/pricing` but is not purchasable, so you
    can launch one tier at a time. `GET /api/health` reports which ones are live under `billing`.
+
+### Tax
+
+Off unless `STRIPE_AUTOMATIC_TAX=1`. Activate Stripe Tax and set your origin address first
+(Settings → Tax) — Stripe rejects a checkout session that asks for automatic tax on an account
+that has not done that, which is exactly why this is opt-in rather than always on.
+
+With it on, checkout gains three things that go together:
+
+- `automatic_tax` works the rate out from the customer's address, so `billing_address_collection`
+  becomes `required` — Stripe Tax has to know where it is taxing.
+- `customer_update: { address: auto }` writes that address back onto the customer. Without it the
+  address lives only on the checkout session, and every renewal after the first is untaxed.
+- `tax_id_collection` gives a business the chance to enter a VAT number, which is what makes EU
+  reverse charge work instead of charging VAT they then have to reclaim.
+
+Let customers edit their address and tax id in the customer portal too (Settings → Billing →
+Customer portal), or a company that moves or registers later has no way to correct it.
+
+Prices are treated as tax-exclusive by default, so $7 becomes $7 + VAT. Set prices to tax-inclusive
+in the Stripe dashboard if you would rather advertise a gross number — a normal choice for
+consumer-facing EU pricing.
+
+**Where you must register to collect is a question for an accountant.** Stripe Tax will tell you
+where you have crossed a threshold (Settings → Tax → Monitoring); it will not register for you.
+
+### Invoicing
+
+Subscriptions invoice themselves — every renewal produces an invoice, and the customer portal
+exposes the full history alongside the card and plan controls. Nothing extra to build. Set your
+business name, support address, and terms/privacy links in Stripe's branding settings, because
+those are what appear on the invoice PDF and the checkout page.
 
 ### How the plan actually changes
 

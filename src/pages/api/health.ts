@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { json } from '../../lib/http';
 import { hashPassword } from '../../lib/auth';
-import { billingEnabled, priceIdFor, webhookConfigured } from '../../lib/billing';
+import { automaticTaxEnabled, billingEnabled, priceIdFor, webhookConfigured } from '../../lib/billing';
 import { PAID_PLANS } from '../../lib/plans';
 
 export const prerender = false;
@@ -97,7 +97,12 @@ function checkRenderer(): CheckResult & { engine: string } {
  * pieces are configured. It only names which price ids are present, never their
  * values, and never touches the Stripe key.
  */
-function checkBilling(): CheckResult & { enabled: boolean; webhook: boolean; purchasable: string[] } {
+function checkBilling(): CheckResult & {
+  enabled: boolean;
+  webhook: boolean;
+  automaticTax: boolean;
+  purchasable: string[];
+} {
   const enabled = billingEnabled();
   const purchasable = PAID_PLANS.filter(
     (plan) => priceIdFor(plan, 'monthly') || priceIdFor(plan, 'yearly'),
@@ -108,6 +113,7 @@ function checkBilling(): CheckResult & { enabled: boolean; webhook: boolean; pur
       ok: true,
       enabled: false,
       webhook: false,
+      automaticTax: false,
       purchasable: [],
       detail: 'Payments are off. Set STRIPE_SECRET_KEY to turn checkout on.',
     };
@@ -116,11 +122,13 @@ function checkBilling(): CheckResult & { enabled: boolean; webhook: boolean; pur
   const missing: string[] = [];
   if (!webhookConfigured()) missing.push('STRIPE_WEBHOOK_SECRET is not set, so plan changes will never apply');
   if (purchasable.length === 0) missing.push('no STRIPE_PRICE_* ids are set, so nothing can be bought');
+  if (!automaticTaxEnabled()) missing.push('Stripe Tax is off; prices are charged with no VAT/GST added');
 
   return {
     ok: true,
     enabled: true,
     webhook: webhookConfigured(),
+    automaticTax: automaticTaxEnabled(),
     purchasable,
     ...(missing.length ? { detail: missing.join('; ') } : {}),
   };

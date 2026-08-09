@@ -8,7 +8,7 @@ export default defineConfig({
   adapter: cloudflare({
     imageService: 'compile',
   }),
-  site: process.env.PUBLIC_SITE_URL || 'https://screenify.app',
+  site: process.env.PUBLIC_SITE_URL || 'https://easyscreencapture.com',
   security: {
     // Astro's blanket origin check rejects form-encoded POSTs without an
     // Origin header, which would break `curl -d url=… /v1/capture`. The public

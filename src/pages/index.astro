@@ -11,7 +11,7 @@ import { PLANS } from '../lib/plans';
 const user = Astro.locals.user;
 const captureHref = user ? '/app' : '/signup';
 
-const curl = `curl https://screenify.app/v1/capture \\
+const curl = `curl https://easyscreencapture.com/v1/capture \\
   -H "Authorization: Bearer $KEY" \\
   -d url="yoursite.com" \\
   -d device="instagram-story"`;
@@ -24,7 +24,7 @@ const frameBox = (frame: (typeof FRAME_LIST)[number]) => {
 };
 ---
 
-<Base title="Screenify" themeColor="#0F110C" description="Clean, exact screenshots of any page — from any device, or through the API.">
+<Base title="Easy Screen Capture" themeColor="#0F110C" description="Clean, exact screenshots of any page — from any device, or through the API.">
   <div class="page">
     <SiteHeader dark user={user} />
 

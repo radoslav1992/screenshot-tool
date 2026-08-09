@@ -50,7 +50,7 @@
   },
 
   "vars": {
-    "PUBLIC_SITE_URL": "http://localhost:4321",
+    "PUBLIC_SITE_URL": "https://easyscreencapture.com",
     // Comma-separated hostnames that may never be captured (SSRF hardening
     // beyond the built-in private-range blocklist). Optional.
     "CAPTURE_HOST_DENYLIST": "",
@@ -63,7 +63,7 @@
     // mailer is configured, so it can never lock accounts out of a deployment
     // that cannot send mail. See EMAIL_FROM / RESEND_API_KEY below.
     "REQUIRE_EMAIL_VERIFICATION": "0",
-    // Sender address for confirmation emails, e.g. "Screenify <no-reply@yourdomain>".
+    // Sender address for confirmation emails, e.g. "Easy Screen Capture <no-reply@yourdomain>".
     "EMAIL_FROM": ""
   }
 

@@ -1,10 +1,10 @@
-# Screenify
+# Easy Screen Capture
 
 Screenshots as a service — an installable PWA built with **Astro** and deployed entirely on
 **Cloudflare**. Paste a URL, pick a device and a capture mode, get pixel-perfect files back, in the
 app or through the API.
 
-Built from the `Screenify SaaS Design` handoff: seven mobile-first screens (landing, sign up, new
+Built from the original design handoff: seven mobile-first screens (landing, sign up, new
 capture, library, API keys, pricing, account), recreated as real pages rather than as a static mockup.
 
 ---
@@ -74,7 +74,15 @@ CI=1 npm run dev
 ## Deploying
 
 `wrangler.jsonc` already points at the project's Cloudflare resources: D1 `screenify-data`, R2
-`screenify-screenshots`, and the `RATE` KV namespace. To recreate them in another account:
+`screenify-screenshots`, the `RATE` KV namespace, and the Worker named `screenify`.
+
+Those names predate the rename to Easy Screen Capture and are deliberately left alone — they are
+live resources holding real data. Renaming the Worker creates a *second* Worker and orphans the
+deployed one along with its secrets, custom domain and cron trigger; the bucket and database names
+cannot be changed at all without copying the contents to new ones. None of them is ever shown to a
+user. See *Renaming the infrastructure* below if you want to do it anyway.
+
+To recreate them in another account:
 
 ```bash
 npx wrangler d1 create screenify-data
@@ -140,7 +148,7 @@ Bearer-authenticated, JSON or form-encoded, same validation as the UI.
 
 ```bash
 curl https://your-domain/v1/capture \
-  -H "Authorization: Bearer $SCREENIFY_KEY" \
+  -H "Authorization: Bearer $ESC_API_KEY" \
   -d url="https://stripe.com/pricing" \
   -d device="mobile" \
   -d mode="fullpage"
@@ -162,7 +170,7 @@ Full reference: `/docs`.
 ## PWA
 
 - `public/manifest.webmanifest` — standalone display, maskable icons, app shortcuts, and a
-  `share_target` so sharing a URL to Screenify opens the capture form pre-filled.
+  `share_target` so sharing a URL to Easy Screen Capture opens the capture form pre-filled.
 - `public/sw.js` — cache-first for fonts/icons/hashed assets, network-first for documents with an
   offline fallback. API responses and rendered files are never cached.
 - Install prompt is surfaced as a row on the Account screen.
@@ -222,7 +230,7 @@ matter are the ones protecting the render pool and storage rather than the month
 
 ## Billing
 
-Four plans: **Free** (200 shots/month, files carry a Screenify mark), **Plus** $7 (500, no mark, PDF
+Four plans: **Free** (200 shots/month, files carry an easyscreencapture.com mark), **Plus** $7 (500, no mark, PDF
 and custom sizes), **Pro** $19 (2,000, API access), **Business** $79 (15,000).
 
 Payments run on **Stripe Checkout**, called directly over REST — no SDK, no Node built-ins. The whole
@@ -269,15 +277,31 @@ nothing.
 
 ### The free-plan mark
 
-Free captures carry a small badge in the corner. It is injected into the page as a DOM element just
-before the screenshot rather than composited onto the image afterwards: Workers have no image
-library, and re-encoding a PNG in JS would cost more CPU than the capture itself. As a real element
-it also scales with the device pixel ratio, so it stays crisp at 3x.
+Free captures carry a small badge in the corner reading **easyscreencapture.com** — the domain
+rather than the product name, because a screenshot is usually seen out of context and the domain is
+the part someone can act on. It is injected into the page as a DOM element just before the
+screenshot rather than composited onto the image afterwards: Workers have no image library, and
+re-encoding a PNG in JS would cost more CPU than the capture itself. As a real element it also
+scales with the device pixel ratio, so it stays crisp at 3x.
 
 It is anchored `fixed` for `visible` and `series` captures (so every frame carries it) and `absolute`
 at the document's bottom for `fullpage`, where a fixed element would land near the top of the
 stitched image. It follows the account's plan and is not a request parameter — there is no way to ask
 for an unmarked capture you have not paid for.
+
+## Renaming the infrastructure
+
+The app is Easy Screen Capture everywhere a user can see. The Cloudflare resources are still named
+`screenify-*` because renaming them is a data migration, not a find-and-replace:
+
+| Resource | To rename |
+| --- | --- |
+| Worker `screenify` | Deploy under the new name, move the custom domain and re-add every secret, confirm the cron fires, then delete the old Worker. Two Workers exist in between. |
+| R2 `screenify-screenshots` | Create the new bucket, copy every object, switch the binding, delete the old one. Any capture whose files were missed 404s. |
+| D1 `screenify-data` | Export, import into a new database, switch the binding. Anything written between export and switch is lost. |
+
+None of it is visible to a customer, and each carries a real chance of losing files or sessions.
+Worth doing only if the names bother you in the dashboard.
 
 ## Not included
 

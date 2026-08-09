@@ -139,7 +139,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
         )
       }
       <button type="button" class="row" id="install-app" hidden>
-        <span class="row__label">Install Screenify</span>
+        <span class="row__label">Install Easy Screen Capture</span>
         <span class="row__value">Add to home screen ›</span>
       </button>
       <a class="row" href="/docs">
@@ -155,7 +155,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
     </div>
 
     <p class="xs muted-2 center">
-      Screenify · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
+      Easy Screen Capture · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
     </p>
   </div>
 </AppShell>
@@ -193,17 +193,17 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
   // Offer the PWA install prompt when the browser makes one available.
   const installRow = document.getElementById('install-app') as HTMLButtonElement | null;
   const showInstall = () => {
-    if (installRow && (window as any).__screenifyInstallPrompt) installRow.hidden = false;
+    if (installRow && (window as any).__escInstallPrompt) installRow.hidden = false;
   };
-  document.addEventListener('screenify:installable', showInstall);
+  document.addEventListener('esc:installable', showInstall);
   showInstall();
 
   installRow?.addEventListener('click', async () => {
-    const prompt = (window as any).__screenifyInstallPrompt;
+    const prompt = (window as any).__escInstallPrompt;
     if (!prompt) return;
     prompt.prompt();
     await prompt.userChoice;
-    (window as any).__screenifyInstallPrompt = null;
+    (window as any).__escInstallPrompt = null;
     installRow.hidden = true;
   });
 </script>

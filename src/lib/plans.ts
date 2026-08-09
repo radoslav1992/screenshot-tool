@@ -37,7 +37,7 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: '200 screenshots / month', included: true },
       { text: 'All devices, modes & sizes', included: true },
       { text: 'PNG & JPG', included: true },
-      { text: 'Without the Screenify mark', included: false },
+      { text: 'Without the watermark', included: false },
     ],
     cta: 'Start free',
   },
@@ -56,7 +56,7 @@ export const PLANS: Record<PlanId, Plan> = {
     watermark: false,
     priceEnv: { monthly: 'STRIPE_PRICE_PLUS_MONTHLY', yearly: 'STRIPE_PRICE_PLUS_YEARLY' },
     features: [
-      { text: 'No Screenify mark', included: true },
+      { text: 'No watermark', included: true },
       { text: '500 screenshots / month', included: true },
       { text: 'PDF export & custom sizes', included: true },
       { text: '30-day history', included: true },

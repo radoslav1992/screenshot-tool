@@ -12,8 +12,8 @@ import type { CaptureMode } from './capture-options';
  * for free, so it stays crisp at 3x without any extra work.
  */
 
-const ELEMENT_ID = '__screenify_mark';
-const LABEL = 'Screenify';
+const ELEMENT_ID = '__esc_mark';
+const LABEL = 'easyscreencapture.com';
 
 /**
  * Where to anchor the mark. `fixed` follows the viewport, which is what a single

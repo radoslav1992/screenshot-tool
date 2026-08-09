@@ -1,9 +1,9 @@
 {
-  "name": "screenify",
+  "name": "easy-screen-capture",
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Screenify — screenshots as a service. Astro PWA on Cloudflare Workers.",
+  "description": "Easy Screen Capture — screenshots as a service. Astro PWA on Cloudflare Workers.",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",

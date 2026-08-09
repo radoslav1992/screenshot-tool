@@ -1,4 +1,4 @@
-export type PlanId = 'free' | 'pro' | 'business';
+export type PlanId = 'free' | 'plus' | 'pro' | 'business';
 
 export interface Plan {
   id: PlanId;
@@ -12,6 +12,10 @@ export interface Plan {
   formats: Array<'png' | 'jpg' | 'pdf'>;
   customViewport: boolean;
   historyDays: number;
+  /** Free captures carry a small mark; paying removes it. */
+  watermark: boolean;
+  /** Stripe price ids, resolved from config at runtime. */
+  priceEnv?: { monthly: string; yearly: string };
   features: Array<{ text: string; included: boolean }>;
   cta: string;
 }
@@ -28,13 +32,36 @@ export const PLANS: Record<PlanId, Plan> = {
     formats: ['png', 'jpg'],
     customViewport: false,
     historyDays: 7,
+    watermark: true,
     features: [
       { text: '200 screenshots / month', included: true },
-      { text: 'All devices & capture modes', included: true },
+      { text: 'All devices, modes & sizes', included: true },
       { text: 'PNG & JPG', included: true },
-      { text: 'API access', included: false },
+      { text: 'Without the Screenify mark', included: false },
     ],
     cta: 'Start free',
+  },
+
+  plus: {
+    id: 'plus',
+    name: 'Plus',
+    priceMonthly: 7,
+    priceYearly: 67,
+    tagline: 'For anyone publishing what they capture',
+    quota: 500,
+    api: false,
+    formats: ['png', 'jpg', 'pdf'],
+    customViewport: true,
+    historyDays: 30,
+    watermark: false,
+    priceEnv: { monthly: 'STRIPE_PRICE_PLUS_MONTHLY', yearly: 'STRIPE_PRICE_PLUS_YEARLY' },
+    features: [
+      { text: 'No Screenify mark', included: true },
+      { text: '500 screenshots / month', included: true },
+      { text: 'PDF export & custom sizes', included: true },
+      { text: '30-day history', included: true },
+    ],
+    cta: 'Go Plus',
   },
   pro: {
     id: 'pro',
@@ -47,6 +74,8 @@ export const PLANS: Record<PlanId, Plan> = {
     formats: ['png', 'jpg', 'pdf'],
     customViewport: true,
     historyDays: 30,
+    watermark: false,
+    priceEnv: { monthly: 'STRIPE_PRICE_PRO_MONTHLY', yearly: 'STRIPE_PRICE_PRO_YEARLY' },
     features: [
       { text: '2,000 screenshots / month', included: true },
       { text: 'Full API access', included: true },
@@ -66,6 +95,8 @@ export const PLANS: Record<PlanId, Plan> = {
     formats: ['png', 'jpg', 'pdf'],
     customViewport: true,
     historyDays: 365,
+    watermark: false,
+    priceEnv: { monthly: 'STRIPE_PRICE_BUSINESS_MONTHLY', yearly: 'STRIPE_PRICE_BUSINESS_YEARLY' },
     features: [
       { text: '15,000 screenshots / month', included: true },
       { text: 'Priority rendering queue', included: true },
@@ -76,15 +107,28 @@ export const PLANS: Record<PlanId, Plan> = {
   },
 };
 
-export const PLAN_ORDER: PlanId[] = ['free', 'pro', 'business'];
+export const PLAN_ORDER: PlanId[] = ['free', 'plus', 'pro', 'business'];
+
+/** Plans that can be bought. Free is the default, not a purchase. */
+export const PAID_PLANS: PlanId[] = ['plus', 'pro', 'business'];
 
 export function getPlan(id: string | null | undefined): Plan {
   return PLANS[(id as PlanId) ?? 'free'] ?? PLANS.free;
 }
 
+/**
+ * The cheapest plan that includes a feature, so upgrade prompts name the plan
+ * someone actually has to buy rather than a hard-coded tier that drifts as the
+ * ladder changes.
+ */
+export function cheapestPlanWith(includes: (plan: Plan) => boolean): Plan {
+  return PLAN_ORDER.map((id) => PLANS[id]).find(includes) ?? PLANS.business;
+}
+
 /** Requests per minute allowed on the public API, by plan. */
 export const API_RATE_LIMIT: Record<PlanId, number> = {
   free: 0,
+  plus: 0,
   pro: 60,
   business: 300,
 };
@@ -98,6 +142,7 @@ export const API_RATE_LIMIT: Record<PlanId, number> = {
  */
 export const APP_RATE_LIMIT: Record<PlanId, number> = {
   free: 10,
+  plus: 60,
   pro: 120,
   business: 600,
 };

@@ -67,8 +67,20 @@
     "EMAIL_FROM": ""
   }
 
-  // Secrets (set with `wrangler secret put <NAME>`), all optional:
-  //   CF_ACCOUNT_ID   - enables the REST Browser Rendering fallback
-  //   CF_API_TOKEN    - token with "Browser Rendering: Edit" for that fallback
-  //   RESEND_API_KEY  - enables sending confirmation emails via Resend
+  // Secrets (set with `wrangler secret put <NAME>`, or as encrypted variables in
+  // the dashboard — unlike plain vars, they survive a redeploy). All optional:
+  //   CF_ACCOUNT_ID         - enables the REST Browser Rendering fallback
+  //   CF_API_TOKEN          - token with "Browser Rendering: Edit" for that fallback
+  //   RESEND_API_KEY        - enables sending confirmation emails via Resend
+  //
+  // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
+  // do not render and /api/billing/* answers 503.
+  //   STRIPE_SECRET_KEY     - sk_live_… / sk_test_…
+  //   STRIPE_WEBHOOK_SECRET - whsec_…, from the webhook endpoint pointed at
+  //                           https://<your-domain>/api/billing/webhook
+  //   STRIPE_PRICE_PLUS_MONTHLY, STRIPE_PRICE_PLUS_YEARLY
+  //   STRIPE_PRICE_PRO_MONTHLY, STRIPE_PRICE_PRO_YEARLY
+  //   STRIPE_PRICE_BUSINESS_MONTHLY, STRIPE_PRICE_BUSINESS_YEARLY
+  //                         - recurring price ids (price_…). A plan with no
+  //                           price id configured is shown but not purchasable.
 }

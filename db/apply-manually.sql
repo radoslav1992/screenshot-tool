@@ -4,28 +4,35 @@
 -- the D1 console (Cloudflare dashboard → Storage & Databases → D1 → screenify-data
 -- → Console) and run it as one statement batch.
 --
--- It is the full migration history (0001 and 0002) plus the bookkeeping rows
+-- It is the full migration history (0001 through 0003) plus the bookkeeping rows
 -- wrangler keeps in `d1_migrations`, so a later `npm run db:migrate` sees them
 -- as already applied and moves on to any newer migration.
 --
--- For a database that already has the 0001 schema, run db/0002-upgrade.sql
--- instead — this file creates tables but will not add columns to existing ones.
+-- For a database that already has an older schema, run the matching
+-- db/000N-upgrade.sql files in order instead — this file creates tables but will
+-- not add columns to existing ones.
 --
 -- Safe to re-run: every statement uses IF NOT EXISTS and the final INSERT is
 -- OR IGNORE.
 
 CREATE TABLE IF NOT EXISTS users (
-  id                TEXT PRIMARY KEY,
-  email             TEXT NOT NULL,
-  email_lower       TEXT NOT NULL UNIQUE,
-  name              TEXT NOT NULL DEFAULT '',
-  password_hash     TEXT,                              -- NULL for OAuth-only accounts
-  plan              TEXT NOT NULL DEFAULT 'free',      -- free | pro | business
-  period_start      TEXT NOT NULL,                     -- ISO date the current quota window opened
-  email_verified_at TEXT,                              -- NULL until the address is confirmed
-  created_at        TEXT NOT NULL,
-  updated_at        TEXT NOT NULL
+  id                     TEXT PRIMARY KEY,
+  email                  TEXT NOT NULL,
+  email_lower            TEXT NOT NULL UNIQUE,
+  name                   TEXT NOT NULL DEFAULT '',
+  password_hash          TEXT,                         -- NULL for OAuth-only accounts
+  plan                   TEXT NOT NULL DEFAULT 'free', -- free | plus | pro | business
+  period_start           TEXT NOT NULL,                -- ISO date the current quota window opened
+  email_verified_at      TEXT,                         -- NULL until the address is confirmed
+  stripe_customer_id     TEXT,                         -- set on first checkout, reused after
+  stripe_subscription_id TEXT,
+  plan_status            TEXT NOT NULL DEFAULT '',     -- '' | active | trialing | past_due | canceled
+  plan_period_end        TEXT,                         -- paid through, ISO
+  plan_interval          TEXT NOT NULL DEFAULT '',     -- '' | monthly | yearly
+  created_at             TEXT NOT NULL,
+  updated_at             TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
 
 CREATE TABLE IF NOT EXISTS email_verifications (
   id         TEXT PRIMARY KEY,                          -- sha256 of the emailed token
@@ -96,8 +103,18 @@ CREATE TABLE IF NOT EXISTS usage_counters (
   PRIMARY KEY (user_id, period)
 );
 
--- Wrangler's migration ledger. Recording 0001 here keeps a future
--- `npm run db:migrate` from trying to apply it a second time.
+-- Stripe retries webhooks, and a retry must not be replayed as a second
+-- upgrade. Every handled event id is recorded here first.
+CREATE TABLE IF NOT EXISTS billing_events (
+  id          TEXT PRIMARY KEY,                         -- Stripe event id (evt_…)
+  type        TEXT NOT NULL,
+  user_id     TEXT,
+  received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_billing_events_received ON billing_events(received_at);
+
+-- Wrangler's migration ledger. Recording the migrations here keeps a future
+-- `npm run db:migrate` from trying to apply them a second time.
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -106,3 +123,4 @@ CREATE TABLE IF NOT EXISTS d1_migrations (
 
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0001_init.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0002_verification_and_retention.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0003_billing.sql');

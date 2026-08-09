@@ -28,6 +28,26 @@ declare namespace Cloudflare {
     CF_API_TOKEN?: string;
     /** Optional: enables sending confirmation emails via Resend. */
     RESEND_API_KEY?: string;
+
+    /**
+     * Stripe. Billing stays completely dormant until STRIPE_SECRET_KEY is set:
+     * the buy buttons do not render and the billing routes answer 503.
+     *
+     * Set all of these as secrets (encrypted variables), not plain-text vars —
+     * a plain var declared in wrangler.jsonc is overwritten on every deploy,
+     * while secrets set in the dashboard survive.
+     */
+    STRIPE_SECRET_KEY?: string;
+    /** From the webhook endpoint in the Stripe dashboard (whsec_…). */
+    STRIPE_WEBHOOK_SECRET?: string;
+
+    /** Recurring price ids (price_…) per plan and interval. */
+    STRIPE_PRICE_PLUS_MONTHLY?: string;
+    STRIPE_PRICE_PLUS_YEARLY?: string;
+    STRIPE_PRICE_PRO_MONTHLY?: string;
+    STRIPE_PRICE_PRO_YEARLY?: string;
+    STRIPE_PRICE_BUSINESS_MONTHLY?: string;
+    STRIPE_PRICE_BUSINESS_YEARLY?: string;
   }
 }
 

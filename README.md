@@ -35,7 +35,7 @@ There is no build-time UI framework and no runtime npm dependency beyond Astro a
 | `/app/c/:id`       | Capture detail — files, share link, delete                         |
 | `/app/api`         | API keys, quick start, parameters                                  |
 | `/app/account`     | Profile, plan, usage meter, install prompt, sign out               |
-| `/pricing`         | Free / Pro / Business, monthly-yearly toggle                       |
+| `/pricing`         | Free / Plus / Pro / Business, monthly-yearly toggle, Stripe checkout|
 | `/docs`            | Full API reference                                                 |
 | `/offline`         | Service-worker offline fallback                                    |
 
@@ -46,7 +46,10 @@ There is no build-time UI framework and no runtime npm dependency beyond Astro a
 - **series** — viewport-sized frames from top to bottom; each frame counts against quota.
 
 Devices: `desktop` 1440×900 @2x, `tablet` 834×1194 @2x, `mobile` 390×844 @3x, or any custom
-`width`×`height` (Pro and above). Formats: `png`, `jpg`, `pdf` (`pdf` not valid with `series`).
+`width`×`height` (paid plans). Output frames land on an exact pixel size without cropping:
+`instagram-post` 1080×1350, `instagram-square` 1080×1080, `instagram-story` 1080×1920, `og-image`
+1200×630, `x-post` 1600×900 — named presets, so they are available on every plan. Formats: `png`,
+`jpg`, `pdf` (`pdf` not valid with `series`).
 
 ---
 
@@ -90,8 +93,14 @@ npx wrangler kv namespace create RATE
    plus the `d1_migrations` bookkeeping rows, so a later `npm run db:migrate` reports *No migrations
    to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
 
-   **Upgrading a database that already has the 0001 schema?** Run `db/0002-upgrade.sql` instead —
-   `apply-manually.sql` creates tables but cannot add columns to existing ones.
+   **Upgrading a database that already has an older schema?** Run the matching `db/000N-upgrade.sql`
+   files in order (`0002-upgrade.sql`, then `0003-upgrade.sql`) — `apply-manually.sql` creates tables
+   but cannot add columns to existing ones.
+
+   The D1 console flattens pasted SQL onto one line, which makes `--` comments swallow everything
+   after them. The `db/000N-upgrade.sql` files are therefore comment-free and safe to paste as-is.
+   `ALTER TABLE … ADD COLUMN` is not idempotent in SQLite: if a re-run reports *duplicate column
+   name*, that column is already there — drop that line and run the rest.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 
@@ -166,12 +175,12 @@ The free tier is generous (200 screenshots/month, about $0.06 of infrastructure)
 matter are the ones protecting the render pool and storage rather than the monthly count.
 
 - **Retention.** A cron trigger (`0 3 * * *`) sweeps captures past their plan's `historyDays`
-  (free 7, Pro 30, Business 365), deleting the D1 rows and the R2 objects, and purging spent
+  (free 7, Plus/Pro 30, Business 365), deleting the D1 rows and the R2 objects, and purging spent
   verification tokens and expired sessions. Each run is capped at 500 captures so a backlog is
   worked off over several nights rather than blowing a single invocation's budget.
   The handler lives in `src/worker.ts`, which re-exports the adapter's `fetch` and adds `scheduled`.
 - **Burst limiting.** The monthly quota bounds the total; a per-user hourly limit bounds the burst
-  (free 10/hour, Pro 120, Business 600), so one account cannot spend its allowance at once and
+  (free 10/hour, Plus 60, Pro 120, Business 600), so one account cannot spend its allowance at once and
   monopolise the account's concurrent browsers — the genuinely scarce resource.
 - **Browser sessions.** Every capture tries to connect to an already-running idle session before
   launching one, which is free — the session exists either way. Keeping sessions *warm* after a
@@ -198,7 +207,8 @@ matter are the ones protecting the render pool and storage rather than the month
 
 ## Security notes
 
-- Passwords: PBKDF2-SHA256, 210k iterations, per-user salt.
+- Passwords: PBKDF2-SHA256, 100k iterations, per-user salt. 100k is the Workers ceiling — the runtime
+  throws above it, and the *local* runtime does not, so `/api/health` runs the real hash to catch it.
 - Sessions: 32-byte tokens, stored as SHA-256 hashes, `HttpOnly` + `SameSite=Lax` + `Secure`.
 - API keys: stored as SHA-256 hashes; the secret is shown once at creation.
 - CSRF: session cookies are `SameSite=Lax` and every cookie-authenticated mutation also checks the
@@ -210,10 +220,67 @@ matter are the ones protecting the render pool and storage rather than the month
   private address is not caught. Rendering happens inside Cloudflare's Browser Rendering
   infrastructure rather than on your network, which is what makes that acceptable here.
 
+## Billing
+
+Four plans: **Free** (200 shots/month, files carry a Screenify mark), **Plus** $7 (500, no mark, PDF
+and custom sizes), **Pro** $19 (2,000, API access), **Business** $79 (15,000).
+
+Payments run on **Stripe Checkout**, called directly over REST — no SDK, no Node built-ins. The whole
+feature is dormant until `STRIPE_SECRET_KEY` is set: the buy buttons do not render, `/api/billing/*`
+answers `503`, and the app behaves exactly as it did before billing existed.
+
+### Turning it on
+
+1. Create four (or eight) **recurring prices** in Stripe — one monthly and one yearly per paid plan.
+2. Add a webhook endpoint pointing at `https://<your-domain>/api/billing/webhook`, subscribed to
+   `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`
+   and `customer.subscription.deleted`. Copy its signing secret.
+3. Enable the **customer portal** in Stripe (Settings → Billing → Customer portal) — the *Billing,
+   card & invoices* row on the account screen opens it.
+4. Set the secrets. Use secrets (or encrypted variables in the dashboard) rather than plain vars: a
+   plain var declared in `wrangler.jsonc` is overwritten on every deploy, a secret is not.
+
+   ```bash
+   npx wrangler secret put STRIPE_SECRET_KEY
+   npx wrangler secret put STRIPE_WEBHOOK_SECRET
+   npx wrangler secret put STRIPE_PRICE_PLUS_MONTHLY      # …and _YEARLY
+   npx wrangler secret put STRIPE_PRICE_PRO_MONTHLY       # …and _YEARLY
+   npx wrangler secret put STRIPE_PRICE_BUSINESS_MONTHLY  # …and _YEARLY
+   ```
+
+   A plan with no price id configured is still listed on `/pricing` but is not purchasable, so you
+   can launch one tier at a time. `GET /api/health` reports which ones are live under `billing`.
+
+### How the plan actually changes
+
+Stripe is the source of truth; the `users.plan` column mirrors it. Nothing about a plan changes on
+the success redirect — only a **verified webhook** writes entitlements, so a forged return URL buys
+nothing.
+
+- Signatures are checked as HMAC-SHA256 over `<timestamp>.<raw body>` against the `v1` value in
+  `Stripe-Signature`, compared in constant time, with Stripe's 5-minute timestamp tolerance. The body
+  is read as text *before* parsing — re-serialising the JSON changes the bytes and every signature
+  fails.
+- Every event id is claimed in `billing_events` before it is applied, so Stripe's retries cannot
+  replay an upgrade. If handling throws, the claim is released and a `500` invites the retry.
+- `active` and `trialing` grant the plan. `past_due` keeps it (with a banner on the account screen)
+  while Stripe retries the card. Anything else drops the account to Free.
+- A cancelled subscription keeps its plan until `plan_period_end` — that is what was paid for.
+
+### The free-plan mark
+
+Free captures carry a small badge in the corner. It is injected into the page as a DOM element just
+before the screenshot rather than composited onto the image afterwards: Workers have no image
+library, and re-encoding a PNG in JS would cost more CPU than the capture itself. As a real element
+it also scales with the device pixel ratio, so it stays crisp at 3x.
+
+It is anchored `fixed` for `visible` and `series` captures (so every frame carries it) and `absolute`
+at the document's bottom for `fullpage`, where a fixed element would land near the top of the
+stitched image. It follows the account's plan and is not a request parameter — there is no way to ask
+for an unmarked capture you have not paid for.
+
 ## Not included
 
-- **Billing.** Plans and quotas are enforced, but no payment provider is wired up; plan changes are
-  manual (`UPDATE users SET plan='pro'`). The pricing page says so.
 - **OAuth.** The Google and GitHub buttons from the design are present and tell the user social
   sign-in is not connected yet. Email and password work fully.
 - **Team seats** advertised on the Business plan.
@@ -222,11 +289,11 @@ matter are the ones protecting the render pool and storage rather than the month
 
 ```
 migrations/           D1 migrations, applied by wrangler
-db/                   console-pasteable schema (full) and 0002 upgrade script
+db/                   console-pasteable schema (full) and per-migration upgrade scripts
 public/               manifest, service worker, icons, self-hosted fonts
 src/components/       Logo, TabBar, ShotCard, CodeBlock
 src/layouts/          Base (head + PWA wiring), AppShell (tab bar)
-src/lib/              auth, captures, renderer, capture-options, plans, http, rate-limit
+src/lib/              auth, captures, renderer, capture-options, plans, billing, watermark, http
 src/pages/            screens, /api/* (session), /v1/* (bearer), /f/* (files)
 src/scripts/          progressive-enhancement modules
 src/styles/           design tokens + component CSS, @font-face

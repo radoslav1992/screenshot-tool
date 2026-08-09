@@ -179,6 +179,12 @@ export interface CaptureOptions {
   darkMode: boolean;
   quality: number;
   maxFrames: number;
+  /**
+   * Whether the rendered file carries the Screenify mark. Decided from the
+   * account's plan when the capture row is created, never from request input —
+   * otherwise anyone could ask for an unmarked capture.
+   */
+  watermark: boolean;
 }
 
 const PRIVATE_HOST_PATTERNS: RegExp[] = [
@@ -322,6 +328,7 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     darkMode: boolValue(input.dark_mode, false),
     quality: intInRange(input.quality, 85, 30, 100, 'quality'),
     maxFrames: intInRange(input.max_frames, LIMITS.maxSeriesFrames, 1, LIMITS.maxSeriesFrames, 'max_frames'),
+    watermark: false,
   };
 }
 

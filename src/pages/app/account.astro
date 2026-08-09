@@ -1,7 +1,8 @@
 ---
 import AppShell from '../../layouts/AppShell.astro';
 import { getUsage } from '../../lib/captures';
-import { getPlan } from '../../lib/plans';
+import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
+import { billingEnabled, getBillingRow } from '../../lib/billing';
 
 const user = Astro.locals.user!;
 const usage = await getUsage(user);
@@ -9,7 +10,21 @@ const plan = getPlan(user.plan);
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
 const renews = new Date(usage.renewsOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-const nextPlan = plan.id === 'business' ? null : plan.id === 'pro' ? 'Business' : 'Pro';
+
+const nextPlanId = PLAN_ORDER[PLAN_ORDER.indexOf(plan.id) + 1] ?? null;
+const nextPlan = nextPlanId ? PLANS[nextPlanId] : null;
+
+const checkout = billingEnabled();
+// The billing columns only exist once migration 0003 has been applied, and the
+// account screen is not the place to find that out.
+const billing = checkout ? await getBillingRow(user.id).catch(() => null) : null;
+const hasCustomer = Boolean(billing?.stripe_customer_id);
+const pastDue = billing?.plan_status === 'past_due';
+const paidThrough = billing?.plan_period_end
+  ? new Date(billing.plan_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  : null;
+
+const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
 ---
 
 <AppShell title="Account" tab="account">
@@ -19,6 +34,23 @@ const nextPlan = plan.id === 'business' ? null : plan.id === 'pro' ? 'Business' 
   </header>
 
   <div class="p-20 stack gap-16">
+    {
+      justUpgraded && (
+        <div class="notice notice--info">
+          Payment received — your plan updates within a few seconds of Stripe confirming it. Reload if this still says
+          {' '}{plan.name}.
+        </div>
+      )
+    }
+
+    {
+      pastDue && (
+        <div class="notice notice--error">
+          Your last payment did not go through. Update your card to keep the {plan.name} plan.
+        </div>
+      )
+    }
+
     <div class="card" style="padding: 18px; display: flex; align-items: center; gap: 14px">
       <span class="avatar avatar--lg">{initials}</span>
       <div style="flex: 1; min-width: 0">
@@ -43,8 +75,14 @@ const nextPlan = plan.id === 'business' ? null : plan.id === 'pro' ? 'Business' 
     <section class="panel-dark">
       <div class="row-between">
         <div style="font: 700 14px var(--display)">{plan.name} plan</div>
-        <div class="mono" style="font-size: 11px; color: var(--lime)">renews {renews}</div>
+        <div class="mono" style="font-size: 11px; color: var(--lime)">quota resets {renews}</div>
       </div>
+
+      {
+        paidThrough && (
+          <div class="xs" style="color: var(--dim); margin-top: 4px">Paid through {paidThrough}</div>
+        )
+      }
 
       <div style="margin-top: 14px">
         <div class="row-between xs" style="color: var(--dim); margin-bottom: 6px">
@@ -74,7 +112,7 @@ const nextPlan = plan.id === 'business' ? null : plan.id === 'pro' ? 'Business' 
       {
         nextPlan && (
           <a class="btn btn--lime" href="/pricing" style="margin-top: 16px; padding: 12px; font-size: 13px">
-            Upgrade to {nextPlan}
+            Upgrade to {nextPlan.name} — ${nextPlan.priceMonthly}/mo
           </a>
         )
       }
@@ -82,13 +120,24 @@ const nextPlan = plan.id === 'business' ? null : plan.id === 'pro' ? 'Business' 
 
     <div class="rows">
       <a class="row" href="/pricing">
-        <span class="row__label">Billing &amp; invoices</span>
+        <span class="row__label">Plans &amp; pricing</span>
         <span class="row__value" style="color: var(--muted-2)">›</span>
       </a>
-      <div class="row">
-        <span class="row__label">Payment method</span>
-        <span class="row__value">Not connected ›</span>
-      </div>
+      {
+        hasCustomer ? (
+          <form method="post" action="/api/billing/portal">
+            <button type="submit" class="row" style="width: 100%">
+              <span class="row__label">Billing, card &amp; invoices</span>
+              <span class="row__value" style="color: var(--muted-2)">Manage ›</span>
+            </button>
+          </form>
+        ) : (
+          <div class="row">
+            <span class="row__label">Payment method</span>
+            <span class="row__value">{checkout ? 'None yet ›' : 'Not connected ›'}</span>
+          </div>
+        )
+      }
       <button type="button" class="row" id="install-app" hidden>
         <span class="row__label">Install Screenify</span>
         <span class="row__value">Add to home screen ›</span>

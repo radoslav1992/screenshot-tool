@@ -1,6 +1,7 @@
 ---
 import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
+import Mark from '../../components/Mark.astro';
 import { DEVICE_LIST, FORMATS, FRAME_LIST, MODES } from '../../lib/capture-options';
 import { getUsage } from '../../lib/captures';
 import { cheapestPlanWith, getPlan } from '../../lib/plans';
@@ -21,7 +22,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 <AppShell title="New capture" tab="capture">
   <header class="appbar" slot="appbar">
     <div class="logo">
-      <span class="logo__mark" aria-hidden="true">E</span>
+      <span class="logo__mark"><Mark size={16} /></span>
       <span class="appbar__title">New capture</span>
     </div>
     <a class="avatar" href="/app/account" aria-label="Account">{initials}</a>

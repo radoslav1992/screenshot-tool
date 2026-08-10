@@ -1,6 +1,6 @@
 {
-  "name": "Screenify — screenshots as a service",
-  "short_name": "Screenify",
+  "name": "Easy Screen Capture — screenshots as a service",
+  "short_name": "Easy Capture",
   "description": "Paste a URL, pick a device, and get pixel-perfect captures in seconds.",
   "id": "/",
   "start_url": "/app",

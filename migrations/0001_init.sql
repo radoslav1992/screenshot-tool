@@ -1,4 +1,4 @@
--- Screenify initial schema (Cloudflare D1 / SQLite)
+-- Easy Screen Capture initial schema (Cloudflare D1 / SQLite)
 
 CREATE TABLE users (
   id            TEXT PRIMARY KEY,

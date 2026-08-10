@@ -180,7 +180,7 @@ export interface CaptureOptions {
   quality: number;
   maxFrames: number;
   /**
-   * Whether the rendered file carries the Screenify mark. Decided from the
+   * Whether the rendered file carries the free-plan mark. Decided from the
    * account's plan when the capture row is created, never from request input —
    * otherwise anyone could ask for an unmarked capture.
    */

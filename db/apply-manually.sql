@@ -1,4 +1,4 @@
--- Screenify: full schema for a fresh D1 database.
+-- Easy Screen Capture: full schema for a fresh D1 database.
 --
 -- Use this when you cannot run `wrangler d1 migrations apply` — paste it into
 -- the D1 console (Cloudflare dashboard → Storage & Databases → D1 → screenify-data

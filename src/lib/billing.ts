@@ -38,6 +38,19 @@ export function webhookConfigured(): boolean {
   return Boolean(env.STRIPE_WEBHOOK_SECRET);
 }
 
+/**
+ * Whether Stripe Tax works out VAT/GST on each subscription.
+ *
+ * Opt-in rather than always-on: Stripe rejects `automatic_tax` outright unless
+ * Tax has been activated and an origin address set in the dashboard, so turning
+ * it on by default would break checkout for anyone who has not done that.
+ * Selling digital subscriptions across borders usually means you need it —
+ * whether you must *register* somewhere is a question for an accountant.
+ */
+export function automaticTaxEnabled(): boolean {
+  return env.STRIPE_AUTOMATIC_TAX === '1';
+}
+
 /** The Stripe price id configured for a plan and interval, if any. */
 export function priceIdFor(planId: PlanId, interval: BillingInterval): string | null {
   const priceEnv = PLANS[planId]?.priceEnv;
@@ -202,6 +215,26 @@ export async function createCheckoutSession(input: {
 
   const customer = await ensureCustomer(input.user);
 
+  /*
+   * Stripe Tax needs somewhere to tax: it works the rate out from the
+   * customer's address, so collecting one is not optional once it is on.
+   * `customer_update` is what lets Checkout write that address back onto the
+   * customer we created — without it the address lives only on the session and
+   * every renewal after the first is untaxed.
+   *
+   * `tax_id_collection` gives a business the chance to enter a VAT number, which
+   * is what makes EU reverse charge work instead of charging them VAT they then
+   * have to reclaim.
+   */
+  const tax = automaticTaxEnabled()
+    ? {
+        automatic_tax: { enabled: true },
+        billing_address_collection: 'required',
+        customer_update: { address: 'auto', name: 'auto' },
+        tax_id_collection: { enabled: true },
+      }
+    : {};
+
   const session = await stripe<{ id: string; url: string | null }>('/checkout/sessions', {
     body: {
       mode: 'subscription',
@@ -209,6 +242,7 @@ export async function createCheckoutSession(input: {
       line_items: [{ price, quantity: 1 }],
       client_reference_id: input.user.id,
       allow_promotion_codes: true,
+      ...tax,
       // Repeated on the subscription so webhooks can identify the account even
       // if the checkout session has aged out of Stripe's retention.
       subscription_data: { metadata: { user_id: input.user.id, plan: input.plan } },

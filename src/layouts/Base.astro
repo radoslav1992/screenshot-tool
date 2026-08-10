@@ -15,7 +15,7 @@ const {
   bodyClass = '',
 } = Astro.props;
 
-const fullTitle = title === 'Screenify' ? title : `${title} · Screenify`;
+const fullTitle = title === 'Easy Screen Capture' ? title : `${title} · Easy Screen Capture`;
 ---
 
 <!doctype html>
@@ -32,7 +32,7 @@ const fullTitle = title === 'Screenify' ? title : `${title} · Screenify`;
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Screenify" />
+    <meta name="apple-mobile-web-app-title" content="Easy Capture" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
 
@@ -68,11 +68,11 @@ const fullTitle = title === 'Screenify' ? title : `${title} · Screenify`;
       }
 
       // Remember the install prompt so the Account screen can offer it.
-      window.__screenifyInstallPrompt = null;
+      window.__escInstallPrompt = null;
       window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();
-        window.__screenifyInstallPrompt = event;
-        document.dispatchEvent(new CustomEvent('screenify:installable'));
+        window.__escInstallPrompt = event;
+        document.dispatchEvent(new CustomEvent('esc:installable'));
       });
     </script>
 

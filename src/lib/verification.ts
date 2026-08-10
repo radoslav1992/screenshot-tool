@@ -113,8 +113,8 @@ export async function sendVerificationEmail(email: string, link: string): Promis
     body: JSON.stringify({
       from: env.EMAIL_FROM,
       to: [email],
-      subject: 'Confirm your Screenify account',
-      text: `Confirm your email address to start capturing:\n\n${link}\n\nThis link expires in ${TOKEN_TTL_HOURS} hours. If you did not create a Screenify account, ignore this message.`,
+      subject: 'Confirm your Easy Screen Capture account',
+      text: `Confirm your email address to start capturing:\n\n${link}\n\nThis link expires in ${TOKEN_TTL_HOURS} hours. If you did not create an Easy Screen Capture account, ignore this message.`,
     }),
   });
 

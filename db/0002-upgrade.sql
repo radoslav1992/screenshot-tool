@@ -1,4 +1,4 @@
--- Screenify upgrade: email verification + retention bookkeeping.
+-- Easy Screen Capture upgrade: email verification + retention bookkeeping.
 --
 -- Run this in the D1 console (Cloudflare dashboard → Storage & Databases → D1 →
 -- screenify-data → Console) on a database that already has the 0001 schema.

@@ -41,6 +41,14 @@ declare namespace Cloudflare {
     /** From the webhook endpoint in the Stripe dashboard (whsec_…). */
     STRIPE_WEBHOOK_SECRET?: string;
 
+    /**
+     * "1" makes Stripe Tax work out VAT/GST at checkout, collect a billing
+     * address, and offer a VAT-number field. Set it only after activating Tax
+     * and setting an origin address in the dashboard — Stripe rejects the
+     * checkout session otherwise.
+     */
+    STRIPE_AUTOMATIC_TAX?: string;
+
     /** Recurring price ids (price_…) per plan and interval. */
     STRIPE_PRICE_PLUS_MONTHLY?: string;
     STRIPE_PRICE_PLUS_YEARLY?: string;

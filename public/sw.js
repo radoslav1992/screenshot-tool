@@ -1,5 +1,5 @@
 /*
- * Screenify service worker.
+ * Easy Screen Capture service worker.
  *
  * - App shell + static assets: cache-first, revalidated in the background.
  * - HTML documents: network-first with an offline fallback page.
@@ -7,8 +7,8 @@
  */
 
 const VERSION = 'v1';
-const SHELL_CACHE = `screenify-shell-${VERSION}`;
-const RUNTIME_CACHE = `screenify-runtime-${VERSION}`;
+const SHELL_CACHE = `esc-shell-${VERSION}`;
+const RUNTIME_CACHE = `esc-runtime-${VERSION}`;
 const OFFLINE_URL = '/offline';
 
 const SHELL_ASSETS = [

@@ -50,7 +50,7 @@
   },
 
   "vars": {
-    "PUBLIC_SITE_URL": "http://localhost:4321",
+    "PUBLIC_SITE_URL": "https://easyscreencapture.com",
     // Comma-separated hostnames that may never be captured (SSRF hardening
     // beyond the built-in private-range blocklist). Optional.
     "CAPTURE_HOST_DENYLIST": "",
@@ -63,7 +63,7 @@
     // mailer is configured, so it can never lock accounts out of a deployment
     // that cannot send mail. See EMAIL_FROM / RESEND_API_KEY below.
     "REQUIRE_EMAIL_VERIFICATION": "0",
-    // Sender address for confirmation emails, e.g. "Screenify <no-reply@yourdomain>".
+    // Sender address for confirmation emails, e.g. "Easy Screen Capture <no-reply@yourdomain>".
     "EMAIL_FROM": ""
   }
 
@@ -76,6 +76,9 @@
   // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
   // do not render and /api/billing/* answers 503.
   //   STRIPE_SECRET_KEY     - sk_live_… / sk_test_…
+  //   STRIPE_AUTOMATIC_TAX  - "1" to let Stripe Tax add VAT/GST at checkout.
+  //                           Activate Tax and set an origin address first, or
+  //                           Stripe rejects the session.
   //   STRIPE_WEBHOOK_SECRET - whsec_…, from the webhook endpoint pointed at
   //                           https://<your-domain>/api/billing/webhook
   //   STRIPE_PRICE_PLUS_MONTHLY, STRIPE_PRICE_PLUS_YEARLY

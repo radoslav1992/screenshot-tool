@@ -10,7 +10,7 @@ const user = Astro.locals.user;
 const origin = Astro.url.origin;
 
 const quickstart = `curl ${origin}/v1/capture \\
-  -H "Authorization: Bearer $SCREENIFY_KEY" \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
   -d url="https://stripe.com/pricing" \\
   -d device="mobile" \\
   -d mode="fullpage" \\
@@ -18,16 +18,16 @@ const quickstart = `curl ${origin}/v1/capture \\
 
 const asyncExample = `# Return immediately with status "pending", then poll:
 curl ${origin}/v1/capture \\
-  -H "Authorization: Bearer $SCREENIFY_KEY" \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
   -d url="https://example.com" -d async=1
 
 curl ${origin}/v1/captures/cap_8Yx2 \\
-  -H "Authorization: Bearer $SCREENIFY_KEY"`;
+  -H "Authorization: Bearer $ESC_API_KEY"`;
 
 const jsExample = `const response = await fetch("${origin}/v1/capture", {
   method: "POST",
   headers: {
-    authorization: \`Bearer \${process.env.SCREENIFY_KEY}\`,
+    authorization: \`Bearer \${process.env.ESC_API_KEY}\`,
     "content-type": "application/json",
   },
   body: JSON.stringify({
@@ -264,9 +264,9 @@ const endpoints = [
       </section>
 
       <section class="stack gap-8">
-        <h2 class="h4">The Screenify mark</h2>
+        <h2 class="h4">The free-plan mark</h2>
         <p class="small muted">
-          Captures made on the {PLANS.free.name} plan carry a small Screenify badge in the corner. Every paid plan —
+          Captures made on the {PLANS.free.name} plan carry a small <span class="mono">easyscreencapture.com</span> badge in the corner. Every paid plan —
           from {PLANS.plus.name} at ${PLANS.plus.priceMonthly}/month — returns the file clean. There is no parameter for
           it: it follows the account's plan, so an unmarked file is always a file someone paid for.
         </p>

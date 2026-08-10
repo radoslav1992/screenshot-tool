@@ -124,7 +124,7 @@ async function ensureProduct(plan) {
 
   const product = await stripe('POST', '/products', {
     name: `Easy Screen Capture ${plan.name}`,
-    description: plan.tagline,
+    description: plan.description,
     metadata: { esc_plan: plan.id },
     ...(TAX_CODE ? { tax_code: TAX_CODE } : {}),
   });

@@ -6,6 +6,16 @@ export interface Plan {
   priceMonthly: number;
   priceYearly: number;
   tagline: string;
+  /**
+   * What the customer is buying, in their words, for Stripe.
+   *
+   * Separate from `tagline` because they are read in different places. A
+   * tagline sits under a price on the pricing page, where the feature list is
+   * right there; this appears on the checkout page and on every invoice, where
+   * it is the only description of what was charged for — so it says the
+   * quantities rather than who it is for. Only what actually ships goes in it.
+   */
+  description: string;
   /** Screenshots per billing month. A `series` capture counts once per frame. */
   quota: number;
   api: boolean;
@@ -27,6 +37,8 @@ export const PLANS: Record<PlanId, Plan> = {
     priceMonthly: 0,
     priceYearly: 0,
     tagline: 'For trying things out',
+    description:
+      '200 screenshots a month. Every device, capture mode and ready-made size. Files carry a small easyscreencapture.com mark.',
     quota: 200,
     api: false,
     formats: ['png', 'jpg'],
@@ -48,6 +60,8 @@ export const PLANS: Record<PlanId, Plan> = {
     priceMonthly: 7,
     priceYearly: 67,
     tagline: 'For anyone publishing what they capture',
+    description:
+      '500 screenshots a month with no watermark. Every device, capture mode and ready-made size, plus PDF export, custom viewports and 30 days of capture history.',
     quota: 500,
     api: false,
     formats: ['png', 'jpg', 'pdf'],
@@ -69,6 +83,8 @@ export const PLANS: Record<PlanId, Plan> = {
     priceMonthly: 19,
     priceYearly: 182,
     tagline: 'For freelancers & small teams',
+    description:
+      '2,000 screenshots a month with no watermark, plus full API access at 60 requests a minute. Every device, mode and size, PDF export, custom viewports and 30 days of capture history.',
     quota: 2000,
     api: true,
     formats: ['png', 'jpg', 'pdf'],
@@ -90,6 +106,8 @@ export const PLANS: Record<PlanId, Plan> = {
     priceMonthly: 79,
     priceYearly: 758,
     tagline: 'For products built on screenshots',
+    description:
+      '15,000 screenshots a month with no watermark, API access at 300 requests a minute, and a priority rendering queue. Every device, mode and size, PDF export, custom viewports and a year of capture history.',
     quota: 15000,
     api: true,
     formats: ['png', 'jpg', 'pdf'],

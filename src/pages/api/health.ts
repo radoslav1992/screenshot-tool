@@ -102,11 +102,21 @@ function checkBilling(): CheckResult & {
   webhook: boolean;
   automaticTax: boolean;
   purchasable: string[];
+  prices: Record<string, string[]>;
 } {
   const enabled = billingEnabled();
-  const purchasable = PAID_PLANS.filter(
-    (plan) => priceIdFor(plan, 'monthly') || priceIdFor(plan, 'yearly'),
-  );
+
+  /*
+   * Per interval, not just per plan. A plan counts as purchasable on one price,
+   * so a monthly-only ladder looks complete here while a yearly subscriber
+   * cannot be moved to another yearly plan at all — the exact gap that is
+   * invisible from a list of plan names.
+   */
+  const prices: Record<string, string[]> = {};
+  for (const plan of PAID_PLANS) {
+    prices[plan] = (['monthly', 'yearly'] as const).filter((interval) => priceIdFor(plan, interval));
+  }
+  const purchasable = PAID_PLANS.filter((plan) => prices[plan]!.length > 0);
 
   if (!enabled) {
     return {
@@ -115,13 +125,21 @@ function checkBilling(): CheckResult & {
       webhook: false,
       automaticTax: false,
       purchasable: [],
+      prices: {},
       detail: 'Payments are off. Set STRIPE_SECRET_KEY to turn checkout on.',
     };
   }
 
+  const halfPriced = purchasable.filter((plan) => prices[plan]!.length === 1);
+
   const missing: string[] = [];
   if (!webhookConfigured()) missing.push('STRIPE_WEBHOOK_SECRET is not set, so plan changes will never apply');
   if (purchasable.length === 0) missing.push('no STRIPE_PRICE_* ids are set, so nothing can be bought');
+  if (halfPriced.length) {
+    missing.push(
+      `only one billing period is priced for ${halfPriced.join(', ')}, so the other period cannot be bought or switched to`,
+    );
+  }
   if (!automaticTaxEnabled()) missing.push('Stripe Tax is off; prices are charged with no VAT/GST added');
 
   return {
@@ -130,6 +148,7 @@ function checkBilling(): CheckResult & {
     webhook: webhookConfigured(),
     automaticTax: automaticTaxEnabled(),
     purchasable,
+    prices,
     ...(missing.length ? { detail: missing.join('; ') } : {}),
   };
 }

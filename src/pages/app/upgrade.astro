@@ -1,0 +1,139 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import Icon from '../../components/Icon.astro';
+import { PLANS, PLAN_ORDER, getPlan, type PlanId } from '../../lib/plans';
+import { billingEnabled, getBillingRow, hasActiveSubscription, priceIdFor, type BillingInterval } from '../../lib/billing';
+
+const user = Astro.locals.user!;
+const plan = getPlan(user.plan);
+
+const billing = billingEnabled() ? await getBillingRow(user.id).catch(() => null) : null;
+
+// Without a subscription there is nothing to change — that is a purchase, and
+// pricing is where purchases start.
+if (!hasActiveSubscription(billing)) return Astro.redirect('/pricing', 302);
+
+const current: BillingInterval = billing?.plan_interval === 'yearly' ? 'yearly' : 'monthly';
+
+/*
+ * A yearly subscriber is only offered yearly. Moving them to monthly would cost
+ * them the discount they already paid for and shorten their paid-through date,
+ * which is not an upgrade in any sense. Monthly subscribers see both, because
+ * moving up to yearly is a saving rather than a loss.
+ */
+const intervals: BillingInterval[] = current === 'yearly' ? ['yearly'] : ['monthly', 'yearly'];
+
+/** Plans above the current one. Downgrades and cancelling live in the portal. */
+const higher = PLAN_ORDER.slice(PLAN_ORDER.indexOf(plan.id) + 1);
+
+const options = higher.flatMap((id) =>
+  intervals
+    .filter((interval) => priceIdFor(id, interval))
+    .map((interval) => ({ plan: PLANS[id]!, interval })),
+);
+
+/** Same plan, but billed yearly — a saving, so it is worth offering on its own. */
+const switchToYearly =
+  current === 'monthly' && plan.id !== 'free' && priceIdFor(plan.id as PlanId, 'yearly')
+    ? { plan, interval: 'yearly' as BillingInterval }
+    : null;
+
+const priceOf = (entry: { plan: (typeof PLANS)[PlanId]; interval: BillingInterval }) =>
+  entry.interval === 'yearly' ? entry.plan.priceYearly : entry.plan.priceMonthly;
+
+const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly * 12 - p.priceYearly);
+---
+
+<AppShell title="Upgrade" tab="account">
+  <header class="appbar" slot="appbar">
+    <a href="/app/account" class="appbar__title" style="color: var(--ink-2)">‹ Account</a>
+  </header>
+
+  <div class="app-wrap stack gap-16">
+    <div>
+      <h1 class="h3">Change your plan</h1>
+      <p class="small muted" style="margin-top: 4px">
+        You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Stripe credits
+        the part of it you have not used against whatever you move to.
+      </p>
+    </div>
+
+    {
+      options.length === 0 && !switchToYearly ? (
+        <div class="notice notice--info">
+          You are on the top plan. To change your card, download invoices or cancel, use
+          {' '}<a href="/app/account">Billing on your account</a>.
+        </div>
+      ) : (
+        <div class="upgrade-list">
+          {switchToYearly && (
+            <form method="post" action="/api/billing/portal" class="upgrade">
+              <input type="hidden" name="plan" value={switchToYearly.plan.id} />
+              <input type="hidden" name="interval" value="yearly" />
+              <div class="upgrade__head">
+                <div>
+                  <div class="upgrade__name">
+                    {plan.name}, billed yearly
+                    <span class="upgrade__tag">SAVE ${yearlySaving(plan)}</span>
+                  </div>
+                  <div class="xs muted" style="margin-top: 2px">Same plan, two months cheaper over a year</div>
+                </div>
+                <div class="upgrade__price">
+                  ${plan.priceYearly}<span class="upgrade__per">/yr</span>
+                </div>
+              </div>
+              <button type="submit" class="btn btn--outline-ink btn--sm" style="margin-top: 12px; width: 100%">
+                Switch to yearly
+              </button>
+            </form>
+          )}
+
+          {options.map((entry) => (
+            <form method="post" action="/api/billing/portal" class="upgrade">
+              <input type="hidden" name="plan" value={entry.plan.id} />
+              <input type="hidden" name="interval" value={entry.interval} />
+
+              <div class="upgrade__head">
+                <div>
+                  <div class="upgrade__name">
+                    {/* Both periods can be on screen at once, so each card says which it is. */}
+                    {entry.plan.name}, billed {entry.interval === 'yearly' ? 'yearly' : 'monthly'}
+                    {entry.interval === 'yearly' && intervals.length > 1 && (
+                      <span class="upgrade__tag">SAVE ${yearlySaving(entry.plan)}</span>
+                    )}
+                  </div>
+                  <div class="xs muted" style="margin-top: 2px">{entry.plan.tagline}</div>
+                </div>
+                <div class="upgrade__price">
+                  ${priceOf(entry)}
+                  <span class="upgrade__per">{entry.interval === 'yearly' ? '/yr' : '/mo'}</span>
+                </div>
+              </div>
+
+              <ul class="upgrade__features">
+                {entry.plan.features.filter((f) => f.included).map((feature) => (
+                  <li><Icon name="check" size={14} /> <span>{feature.text}</span></li>
+                ))}
+              </ul>
+
+              <button
+                type="submit"
+                class={entry.plan.id === 'pro' ? 'btn btn--ink' : 'btn btn--outline-ink'}
+                style="margin-top: 14px"
+              >
+                Upgrade to {entry.plan.name}
+              </button>
+            </form>
+          ))}
+        </div>
+      )
+    }
+
+    <p class="xs muted-2">
+      The next step shows exactly what you will be charged today, after the credit for your current plan, and asks you
+      to confirm. Nothing is charged before that.
+    </p>
+
+    <a class="btn btn--outline" href="/app/account">Back to account</a>
+  </div>
+</AppShell>

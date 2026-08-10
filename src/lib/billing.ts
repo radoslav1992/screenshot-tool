@@ -311,12 +311,12 @@ export async function createPortalSession(
     return_url: `${origin}/app/account`,
   };
 
-  const flow = target ? await planChangeFlow(row, target, origin) : null;
+  const attempt = target ? await planChangeFlow(row, target, origin) : null;
 
-  if (flow) {
+  if (attempt?.flow) {
     try {
       const session = await stripe<{ url: string }>('/billing_portal/sessions', {
-        body: { ...body, flow_data: flow },
+        body: { ...body, flow_data: attempt.flow },
       });
       return session.url;
     } catch (error) {
@@ -343,20 +343,25 @@ export async function createPortalSession(
  * Returns null when anything needed is missing, so the caller falls back to the
  * plain portal rather than failing — the customer can still get there by hand.
  */
+/** What the flow builder decided, so callers can act on it or report it. */
+export interface PlanChangeAttempt {
+  flow: Record<string, unknown> | null;
+  reason?: string;
+}
+
 async function planChangeFlow(
   row: BillingRow,
   target: { plan: PlanId; interval: BillingInterval },
   origin: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<PlanChangeAttempt> {
   /*
-   * Every `return null` here ends with the plain portal opening, which looks
-   * exactly like the deep link "not working" — so each one says why. Without
-   * this the commonest cause by far, a plan that was never given a price for
-   * the period the customer is billed on, is completely invisible.
+   * Every give-up here ends with the plain portal opening, which looks exactly
+   * like the deep link "not working" — so each one says which it was, both to
+   * the log and to whoever asks /api/billing/diagnose.
    */
-  const give = (reason: string) => {
+  const give = (reason: string): PlanChangeAttempt => {
     console.error(`[billing] no plan-change flow for ${target.plan}/${target.interval}: ${reason}`);
-    return null;
+    return { flow: null, reason };
   };
 
   if (!row.stripe_subscription_id) return give('the account has no subscription id recorded');
@@ -385,16 +390,73 @@ async function planChangeFlow(
   if (!item) return give('the subscription has no items');
 
   return {
-    type: 'subscription_update_confirm',
-    subscription_update_confirm: {
-      subscription: row.stripe_subscription_id,
-      items: [{ id: item, price, quantity: 1 }],
-    },
-    after_completion: {
-      type: 'redirect',
-      redirect: { return_url: `${origin}/app/account?checkout=success` },
+    flow: {
+      type: 'subscription_update_confirm',
+      subscription_update_confirm: {
+        subscription: row.stripe_subscription_id,
+        items: [{ id: item, price, quantity: 1 }],
+      },
+      after_completion: {
+        type: 'redirect',
+        redirect: { return_url: `${origin}/app/account?checkout=success` },
+      },
     },
   };
+}
+
+/**
+ * Walks the whole plan-change path and reports what happened at each step,
+ * without changing anything. Every failure mode here is a dashboard setting or
+ * a missing price, and all of them look identical from the outside — the portal
+ * simply opens on the wrong screen. This is the difference between knowing and
+ * guessing.
+ */
+export async function diagnosePlanChange(
+  user: SessionUser,
+  target: { plan: PlanId; interval: BillingInterval },
+  origin: string,
+): Promise<Record<string, unknown>> {
+  const row = await getBillingRow(user.id);
+
+  const report: Record<string, unknown> = {
+    plan: user.plan,
+    target: `${target.plan}/${target.interval}`,
+    subscription: row?.stripe_subscription_id ? 'recorded' : 'missing',
+    customer: row?.stripe_customer_id ? 'recorded' : 'missing',
+    recordedInterval: row?.plan_interval || '(none)',
+    targetPriceConfigured: Boolean(priceIdFor(target.plan, target.interval)),
+  };
+
+  if (!row?.stripe_customer_id) {
+    report.result = 'no Stripe customer on this account; nothing to diagnose';
+    return report;
+  }
+
+  const attempt = await planChangeFlow(row, target, origin).catch((error) => ({
+    flow: null,
+    reason: error instanceof Error ? error.message : String(error),
+  }));
+
+  if (!attempt.flow) {
+    report.result = 'the deep link cannot be built, so the plain portal opens';
+    report.reason = attempt.reason;
+    return report;
+  }
+
+  // The flow is well-formed. The only thing left that can reject it is the
+  // portal configuration, so ask Stripe and report exactly what it says.
+  try {
+    await stripe('/billing_portal/sessions', {
+      body: { customer: row.stripe_customer_id, return_url: `${origin}/app/account`, flow_data: attempt.flow },
+    });
+    report.result = 'the deep link works — upgrading should open the confirmation screen';
+  } catch (error) {
+    report.result = 'Stripe refused the plan-change flow, so the plain portal opens instead';
+    report.reason = error instanceof Error ? error.message : String(error);
+    report.likelyFix =
+      'Settings → Billing → Customer portal: enable "Customers can switch plans" and list Plus, Pro and Business (with the prices) underneath it. Test and live keep separate configurations.';
+  }
+  return report;
 }
 
 /* -------------------------------------------------------------------------- */

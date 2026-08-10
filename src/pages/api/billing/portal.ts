@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
-import { billingEnabled, createPortalSession } from '../../../lib/billing';
-import { HttpError, assertSameOrigin, json } from '../../../lib/http';
+import { billingEnabled, createPortalSession, type BillingInterval } from '../../../lib/billing';
+import { PAID_PLANS, type PlanId } from '../../../lib/plans';
+import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
 
 export const prerender = false;
@@ -9,6 +10,11 @@ export const prerender = false;
  * POST /api/billing/portal — opens the Stripe customer portal, where people
  * change card, switch plan, download invoices and cancel. Everything Stripe
  * does there comes back to us as a subscription webhook.
+ *
+ * An optional `plan` (and `interval`) opens it on the confirmation screen for
+ * that plan instead of the front door, so switching plan is one click from the
+ * pricing page. An unknown plan is ignored rather than rejected — the plain
+ * portal is a perfectly good place to end up.
  */
 export const POST: APIRoute = async ({ request, locals }) => {
   const user = locals.user;
@@ -21,7 +27,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
       throw new HttpError(503, 'billing_unavailable', 'Payments are not configured on this deployment.');
     }
 
-    const url = await createPortalSession(user, new URL(request.url).origin);
+    const body = await readBody(request).catch(() => ({}) as Record<string, string>);
+    const plan = body.plan as PlanId | undefined;
+    const target =
+      plan && PAID_PLANS.includes(plan)
+        ? { plan, interval: (body.interval === 'yearly' ? 'yearly' : 'monthly') as BillingInterval }
+        : undefined;
+
+    const url = await createPortalSession(user, new URL(request.url).origin, target);
 
     const wantsJson = (request.headers.get('accept') ?? '').includes('application/json');
     if (!wantsJson) return new Response(null, { status: 303, headers: { location: url } });

@@ -16,8 +16,13 @@ const cancelled = Astro.url.searchParams.get('checkout') === 'cancelled';
 // Someone Stripe is already billing switches plan in the portal — a second
 // Checkout would start a second subscription and charge for both. The billing
 // columns only exist after migration 0003, so a stale schema falls back to links.
-const subscribed =
-  checkout && user ? hasActiveSubscription(await getBillingRow(user.id).catch(() => null)) : false;
+const billing = checkout && user ? await getBillingRow(user.id).catch(() => null) : null;
+const subscribed = hasActiveSubscription(billing);
+
+// Open on the period the subscriber is actually billed on. Otherwise a yearly
+// customer looking at the default monthly prices would switch plan and quietly
+// change their billing period at the same time.
+const startYearly = subscribed && billing?.plan_interval === 'yearly';
 ---
 
 <Base title="Pricing" description="Start free with 200 screenshots a month. Upgrade when you need more.">
@@ -31,8 +36,8 @@ const subscribed =
           <p class="section__sub">Start free. Upgrade when you need more shots.</p>
 
           <div class="switch" style="margin-top: 20px" role="group" aria-label="Billing period">
-            <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
-            <button type="button" data-period="yearly" aria-pressed="false">Yearly −20%</button>
+            <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
+            <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly −20%</button>
           </div>
         </div>
 
@@ -54,9 +59,9 @@ const subscribed =
                   <div class="plan__name">{plan.name}</div>
                   <div>
                     <span class="plan__price" data-price-for={plan.id} data-monthly={plan.priceMonthly} data-yearly={plan.priceYearly}>
-                      ${plan.priceMonthly}
+                      ${startYearly ? plan.priceYearly : plan.priceMonthly}
                     </span>
-                    <span class="plan__per" data-per>/mo</span>
+                    <span class="plan__per" data-per>{startYearly ? '/yr' : '/mo'}</span>
                   </div>
                 </div>
 
@@ -80,6 +85,8 @@ const subscribed =
                     </div>
                   ) : subscribed && plan.id !== 'free' ? (
                     <form class="plan__cta" method="post" action="/api/billing/portal">
+                      <input type="hidden" name="plan" value={plan.id} />
+                      <input type="hidden" name="interval" value={startYearly ? 'yearly' : 'monthly'} data-interval />
                       <button type="submit" class={plan.id === 'pro' ? 'btn btn--lime' : 'btn btn--outline-ink'}>
                         Switch to {plan.name}
                       </button>

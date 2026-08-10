@@ -2448,3 +2448,89 @@ button {
     object-position: top;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Change-plan screen
+   -------------------------------------------------------------------------- */
+.upgrade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 760px) {
+  .upgrade-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+}
+
+.upgrade {
+  background: var(--white);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.upgrade__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upgrade__name {
+  font: 700 15px var(--display);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.upgrade__tag {
+  font: 500 10px var(--mono);
+  letter-spacing: 0.06em;
+  background: var(--lime-tint);
+  color: var(--green-deep);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.upgrade__price {
+  font: 800 20px var(--display);
+  white-space: nowrap;
+}
+
+.upgrade__per {
+  font: 400 11px var(--sans);
+  color: var(--muted);
+}
+
+.upgrade__features {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.upgrade__features li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.upgrade__features svg {
+  color: var(--green);
+  margin-top: 2px;
+}
+
+/* The button sits at the bottom so a row of cards lines up. */
+.upgrade .btn {
+  margin-top: auto;
+}

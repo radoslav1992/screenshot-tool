@@ -126,13 +126,9 @@ const billingError = Astro.url.searchParams.get('billing_error');
       {
         nextPlan &&
           (subscribed ? (
-            <form method="post" action="/api/billing/portal" style="margin-top: 16px">
-              <input type="hidden" name="plan" value={nextPlan.id} />
-              <input type="hidden" name="interval" value={currentInterval} />
-              <button type="submit" class="btn btn--lime" style="padding: 12px; font-size: 13px">
-                Upgrade to {nextPlan.name}
-              </button>
-            </form>
+            <a class="btn btn--lime" href="/app/upgrade" style="margin-top: 16px; padding: 12px; font-size: 13px">
+              Upgrade to {nextPlan.name}
+            </a>
           ) : (
             <a class="btn btn--lime" href="/pricing" style="margin-top: 16px; padding: 12px; font-size: 13px">
               Upgrade to {nextPlan.name} — ${nextPlan.priceMonthly}/mo

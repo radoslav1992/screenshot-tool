@@ -348,10 +348,25 @@ async function planChangeFlow(
   target: { plan: PlanId; interval: BillingInterval },
   origin: string,
 ): Promise<Record<string, unknown> | null> {
-  if (!row.stripe_subscription_id) return null;
+  /*
+   * Every `return null` here ends with the plain portal opening, which looks
+   * exactly like the deep link "not working" — so each one says why. Without
+   * this the commonest cause by far, a plan that was never given a price for
+   * the period the customer is billed on, is completely invisible.
+   */
+  const give = (reason: string) => {
+    console.error(`[billing] no plan-change flow for ${target.plan}/${target.interval}: ${reason}`);
+    return null;
+  };
+
+  if (!row.stripe_subscription_id) return give('the account has no subscription id recorded');
 
   const price = priceIdFor(target.plan, target.interval);
-  if (!price) return null;
+  if (!price) {
+    return give(
+      `STRIPE_PRICE_${target.plan.toUpperCase()}_${target.interval.toUpperCase()} is not set, so there is no ${target.interval} ${target.plan} price to move to`,
+    );
+  }
 
   // The flow replaces a subscription *item*, so it needs that item's id — which
   // only the subscription itself knows.
@@ -362,13 +377,12 @@ async function planChangeFlow(
     });
     item = subscription.items?.data?.[0]?.id;
     if (subscription.items?.data?.[0]?.price?.id === price) {
-      // Already on this exact price; the confirm screen would be a no-op.
-      return null;
+      return give('the subscription is already on that exact price');
     }
-  } catch {
-    return null;
+  } catch (error) {
+    return give(`the subscription could not be read: ${error instanceof Error ? error.message : error}`);
   }
-  if (!item) return null;
+  if (!item) return give('the subscription has no items');
 
   return {
     type: 'subscription_update_confirm',
@@ -448,7 +462,13 @@ interface StripeSubscription {
   current_period_end?: number;
   cancel_at_period_end?: boolean;
   metadata?: Record<string, string>;
-  items?: { data?: Array<{ id?: string; price?: { id?: string }; current_period_end?: number }> };
+  items?: {
+    data?: Array<{
+      id?: string;
+      price?: { id?: string; recurring?: { interval?: string } };
+      current_period_end?: number;
+    }>;
+  };
 }
 
 function subscriptionPlan(subscription: StripeSubscription): { plan: PlanId; interval: BillingInterval } | null {
@@ -458,9 +478,14 @@ function subscriptionPlan(subscription: StripeSubscription): { plan: PlanId; int
     if (match) return match;
   }
   // Fall back to the metadata we stamped at checkout, so a price rotated in the
-  // Stripe dashboard downgrades nobody.
+  // Stripe dashboard downgrades nobody. The period still comes off the price
+  // itself — guessing "monthly" here would record a yearly subscriber as
+  // monthly, and every later plan change would then look for the wrong price.
   const fromMetadata = subscription.metadata?.plan as PlanId | undefined;
-  if (fromMetadata && PAID_PLANS.includes(fromMetadata)) return { plan: fromMetadata, interval: 'monthly' };
+  if (fromMetadata && PAID_PLANS.includes(fromMetadata)) {
+    const recurring = subscription.items?.data?.[0]?.price?.recurring?.interval;
+    return { plan: fromMetadata, interval: recurring === 'year' ? 'yearly' : 'monthly' };
+  }
   return null;
 }
 

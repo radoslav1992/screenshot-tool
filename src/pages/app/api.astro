@@ -52,7 +52,7 @@ const monthLabel = (iso: string) =>
     <span class="pill pill--quota">{plan.name} plan</span>
   </header>
 
-  <div class="p-20 stack" style="gap: 18px">
+  <div class="app-wrap app-split stack" style="gap: 18px">
     {
       !plan.api && (
         <div class="notice notice--info">
@@ -62,6 +62,7 @@ const monthLabel = (iso: string) =>
       )
     }
 
+    <div class="app-col">
     <section>
       <div class="row-between" style="margin-bottom: 8px">
         <div class="label">Your keys</div>
@@ -109,6 +110,9 @@ const monthLabel = (iso: string) =>
       </p>
     </section>
 
+    </div>
+
+    <div class="app-col">
     <section>
       <div class="label" style="margin-bottom: 8px">Quick start</div>
       <CodeBlock tag="POST /v1/capture" code={curl} />
@@ -130,6 +134,7 @@ const monthLabel = (iso: string) =>
     </section>
 
     <p class="center label"><a href="/docs">Full API reference →</a></p>
+    </div>
   </div>
 </AppShell>
 

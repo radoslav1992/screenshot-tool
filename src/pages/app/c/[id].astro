@@ -24,7 +24,7 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
     <button type="button" class="btn btn--sm btn--outline" data-delete-capture={capture.id}>Delete</button>
   </header>
 
-  <div class="p-20 stack gap-16">
+  <div class="app-wrap stack gap-16">
     <div>
       <h1 class="h3 truncate">{displayUrl(capture.url)}</h1>
       <p class="small muted" style="margin-top: 4px">
@@ -47,6 +47,7 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
       )
     }
 
+    <div class={files.length > 1 ? 'file-grid' : 'file-grid file-grid--single'}>
     {
       files.map((file) => (
         <figure class="card" style="overflow: hidden; margin: 0">
@@ -56,8 +57,8 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
               <p class="small muted" style="margin-top: 8px">{file.name} · {formatBytes(file.bytes)}</p>
             </div>
           ) : (
-            <a href={fileHref(file.name)} target="_blank" rel="noopener">
-              <img src={fileHref(file.name)} alt={`Capture of ${displayUrl(capture.url)}`} style="width: 100%; height: auto" />
+            <a href={fileHref(file.name)} target="_blank" rel="noopener" class="file-shot">
+              <img src={fileHref(file.name)} alt={`Capture of ${displayUrl(capture.url)}`} />
             </a>
           )}
           <figcaption class="shot__meta">
@@ -71,6 +72,7 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
         </figure>
       ))
     }
+    </div>
 
     {
       shareUrl && (

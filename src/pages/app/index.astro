@@ -27,7 +27,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
     <a class="avatar" href="/app/account" aria-label="Account">{initials}</a>
   </header>
 
-  <form id="capture-form" class="p-20 stack gap-20">
+  <form id="capture-form" class="app-wrap app-split stack gap-20">
     {
       !verified && (
         <div class="notice notice--info" id="verify-banner">
@@ -42,6 +42,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 
     <div class="notice notice--error" id="capture-error" hidden></div>
 
+    <div class="app-col">
     <div class="field">
       <label class="field__label" for="url">Page URL</label>
       <div class="input-affix">
@@ -122,7 +123,9 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
         </div>
       </div>
     </div>
+    </div>
 
+    <div class="app-col">
     <div>
       <div class="field__label" style="margin-bottom: 8px">Capture mode</div>
       <div class="mode-list">
@@ -196,6 +199,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
         </p>
       )
     }
+    </div>
   </form>
 </AppShell>
 

@@ -22,7 +22,8 @@ const filters = [
     <span class="pill pill--quota">{usage.remaining.toLocaleString()} / {usage.quota.toLocaleString()} left</span>
   </header>
 
-  <div class="chips" style="padding: 14px 20px 0">
+  <div class="app-wrap stack gap-16">
+    <div class="chips">
     {
       filters.map((entry) => (
         <a
@@ -47,11 +48,12 @@ const filters = [
         <a class="btn btn--ink" href="/app" style="max-width: 220px; margin: 18px auto 0">Take a screenshot</a>
       </div>
     ) : (
-      <div style="padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div class="shot-list">
         {captures.map((capture) => (
           <ShotCard capture={capture} />
         ))}
       </div>
     )
   }
+  </div>
 </AppShell>

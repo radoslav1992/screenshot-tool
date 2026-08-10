@@ -33,7 +33,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
     <span class="avatar">{initials}</span>
   </header>
 
-  <div class="p-20 stack gap-16">
+  <div class="app-wrap app-split stack gap-16">
     {
       justUpgraded && (
         <div class="notice notice--info">
@@ -51,6 +51,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
       )
     }
 
+    <div class="app-col">
     <div class="card" style="padding: 18px; display: flex; align-items: center; gap: 14px">
       <span class="avatar avatar--lg">{initials}</span>
       <div style="flex: 1; min-width: 0">
@@ -118,6 +119,9 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
       }
     </section>
 
+    </div>
+
+    <div class="app-col">
     <div class="rows">
       <a class="row" href="/pricing">
         <span class="row__label">Plans &amp; pricing</span>
@@ -157,6 +161,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
     <p class="xs muted-2 center">
       Easy Screen Capture · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
     </p>
+    </div>
   </div>
 </AppShell>
 

@@ -1,0 +1,53 @@
+---
+/**
+ * The Easy Screen Capture mark, at the weight that survives small sizes.
+ *
+ * The full logo — a browser window with a picture in it and a camera badge —
+ * is the app icon, where there is room for it. Inside the product it appears at
+ * 26px, where that detail is mud, so this keeps only the capture brackets and a
+ * lens: one shape with one hole, which still reads at 16.
+ *
+ * Two colours, taken from the tile it sits on rather than `currentColor`,
+ * because the hole has to be the background rather than absent.
+ */
+interface Props {
+  size?: number;
+  /** Which tile it is sitting on, which decides which way round the colours go. */
+  tone?: 'ink' | 'lime';
+  class?: string;
+}
+
+const { size = 26, tone = 'ink', class: className } = Astro.props;
+
+const shape = tone === 'ink' ? 'var(--lime)' : 'var(--ink)';
+const hole = tone === 'ink' ? 'var(--ink)' : 'var(--lime)';
+
+const A = 44;
+const B = 512 - 44;
+const ARM = 96;
+const R = 34;
+
+const brackets = [
+  `M${A},${A + ARM} L${A},${A + R} A${R},${R} 0 0 1 ${A + R},${A} L${A + ARM},${A}`,
+  `M${B - ARM},${A} L${B - R},${A} A${R},${R} 0 0 1 ${B},${A + R} L${B},${A + ARM}`,
+  `M${B},${B - ARM} L${B},${B - R} A${R},${R} 0 0 1 ${B - R},${B} L${B - ARM},${B}`,
+  `M${A + ARM},${B} L${A + R},${B} A${R},${R} 0 0 1 ${A},${B - R} L${A},${B - ARM}`,
+];
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 512 512"
+  fill="none"
+  aria-hidden="true"
+  class={className}
+>
+  {
+    brackets.map((d) => (
+      <path d={d} stroke={shape} stroke-width="46" stroke-linecap="round" stroke-linejoin="round" />
+    ))
+  }
+  <rect x="150" y="150" width="212" height="212" rx="40" fill={shape} />
+  <circle cx="256" cy="256" r="52" fill={hole} />
+</svg>

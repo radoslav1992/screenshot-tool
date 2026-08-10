@@ -1,4 +1,6 @@
 ---
+import Mark from './Mark.astro';
+
 interface Props {
   variant?: 'ink' | 'lime';
   href?: string;
@@ -10,6 +12,6 @@ const markClass = variant === 'lime' ? 'logo__mark logo__mark--lime' : 'logo__ma
 ---
 
 <a class="logo" href={href} style={wordColor ? `color: ${wordColor}` : undefined}>
-  <span class={markClass} aria-hidden="true">E</span>
+  <span class={markClass}><Mark size={16} tone={variant === 'lime' ? 'lime' : 'ink'} /></span>
   <span class="logo__word">Easy Screen Capture</span>
 </a>

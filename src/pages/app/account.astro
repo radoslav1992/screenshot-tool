@@ -2,7 +2,7 @@
 import AppShell from '../../layouts/AppShell.astro';
 import { getUsage } from '../../lib/captures';
 import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
-import { billingEnabled, getBillingRow } from '../../lib/billing';
+import { billingEnabled, getBillingRow, hasActiveSubscription } from '../../lib/billing';
 
 const user = Astro.locals.user!;
 const usage = await getUsage(user);
@@ -19,6 +19,10 @@ const checkout = billingEnabled();
 // account screen is not the place to find that out.
 const billing = checkout ? await getBillingRow(user.id).catch(() => null) : null;
 const hasCustomer = Boolean(billing?.stripe_customer_id);
+const subscribed = hasActiveSubscription(billing);
+// Keep the period they are already billed on rather than silently moving a
+// yearly customer onto monthly as a side effect of upgrading.
+const currentInterval = billing?.plan_interval === 'yearly' ? 'yearly' : 'monthly';
 const pastDue = billing?.plan_status === 'past_due';
 const paidThrough = billing?.plan_period_end
   ? new Date(billing.plan_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -33,7 +37,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
     <span class="avatar">{initials}</span>
   </header>
 
-  <div class="p-20 stack gap-16">
+  <div class="app-wrap app-split stack gap-16">
     {
       justUpgraded && (
         <div class="notice notice--info">
@@ -51,6 +55,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
       )
     }
 
+    <div class="app-col">
     <div class="card" style="padding: 18px; display: flex; align-items: center; gap: 14px">
       <span class="avatar avatar--lg">{initials}</span>
       <div style="flex: 1; min-width: 0">
@@ -110,14 +115,26 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
       </div>
 
       {
-        nextPlan && (
-          <a class="btn btn--lime" href="/pricing" style="margin-top: 16px; padding: 12px; font-size: 13px">
-            Upgrade to {nextPlan.name} — ${nextPlan.priceMonthly}/mo
-          </a>
-        )
+        nextPlan &&
+          (subscribed ? (
+            <form method="post" action="/api/billing/portal" style="margin-top: 16px">
+              <input type="hidden" name="plan" value={nextPlan.id} />
+              <input type="hidden" name="interval" value={currentInterval} />
+              <button type="submit" class="btn btn--lime" style="padding: 12px; font-size: 13px">
+                Upgrade to {nextPlan.name}
+              </button>
+            </form>
+          ) : (
+            <a class="btn btn--lime" href="/pricing" style="margin-top: 16px; padding: 12px; font-size: 13px">
+              Upgrade to {nextPlan.name} — ${nextPlan.priceMonthly}/mo
+            </a>
+          ))
       }
     </section>
 
+    </div>
+
+    <div class="app-col">
     <div class="rows">
       <a class="row" href="/pricing">
         <span class="row__label">Plans &amp; pricing</span>
@@ -157,6 +174,7 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
     <p class="xs muted-2 center">
       Easy Screen Capture · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
     </p>
+    </div>
   </div>
 </AppShell>
 

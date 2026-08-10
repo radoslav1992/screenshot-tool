@@ -541,6 +541,13 @@ button {
   margin-top: 2px;
 }
 
+/* There is no room for a wordmark in a row of four bottom tabs; the left rail
+   has a header to fill. Not `hidden`, which the global `!important` rule would
+   pin shut against the media query below. */
+.tabbar__brand {
+  display: none;
+}
+
 @media (min-width: 560px) {
   body:not(.is-standalone) .tabbar {
     position: sticky;
@@ -2201,4 +2208,243 @@ button {
 /* Docs read as prose, so cap the measure inside the full-bleed page. */
 .prose-wrap {
   max-width: 780px;
+}
+
+/* --------------------------------------------------------------------------
+   App on a large screen
+
+   Below 900px nothing here applies and the app is exactly the phone layout it
+   has always been. Above it, the shell stops pretending to be a phone: the
+   bottom tab bar becomes a left rail, and each screen spends the width it now
+   has instead of leaving it empty on both sides.
+   -------------------------------------------------------------------------- */
+
+/* The standard page box inside the app shell. Identical to the `p-20` it
+   replaces until the shell grows, which is what keeps the phone layout byte
+   for byte as it was. Declared before the media query so the wider padding
+   wins on specificity ties. */
+.app-wrap {
+  padding: 20px;
+}
+
+/*
+ * A tablet is a bigger screen too, and a portrait iPad is only ~820px — below
+ * the point where a left rail earns its keep. So the column widens in two steps
+ * before the layout changes shape at all. Overriding `--shell` rather than
+ * `max-width` means the fixed bottom tab bar, which is sized from the same
+ * variable, keeps matching the shell instead of sitting narrower inside it.
+ */
+@media (min-width: 680px) {
+  .shell--app {
+    --shell: 640px;
+  }
+}
+
+@media (min-width: 820px) {
+  .shell--app {
+    --shell: 760px;
+  }
+}
+
+@media (min-width: 900px) {
+  .shell--app {
+    max-width: 1240px;
+    display: grid;
+    /* Wide enough for the wordmark to sit on one line beside its mark. */
+    grid-template-columns: 232px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    padding-bottom: 0;
+  }
+
+  /* Beats the 560px rule that gives the phone shell its floating-card look. */
+  body:not(.is-standalone) .shell--app {
+    margin-block: 24px;
+    min-height: calc(100dvh - 48px);
+    border-radius: 20px;
+    overflow: visible;
+  }
+
+  /* An installed desktop window is the chrome, so it should not float. */
+  body.is-standalone .shell--app {
+    max-width: none;
+    min-height: 100dvh;
+  }
+
+  .shell--app > .appbar {
+    grid-column: 2;
+    grid-row: 1;
+    border-top-right-radius: inherit;
+    padding: 20px 32px;
+  }
+
+  /* The rail carries the brand now, so the title bar need not repeat the mark. */
+  .shell--app > .appbar .logo__mark {
+    display: none;
+  }
+
+  .shell--app > .grow {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .shell--app > .tabbar {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+
+  /* ---- bottom tabs become a left rail ---- */
+  .shell--app > .tabbar {
+    position: sticky;
+    top: 0;
+    align-self: stretch;
+    height: auto;
+    flex-direction: column;
+    gap: 2px;
+    max-width: none;
+    left: auto;
+    transform: none;
+    padding: 18px 12px;
+    background: var(--paper);
+    border-top: 0;
+    border-right: 1px solid var(--line-2);
+    border-radius: 20px 0 0 20px;
+  }
+
+  body.is-standalone .shell--app > .tabbar {
+    border-radius: 0;
+  }
+
+  .tabbar__brand {
+    display: block;
+    padding: 4px 10px 18px;
+  }
+
+  .tabbar__brand .logo__word {
+    font-size: 15px;
+    white-space: nowrap;
+  }
+
+  .shell--app > .tabbar .tabbar__item {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
+  .shell--app > .tabbar .tabbar__item[aria-current='page'] {
+    background: var(--line-3);
+  }
+
+  .shell--app > .tabbar .tabbar__icon {
+    height: auto;
+  }
+
+  .shell--app > .tabbar .tabbar__label {
+    margin-top: 0;
+  }
+
+  /* ---- content gets room, but text keeps a readable measure ---- */
+  .app-wrap {
+    padding: 26px 32px 40px;
+    max-width: 1080px;
+  }
+}
+
+/* A column of a split screen. It carries the same gap the page stack does, so
+   on a phone — where the columns are simply stacked — the rhythm is unchanged
+   from when these groups were direct children of the page. */
+.app-col {
+  display: flex;
+  flex-direction: column;
+  /* Takes the page stack's own gap, so wrapping existing groups in a column
+     cannot change their spacing on a phone — where the columns simply stack. */
+  gap: inherit;
+  min-width: 0;
+}
+
+/* Between the rail appearing and the split becoming worthwhile there is a band
+   where the content column is wide but still single. A form stretched to 800px
+   is worse than one that stops at a readable width, so it stops. */
+@media (min-width: 900px) and (max-width: 1119.98px) {
+  .app-split {
+    max-width: 640px;
+  }
+}
+
+/* Two columns once there is genuinely room for two, not merely for one wide
+   one. Each screen splits where its content already had a seam. */
+@media (min-width: 1120px) {
+  .app-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 20px 32px;
+    align-items: start;
+  }
+
+  /* Banners and errors speak for the whole screen, not one column. */
+  .app-split > .notice {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The library is the one screen that is a collection, so it tiles once there
+   is room for a second column. */
+.shot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 700px) {
+  .shot-list {
+    display: grid;
+    /* 280 rather than 300 so a 640px shell fits two columns instead of
+       one stretched one: 280 + 16 + 280 = 576, inside the 600px of content. */
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Capture detail
+
+   A phone shows one frame at a time and scrolls; a desktop can show the set.
+   The height cap matters more than the tiling: a full-page capture is often
+   ten screens tall, and an unbounded preview buries everything under it.
+   -------------------------------------------------------------------------- */
+.file-grid {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+.file-shot img {
+  width: 100%;
+  height: auto;
+}
+
+@media (min-width: 900px) {
+  .file-grid:not(.file-grid--single) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+
+  /* Tall captures are shown top-aligned and clipped rather than scaled down to
+     illegibility; the full file is one click away on the image itself. */
+  .file-shot {
+    display: block;
+    max-height: 70vh;
+    overflow: hidden;
+  }
+
+  .file-shot img {
+    object-fit: cover;
+    object-position: top;
+  }
 }

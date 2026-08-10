@@ -1,5 +1,6 @@
 ---
 import Icon from './Icon.astro';
+import Logo from './Logo.astro';
 
 interface Props {
   current: 'capture' | 'library' | 'api' | 'account';
@@ -16,6 +17,8 @@ const tabs = [
 ---
 
 <nav class="tabbar" aria-label="Primary">
+  {/* Only shown once the tabs become a left rail, where there is a header to fill. */}
+  <div class="tabbar__brand"><Logo href="/app" /></div>
   {
     tabs.map((tab) => (
       <a

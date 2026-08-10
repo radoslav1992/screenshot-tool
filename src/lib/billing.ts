@@ -258,16 +258,86 @@ export async function createCheckoutSession(input: {
   return session.url;
 }
 
-export async function createPortalSession(user: SessionUser, origin: string): Promise<string> {
+/**
+ * Opens the Stripe customer portal.
+ *
+ * With a `target`, it opens on the confirmation screen for that exact plan
+ * rather than the portal's front door — one click from "Switch to Pro" to
+ * confirming the change, with the proration Stripe worked out shown before
+ * anything is charged.
+ *
+ * Why not change the subscription directly from here? An upgrade takes an
+ * immediate payment, and that payment can need 3-D Secure. Doing it in-app
+ * would mean embedding Stripe.js and building an authentication flow for a
+ * card that asks for it. Stripe's own flow already handles that, so this keeps
+ * the money side there and spends the effort on getting the customer to the
+ * right screen.
+ */
+export async function createPortalSession(
+  user: SessionUser,
+  origin: string,
+  target?: { plan: PlanId; interval: BillingInterval },
+): Promise<string> {
   const row = await getBillingRow(user.id);
   if (!row?.stripe_customer_id) {
     throw new HttpError(404, 'no_customer', 'This account has no billing history yet.');
   }
 
-  const session = await stripe<{ url: string }>('/billing_portal/sessions', {
-    body: { customer: row.stripe_customer_id, return_url: `${origin}/app/account` },
-  });
+  const body: Record<string, unknown> = {
+    customer: row.stripe_customer_id,
+    return_url: `${origin}/app/account`,
+  };
+
+  const flow = target ? await planChangeFlow(row, target, origin) : null;
+  if (flow) body.flow_data = flow;
+
+  const session = await stripe<{ url: string }>('/billing_portal/sessions', { body });
   return session.url;
+}
+
+/**
+ * Builds the portal's `subscription_update_confirm` flow for a plan change.
+ * Returns null when anything needed is missing, so the caller falls back to the
+ * plain portal rather than failing — the customer can still get there by hand.
+ */
+async function planChangeFlow(
+  row: BillingRow,
+  target: { plan: PlanId; interval: BillingInterval },
+  origin: string,
+): Promise<Record<string, unknown> | null> {
+  if (!row.stripe_subscription_id) return null;
+
+  const price = priceIdFor(target.plan, target.interval);
+  if (!price) return null;
+
+  // The flow replaces a subscription *item*, so it needs that item's id — which
+  // only the subscription itself knows.
+  let item: string | undefined;
+  try {
+    const subscription = await stripe<StripeSubscription>(`/subscriptions/${row.stripe_subscription_id}`, {
+      method: 'GET',
+    });
+    item = subscription.items?.data?.[0]?.id;
+    if (subscription.items?.data?.[0]?.price?.id === price) {
+      // Already on this exact price; the confirm screen would be a no-op.
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  if (!item) return null;
+
+  return {
+    type: 'subscription_update_confirm',
+    subscription_update_confirm: {
+      subscription: row.stripe_subscription_id,
+      items: [{ id: item, price, quantity: 1 }],
+    },
+    after_completion: {
+      type: 'redirect',
+      redirect: { return_url: `${origin}/app/account?checkout=success` },
+    },
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -335,7 +405,7 @@ interface StripeSubscription {
   current_period_end?: number;
   cancel_at_period_end?: boolean;
   metadata?: Record<string, string>;
-  items?: { data?: Array<{ price?: { id?: string }; current_period_end?: number }> };
+  items?: { data?: Array<{ id?: string; price?: { id?: string }; current_period_end?: number }> };
 }
 
 function subscriptionPlan(subscription: StripeSubscription): { plan: PlanId; interval: BillingInterval } | null {

@@ -12,7 +12,8 @@
     "check": "astro check",
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
-    "stripe:setup": "node scripts/stripe-setup.mjs"
+    "stripe:setup": "node scripts/stripe-setup.mjs",
+    "icons": "node scripts/build-icons.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

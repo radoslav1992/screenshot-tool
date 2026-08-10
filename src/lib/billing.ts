@@ -121,12 +121,35 @@ async function stripe<T = any>(
   const payload = (await response.json().catch(() => null)) as any;
 
   if (!response.ok) {
-    const message = payload?.error?.message ?? `Stripe responded ${response.status}.`;
-    console.error(`[billing] stripe ${method} ${path} → ${response.status}: ${message}`);
-    throw new HttpError(502, 'billing_error', 'Payments are temporarily unavailable. Try again in a moment.');
+    const detail = payload?.error?.message ?? `Stripe responded ${response.status}.`;
+    const code = payload?.error?.code ?? payload?.error?.type ?? String(response.status);
+    console.error(`[billing] stripe ${method} ${path} → ${response.status} ${code}: ${detail}`);
+
+    /*
+     * A 4xx from Stripe is nearly always a setting that has not been made in the
+     * dashboard yet — an unconfigured portal, a price missing from it. Those
+     * read as "temporarily unavailable" to a customer and as nothing at all to
+     * the operator, who then needs log access to find out. Carrying Stripe's own
+     * message through means the person who hit it can see the cause. Stripe
+     * writes these for developers and they carry no credentials.
+     */
+    const error = new HttpError(
+      502,
+      'billing_error',
+      response.status >= 500
+        ? 'Payments are temporarily unavailable. Try again in a moment.'
+        : `Stripe rejected the request: ${detail}`,
+    );
+    (error as StripeCallError).stripeStatus = response.status;
+    throw error;
   }
 
   return payload as T;
+}
+
+/** An HttpError that came from Stripe, carrying the status it answered with. */
+interface StripeCallError extends HttpError {
+  stripeStatus?: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -289,7 +312,27 @@ export async function createPortalSession(
   };
 
   const flow = target ? await planChangeFlow(row, target, origin) : null;
-  if (flow) body.flow_data = flow;
+
+  if (flow) {
+    try {
+      const session = await stripe<{ url: string }>('/billing_portal/sessions', {
+        body: { ...body, flow_data: flow },
+      });
+      return session.url;
+    } catch (error) {
+      /*
+       * Landing on the right screen is a convenience; reaching billing at all is
+       * not. The confirm flow needs the portal configured to allow plan changes
+       * with these products listed, and Stripe rejects the whole session if it
+       * is not — which would otherwise lock someone out of their own card and
+       * invoices over a setting. Fall through to the plain portal instead.
+       */
+      console.error(
+        `[billing] plan-change flow rejected for ${row.stripe_subscription_id}; opening the portal without it`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
 
   const session = await stripe<{ url: string }>('/billing_portal/sessions', { body });
   return session.url;

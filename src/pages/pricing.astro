@@ -12,6 +12,7 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
 const checkout = billingEnabled();
 const purchasable = new Set(plans.filter((plan) => planPurchasable(plan.id)).map((plan) => plan.id));
 const cancelled = Astro.url.searchParams.get('checkout') === 'cancelled';
+const billingError = Astro.url.searchParams.get('billing_error');
 
 // Someone Stripe is already billing switches plan in the portal — a second
 // Checkout would start a second subscription and charge for both. The billing
@@ -40,6 +41,14 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
             <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly −20%</button>
           </div>
         </div>
+
+        {
+          billingError && (
+            <div class="notice notice--error" style="max-width: 640px; margin: 0 auto 22px">
+              <strong>Checkout could not be started.</strong> {billingError}
+            </div>
+          )
+        }
 
         {
           cancelled && (

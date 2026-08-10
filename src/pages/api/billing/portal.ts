@@ -40,6 +40,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!wantsJson) return new Response(null, { status: 303, headers: { location: url } });
     return json({ url });
   } catch (error) {
-    return toHttpError(error, 'billing.portal', 'Could not open the billing portal.').toResponse();
+    const failure = toHttpError(error, 'billing.portal', 'Could not open the billing portal.');
+
+    // A form post that fails should land back on the page it came from with
+    // something readable, not a page of JSON at a URL the customer cannot leave.
+    if (!(request.headers.get('accept') ?? '').includes('application/json')) {
+      return new Response(null, {
+        status: 303,
+        headers: { location: `/app/account?billing_error=${encodeURIComponent(failure.message.slice(0, 300))}` },
+      });
+    }
+    return failure.toResponse();
   }
 };

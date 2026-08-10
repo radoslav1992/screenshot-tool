@@ -36,6 +36,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!wantsJson) return new Response(null, { status: 303, headers: { location: url } });
     return json({ url });
   } catch (error) {
-    return toHttpError(error, 'billing.checkout', 'Could not start checkout.').toResponse();
+    const failure = toHttpError(error, 'billing.checkout', 'Could not start checkout.');
+
+    // Same as the portal: a form post ends up back on the pricing page with a
+    // message, rather than at a JSON dead end.
+    if (!(request.headers.get('accept') ?? '').includes('application/json')) {
+      return new Response(null, {
+        status: 303,
+        headers: { location: `/pricing?billing_error=${encodeURIComponent(failure.message.slice(0, 300))}` },
+      });
+    }
+    return failure.toResponse();
   }
 };

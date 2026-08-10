@@ -29,6 +29,7 @@ const paidThrough = billing?.plan_period_end
   : null;
 
 const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
+const billingError = Astro.url.searchParams.get('billing_error');
 ---
 
 <AppShell title="Account" tab="account">
@@ -51,6 +52,14 @@ const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
       pastDue && (
         <div class="notice notice--error">
           Your last payment did not go through. Update your card to keep the {plan.name} plan.
+        </div>
+      )
+    }
+
+    {
+      billingError && (
+        <div class="notice notice--error">
+          <strong>Billing could not be opened.</strong> {billingError}
         </div>
       )
     }

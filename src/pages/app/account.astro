@@ -1,4 +1,5 @@
 ---
+import { env } from 'cloudflare:workers';
 import AppShell from '../../layouts/AppShell.astro';
 import { getUsage } from '../../lib/captures';
 import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
@@ -20,13 +21,16 @@ const checkout = billingEnabled();
 const billing = checkout ? await getBillingRow(user.id).catch(() => null) : null;
 const hasCustomer = Boolean(billing?.stripe_customer_id);
 const subscribed = hasActiveSubscription(billing);
-// Keep the period they are already billed on rather than silently moving a
-// yearly customer onto monthly as a side effect of upgrading.
-const currentInterval = billing?.plan_interval === 'yearly' ? 'yearly' : 'monthly';
 const pastDue = billing?.plan_status === 'past_due';
 const paidThrough = billing?.plan_period_end
   ? new Date(billing.plan_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   : null;
+
+// Which confirmation the delete form asks for. An account created by a future
+// sign-in provider would have no password to type.
+const hasPassword = Boolean(
+  await env.DB.prepare(`SELECT 1 FROM users WHERE id = ? AND password_hash IS NOT NULL`).bind(user.id).first(),
+);
 
 const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
 const billingError = Astro.url.searchParams.get('billing_error');
@@ -174,7 +178,45 @@ const billingError = Astro.url.searchParams.get('billing_error');
           <span class="row__value" style="color: var(--muted-2)">›</span>
         </button>
       </form>
+      <button type="button" class="row" id="open-delete" style="width: 100%">
+        <span class="row__label" style="color: var(--danger)">Delete account</span>
+        <span class="row__value" style="color: var(--muted-2)">›</span>
+      </button>
     </div>
+
+    <form id="delete-form" class="card card--pad stack gap-12" hidden>
+      <div style="font: 700 14px var(--display); color: var(--danger)">Delete this account</div>
+      <p class="xs muted">
+        This removes your captures and their files, your API keys and this account itself, and cannot be undone. Share
+        links stop working immediately.
+        {
+          subscribed && (
+            <>
+              {' '}Your {plan.name} subscription is cancelled at the same time — the rest of the period you have paid
+              for is not refunded.
+            </>
+          )
+        }
+        {' '}Invoices stay with Stripe, which the law requires us to keep.
+      </p>
+      <div class="field">
+        <label class="field__label" for="delete-confirm">{hasPassword ? 'Your password' : 'Type your email to confirm'}</label>
+        <input
+          class="input"
+          id="delete-confirm"
+          name={hasPassword ? 'password' : 'confirm'}
+          type={hasPassword ? 'password' : 'email'}
+          autocomplete={hasPassword ? 'current-password' : 'off'}
+          placeholder={hasPassword ? '' : user.email}
+          required
+        />
+      </div>
+      <div class="notice notice--error" id="delete-error" hidden></div>
+      <div style="display: flex; gap: 8px">
+        <button type="submit" class="btn btn--danger" id="delete-submit">Delete permanently</button>
+        <button type="button" class="btn btn--outline" id="cancel-delete">Keep my account</button>
+      </div>
+    </form>
 
     <p class="xs muted-2 center">
       Easy Screen Capture · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a>
@@ -209,6 +251,69 @@ const billingError = Astro.url.searchParams.get('billing_error');
     } else if (errorBox) {
       const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
       errorBox.textContent = payload?.error?.message ?? 'Could not save your profile.';
+      errorBox.hidden = false;
+    }
+  });
+
+  const deleteForm = document.getElementById('delete-form') as HTMLFormElement | null;
+
+  document.getElementById('open-delete')?.addEventListener('click', () => {
+    if (!deleteForm) return;
+    deleteForm.hidden = false;
+    deleteForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    (document.getElementById('delete-confirm') as HTMLInputElement | null)?.focus();
+  });
+
+  document.getElementById('cancel-delete')?.addEventListener('click', () => {
+    if (deleteForm) {
+      deleteForm.reset();
+      deleteForm.hidden = true;
+    }
+  });
+
+  deleteForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const errorBox = document.getElementById('delete-error') as HTMLElement | null;
+    const submit = document.getElementById('delete-submit') as HTMLButtonElement | null;
+    if (errorBox) errorBox.hidden = true;
+
+    // The point of no return deserves the browser's own confirmation too — the
+    // form itself is one tap away from every other row on this screen.
+    if (!window.confirm('Delete this account and everything in it? This cannot be undone.')) return;
+
+    const field = new FormData(deleteForm);
+    const payload: Record<string, string> = {};
+    for (const [key, value] of field.entries()) payload[key] = String(value);
+
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Deleting…';
+    }
+
+    // Deleting a full library is a long request; leave the button disabled and
+    // let it finish rather than racing it with a second submit.
+    const response = await fetch('/api/account', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+
+    if (response?.ok) {
+      // Nothing cached belongs to anyone now.
+      if ('caches' in window) {
+        await caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
+      }
+      window.location.href = '/?deleted=1';
+      return;
+    }
+
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Delete permanently';
+    }
+    if (errorBox) {
+      const body = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      errorBox.textContent = body?.error?.message ?? 'Could not delete your account. Try again.';
       errorBox.hidden = false;
     }
   });

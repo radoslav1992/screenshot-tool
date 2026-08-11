@@ -49,6 +49,19 @@
     "binding": "BROWSER"
   },
 
+  // Cloudflare Email Sending (public beta) — confirmation emails with no API
+  // key. Uncomment once easyscreencapture.com is onboarded under Email Service
+  // in the dashboard and noreply@ is a verified sender; deploying the binding
+  // before that can be rejected. Until then the code falls back to Resend, or
+  // logs the verification link if neither is configured.
+  //
+  // "send_email": [
+  //   {
+  //     "name": "EMAIL",
+  //     "allowed_sender_addresses": ["noreply@easyscreencapture.com"]
+  //   }
+  // ],
+
   "vars": {
     "PUBLIC_SITE_URL": "https://easyscreencapture.com",
     // Comma-separated hostnames that may never be captured (SSRF hardening
@@ -61,10 +74,10 @@
     "BROWSER_KEEP_ALIVE_MS": "0",
     // Require a confirmed email before capturing. Only takes effect once a
     // mailer is configured, so it can never lock accounts out of a deployment
-    // that cannot send mail. See EMAIL_FROM / RESEND_API_KEY below.
+    // that cannot send mail — turn it on with the EMAIL binding below.
     "REQUIRE_EMAIL_VERIFICATION": "0",
-    // Sender address for confirmation emails, e.g. "Easy Screen Capture <no-reply@yourdomain>".
-    "EMAIL_FROM": ""
+    // Sender for confirmation emails: an address, or "Name <address>".
+    "EMAIL_FROM": "Easy Screen Capture <noreply@easyscreencapture.com>"
   }
 
   // Secrets (set with `wrangler secret put <NAME>`, or as encrypted variables in

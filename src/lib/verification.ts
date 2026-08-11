@@ -2,23 +2,21 @@ import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
 import { HttpError } from './http';
 import { randomToken, sha256Hex } from './ids';
+import { canSendEmail, sendMail } from './mailer';
 
 const TOKEN_TTL_HOURS = 24;
-const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+
+export { canSendEmail };
 
 /**
  * Verification is only enforced when this deployment can actually deliver mail.
  *
  * Gating captures on a link nobody can receive would lock every new account out
  * of the product, so the gate turns itself on with the mailer: set
- * REQUIRE_EMAIL_VERIFICATION=1 and configure RESEND_API_KEY.
+ * REQUIRE_EMAIL_VERIFICATION=1 and configure a transport (see lib/mailer.ts).
  */
 export function verificationEnabled(): boolean {
   return env.REQUIRE_EMAIL_VERIFICATION === '1' && canSendEmail();
-}
-
-export function canSendEmail(): boolean {
-  return Boolean(env.RESEND_API_KEY && env.EMAIL_FROM);
 }
 
 export interface VerificationIssue {
@@ -104,29 +102,15 @@ export async function sendVerificationEmail(email: string, link: string): Promis
     return false;
   }
 
-  const response = await fetch(RESEND_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: env.EMAIL_FROM,
-      to: [email],
-      subject: 'Confirm your Easy Screen Capture account',
-      text: `Confirm your email address to start capturing:\n\n${link}\n\nThis link expires in ${TOKEN_TTL_HOURS} hours. If you did not create an Easy Screen Capture account, ignore this message.`,
-    }),
+  const sent = await sendMail({
+    to: email,
+    subject: 'Confirm your Easy Screen Capture account',
+    text: `Confirm your email address to start capturing:\n\n${link}\n\nThis link expires in ${TOKEN_TTL_HOURS} hours. If you did not create an Easy Screen Capture account, ignore this message.`,
   });
 
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 200);
-    // Log the link on failure too, so a broken mailer does not strand the
-    // account with no way to finish signing up.
-    console.error(
-      `[verification] mailer responded ${response.status}: ${detail}; verification link for ${email}: ${link}`,
-    );
-    return false;
-  }
+  // Log the link on failure too, so a broken mailer does not strand the account
+  // with no way to finish signing up.
+  if (!sent) console.error(`[verification] send failed; verification link for ${email}: ${link}`);
 
-  return true;
+  return sent;
 }

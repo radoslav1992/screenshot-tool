@@ -116,7 +116,7 @@ function encodeForm(value: unknown, prefix = '', out = new URLSearchParams()): U
 
 async function stripe<T = any>(
   path: string,
-  init: { method?: 'GET' | 'POST'; body?: Record<string, unknown>; idempotencyKey?: string } = {},
+  init: { method?: 'GET' | 'POST' | 'DELETE'; body?: Record<string, unknown>; idempotencyKey?: string } = {},
 ): Promise<T> {
   if (!env.STRIPE_SECRET_KEY) {
     throw new HttpError(503, 'billing_unavailable', 'Payments are not configured on this deployment.');
@@ -317,6 +317,19 @@ export async function createCheckoutSession(input: {
     throw new HttpError(502, 'billing_error', 'Stripe did not return a checkout URL.');
   }
   return session.url;
+}
+
+/**
+ * Ends a subscription there and then, with no proration and no refund.
+ *
+ * Used when an account is being deleted. Cancelling at period end would be the
+ * kinder default for someone who is staying, but there will be no account left
+ * to serve the rest of the period to — and a subscription that outlives its
+ * account keeps its renewal date, which is how people get charged for something
+ * they thought they had closed.
+ */
+export async function cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+  await stripe(`/subscriptions/${subscriptionId}`, { method: 'DELETE' });
 }
 
 /**

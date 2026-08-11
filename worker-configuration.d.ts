@@ -20,8 +20,16 @@ declare namespace Cloudflare {
 
     /** "1" gates capturing on a confirmed email — only when a mailer is configured. */
     REQUIRE_EMAIL_VERIFICATION?: string;
-    /** Sender address for confirmation emails. */
+    /** Sender address for confirmation emails: an address, or `Name <address>`. */
     EMAIL_FROM?: string;
+
+    /**
+     * Cloudflare Email Sending. Optional, and preferred over Resend when both
+     * are present — the binding needs no API key. Declared in wrangler.jsonc as
+     * `send_email`, and only after the sending domain has been onboarded in the
+     * dashboard; see the comment there.
+     */
+    EMAIL?: SendEmail;
 
     /** Optional: enables the REST Browser Rendering fallback. */
     CF_ACCOUNT_ID?: string;

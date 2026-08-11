@@ -4,6 +4,7 @@ import { json } from '../../lib/http';
 import { hashPassword } from '../../lib/auth';
 import { automaticTaxEnabled, billingEnabled, priceIdFor, webhookConfigured } from '../../lib/billing';
 import { PAID_PLANS } from '../../lib/plans';
+import { mailTransport, sender, type MailTransport } from '../../lib/mailer';
 
 export const prerender = false;
 
@@ -93,6 +94,41 @@ function checkRenderer(): CheckResult & { engine: string } {
 }
 
 /**
+ * Mail is optional too. It reports the transport and the sender address — the
+ * address is public by definition, and a typo in it is exactly the kind of thing
+ * this check exists to make visible.
+ */
+function checkMailer(): CheckResult & {
+  transport: MailTransport;
+  from: string | null;
+  verificationRequired: boolean;
+} {
+  const from = sender();
+  const transport = mailTransport();
+  const verificationRequired = env.REQUIRE_EMAIL_VERIFICATION === '1';
+
+  const notes: string[] = [];
+  if (!from) {
+    notes.push('EMAIL_FROM is empty or malformed, so nothing can be sent');
+  } else if (transport === 'none') {
+    notes.push(
+      'no transport: bind Cloudflare Email Sending as EMAIL in wrangler.jsonc, or set the RESEND_API_KEY secret',
+    );
+  }
+  if (verificationRequired && transport === 'none') {
+    notes.push('REQUIRE_EMAIL_VERIFICATION is on but stays inactive without a transport');
+  }
+
+  return {
+    ok: true,
+    transport,
+    from: from ? (from.name ? `${from.name} <${from.email}>` : from.email) : null,
+    verificationRequired,
+    ...(notes.length ? { detail: notes.join('; ') } : {}),
+  };
+}
+
+/**
  * Billing is optional, so this never fails the overall check — it reports which
  * pieces are configured. It only names which price ids are present, never their
  * values, and never touches the Stripe key.
@@ -167,10 +203,11 @@ export const GET: APIRoute = async () => {
   ]);
   const renderer = checkRenderer();
   const billing = checkBilling();
+  const mailer = checkMailer();
   const ok = database.ok && storage.ok && kv.ok && cryptoCheck.ok && renderer.ok;
 
   return json(
-    { ok, checks: { database, storage, kv, crypto: cryptoCheck, renderer, billing } },
+    { ok, checks: { database, storage, kv, crypto: cryptoCheck, renderer, billing, mailer } },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
   );
 };

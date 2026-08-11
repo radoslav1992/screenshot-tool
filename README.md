@@ -207,11 +207,29 @@ matter are the ones protecting the render pool and storage rather than the month
   the concurrency cap, which surfaces as a `browser_unavailable` error naming the setting.
 
 - **Email verification.** Optional and off by default. Set `REQUIRE_EMAIL_VERIFICATION=1` *and*
-  configure a mailer (`EMAIL_FROM` plus the `RESEND_API_KEY` secret) to require a confirmed address
-  before capturing. The gate only engages when mail can actually be sent, so it can never lock
-  accounts out of a deployment with no mailer. If a send fails, the link is written to the log so an
-  operator can still complete the signup. Accounts that existed before the migration are
-  grandfathered as verified.
+  configure a transport to require a confirmed address before capturing. The gate only engages when
+  mail can actually be sent, so it can never lock accounts out of a deployment with no mailer. If a
+  send fails, the link is written to the log so an operator can still complete the signup. Accounts
+  that existed before the migration are grandfathered as verified.
+
+- **Sending mail.** `EMAIL_FROM` sets the sender — an address, or `Name <address>`. Two transports,
+  tried in that order:
+
+  1. **Cloudflare Email Sending** (public beta), through the `EMAIL` binding. No API key: the Worker
+     is authorised by the binding. Onboard the sending domain under *Email Service* in the dashboard
+     and verify the sender address, **then** uncomment the `send_email` block in `wrangler.jsonc` —
+     deploying the binding before the domain is onboarded can be rejected.
+  2. **Resend** over REST, if the `RESEND_API_KEY` secret is set. Also the fallback when the binding
+     is configured but rejects a send, which is what a half-finished domain onboarding looks like.
+
+  With neither, nothing is sent and the verification link goes to the log. `/api/health` reports
+  which transport is live and what it would send from.
+
+- **Account deletion.** `DELETE /api/account`, from the account screen. It confirms with the
+  password (or, for an account with none, the email address typed out), cancels any live Stripe
+  subscription first — immediately, with no refund — then removes every R2 object under
+  `captures/<user>/` and every row that names the user. Stripe invoices stay, because keeping them is
+  a legal obligation; the webhook idempotency records stay too but stop naming the account.
 
 ## Security notes
 

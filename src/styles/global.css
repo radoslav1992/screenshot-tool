@@ -353,6 +353,17 @@ button {
   color: var(--danger);
 }
 
+/* Filled, for the one action that destroys something. */
+.btn--danger {
+  background: var(--danger);
+  color: var(--paper);
+}
+
+.btn--danger:hover {
+  color: var(--paper);
+  background: #94391f;
+}
+
 .icon-btn {
   width: 34px;
   height: 34px;

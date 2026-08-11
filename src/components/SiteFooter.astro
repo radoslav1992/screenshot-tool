@@ -1,5 +1,6 @@
 ---
 import Logo from './Logo.astro';
+import { COMPANY } from '../lib/company';
 
 const year = new Date().getFullYear();
 ---
@@ -36,7 +37,7 @@ const year = new Date().getFullYear();
     </div>
 
     <div class="sitefooter__base">
-      <span>© {year} Easy Screen Capture</span>
+      <span>© {year} {COMPANY.name} · UIC {COMPANY.uic} · {COMPANY.address.city}, {COMPANY.address.country}</span>
       <span>Built on Cloudflare</span>
     </div>
   </div>

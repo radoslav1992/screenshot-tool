@@ -1,0 +1,38 @@
+---
+import { COMPANY, COMPANY_ADDRESS_LINE } from '../lib/company';
+
+interface Props {
+  /** A heading is wanted on a legal page and not in a footer. */
+  heading?: string;
+}
+
+const { heading } = Astro.props;
+
+const rows = [
+  { label: 'Company', value: `${COMPANY.name} · ${COMPANY.nameLocal}` },
+  { label: 'Legal form', value: COMPANY.form },
+  { label: 'UIC', value: COMPANY.uic, mono: true },
+  ...(COMPANY.vat ? [{ label: 'VAT number', value: COMPANY.vat, mono: true }] : []),
+  { label: 'Registered office', value: COMPANY_ADDRESS_LINE },
+  { label: 'Manager', value: COMPANY.director },
+];
+---
+
+<section class="stack gap-8">
+  {heading && <h2 class="h4">{heading}</h2>}
+  <div class="deflist">
+    {
+      rows.map((row) => (
+        <div class="deflist__row">
+          <span class="deflist__label">{row.label}</span>
+          <span class:list={['deflist__value', row.mono && 'mono']}>{row.value}</span>
+        </div>
+      ))
+    }
+    <div class="deflist__row">
+      <span class="deflist__label">Contact</span>
+      <span class="deflist__value"><a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a></span>
+    </div>
+  </div>
+  <p class="xs muted-2">Registered in the {COMPANY.register}.</p>
+</section>

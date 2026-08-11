@@ -1,51 +1,201 @@
 ---
 import Base from '../layouts/Base.astro';
-import Logo from '../components/Logo.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import Imprint from '../components/Imprint.astro';
+import { COMPANY } from '../lib/company';
+import { PLANS } from '../lib/plans';
 
-export const prerender = true;
+const user = Astro.locals.user;
 
-const year = new Date().getFullYear();
+/**
+ * Fixed, not `new Date()` — this is the date the terms last changed, and a
+ * build must not silently restate today as the effective date.
+ */
+const updated = '11 August 2026';
 ---
 
-<Base title="Terms">
-  <div class="shell">
-    <div class="row-between" style="padding: 18px 20px; border-bottom: 1px solid var(--line-2)">
-      <Logo />
-      <a class="label" href="/">Home</a>
+<Base title="Terms of service">
+  <div class="page">
+    <SiteHeader user={user} />
+
+    <div class="wrap prose-wrap stack gap-20" style="padding-block: 48px 64px">
+      <header>
+        <h1 class="h2">Terms of service</h1>
+        <p class="small muted" style="margin-top: 8px">
+          These terms govern your use of Easy Screen Capture at {COMPANY.site}. By creating an account you agree to
+          them. Last updated {updated}.
+        </p>
+      </header>
+
+      <Imprint heading="Who you are contracting with" />
+
+      <section class="stack gap-8">
+        <h2 class="h4">1. The service</h2>
+        <p class="small muted">
+          Easy Screen Capture renders a web page you name and returns image or PDF files of it. Captures can be made
+          from the app or, on plans that include it, over the API. Files are stored in your account and reachable
+          through links that carry a share token.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">2. Your account</h2>
+        <p class="small muted">
+          One person or organisation per account. Keep your password and API keys secret — anything captured with your
+          key counts against your quota and is treated as your activity. Tell us at once if a key is exposed; you can
+          revoke it yourself on the API screen at any time. You must be 18 or older, or have the consent of a parent
+          or guardian.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">3. Acceptable use</h2>
+        <p class="small muted">Capture pages you are allowed to access. You must not use the service to:</p>
+        <ul class="stack gap-6 small muted">
+          <li>· bypass paywalls, logins, rate limits or any other access control;</li>
+          <li>· harvest personal data, or capture material that is unlawful to hold or distribute;</li>
+          <li>· place load on sites you neither own nor have permission to test, or take part in an attack;</li>
+          <li>· resell the service as a substantially identical screenshot API of your own;</li>
+          <li>· work around plan quotas, for instance by spreading one workload over several accounts.</li>
+        </ul>
+        <p class="small muted">
+          Requests to internal, private and loopback addresses are refused by the service itself, and some hosts are
+          blocked outright.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">4. Captured content</h2>
+        <p class="small muted">
+          A capture reproduces someone else's page. You are responsible for having the right to make and use that
+          reproduction, and you keep whatever rights you already had in it — we claim none. We store and serve your
+          captures solely to run the service for you.
+        </p>
+        <p class="small muted">
+          If you believe a capture stored here infringes your rights or should not be public, write to{' '}
+          <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a> with the file link and what is wrong. We remove
+          material that is unlawful, and we may disable a share link while we look into a report.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">5. Plans, quotas and payment</h2>
+        <p class="small muted">
+          Each plan includes a monthly allowance of screenshots — {PLANS.free.quota} on {PLANS.free.name},
+          {' '}{PLANS.plus.quota.toLocaleString('en-US')} on {PLANS.plus.name},
+          {' '}{PLANS.pro.quota.toLocaleString('en-US')} on {PLANS.pro.name} and
+          {' '}{PLANS.business.quota.toLocaleString('en-US')} on {PLANS.business.name}. A scroll series counts one
+          screenshot per frame. Allowances reset at the start of each calendar month (UTC) and do not carry over.
+          Captures made on the {PLANS.free.name} plan carry a small {COMPANY.site} mark.
+        </p>
+        <p class="small muted">
+          Paid plans are billed in advance, monthly or yearly, and renew automatically for the same period until
+          cancelled. Prices are shown on the <a href="/pricing">pricing page</a> in US dollars; where VAT or another
+          sales tax applies it is worked out at checkout and shown before you pay. Payments are handled by Stripe —
+          we never see your card details. If a payment fails we may suspend paid features until it is settled.
+        </p>
+        <p class="small muted">
+          Captures are kept for {PLANS.free.historyDays} days on {PLANS.free.name}, {PLANS.plus.historyDays} days on
+          {' '}{PLANS.plus.name} and {PLANS.pro.name}, and {PLANS.business.historyDays} days on
+          {' '}{PLANS.business.name}. Older captures and their files are deleted automatically.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">6. Right of withdrawal</h2>
+        <p class="small muted">
+          As a consumer in the EU you normally have 14 days to withdraw from a distance contract. Because the service
+          is digital content supplied at once, checkout asks you to confirm that you want it to start immediately and
+          that you understand you lose that right when it does. If you give that confirmation, the 14-day withdrawal
+          right does not apply and the fee for the period you bought is not refundable.
+        </p>
+        <p class="small muted">
+          This does not affect your statutory rights if the service is faulty. If it does not work as described, write
+          to <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a> and we will put it right or refund you.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">7. Changing and cancelling</h2>
+        <p class="small muted">
+          You can move to a higher plan at any time; Stripe charges the difference for the rest of the current period.
+          You can cancel at any time from the billing screen. Cancellation takes effect at the end of the period you
+          have already paid for — your plan keeps working until then, and the account drops to {PLANS.free.name}
+          {' '}afterwards rather than being deleted.
+        </p>
+        <p class="small muted">
+          We may change prices or what a plan includes. We will tell you by email at least 30 days beforehand, and the
+          change takes effect at your next renewal; if you do not want it, cancel before then.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">8. Availability</h2>
+        <p class="small muted">
+          We work to keep the service up but do not guarantee uninterrupted availability. Rendering depends on
+          Cloudflare Browser Rendering, and captures may fail for pages that block automation, require sign-in, or
+          take too long to load. A failed capture does not count against your allowance. Maintenance and third-party
+          outages happen; extended downtime that we caused is handled under clause 10.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">9. Suspension</h2>
+        <p class="small muted">
+          We may suspend or close an account that breaks clause 3, that we are required to act on by law, or whose
+          payments remain unsettled. Except where the breach is serious or unlawful, we will tell you first and give
+          you a chance to fix it. If we close a paying account for a reason other than your breach, we refund the
+          unused part of the period.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">10. Liability</h2>
+        <p class="small muted">
+          The service is provided as it stands. To the extent the law allows, our total liability for any claim
+          arising from these terms is limited to what you paid us in the twelve months before it arose, and we are not
+          liable for lost profit, lost data or indirect loss. Nothing here limits liability for death or personal
+          injury, for intent or gross negligence, or any liability that Bulgarian law does not permit to be limited —
+          including your statutory rights as a consumer.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">11. Privacy</h2>
+        <p class="small muted">
+          What we collect and how long we keep it is set out in the <a href="/privacy">privacy policy</a>, which forms
+          part of these terms.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">12. Changes to these terms</h2>
+        <p class="small muted">
+          We may update these terms. Material changes are announced by email at least 30 days in advance and apply
+          from your next renewal. Continuing to use the service after they take effect means you accept them.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">13. Law and disputes</h2>
+        <p class="small muted">
+          Bulgarian law governs these terms, and the courts of Sofia, Bulgaria have jurisdiction. If you are a
+          consumer, this does not deprive you of the protection of the mandatory law of the country you live in, and
+          you may also bring a claim in your own courts. The European Commission's online dispute resolution platform
+          is at <a href="https://ec.europa.eu/consumers/odr" rel="noopener">ec.europa.eu/consumers/odr</a>.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">14. Contact</h2>
+        <p class="small muted">
+          {COMPANY.name}, {COMPANY.address.street}, {COMPANY.address.postcode} {COMPANY.address.city},
+          {' '}{COMPANY.address.country} · <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
+        </p>
+      </section>
     </div>
 
-    <div class="p-20 stack gap-16">
-      <h1 class="h2">Terms of service</h1>
-      <p class="small muted">
-        This is placeholder copy for a self-hosted deployment. Replace it with your own terms before you take real
-        customers.
-      </p>
-
-      <section class="stack gap-8">
-        <h2 class="h4">Acceptable use</h2>
-        <p class="small muted">
-          Capture pages you are allowed to access. Do not use Easy Screen Capture to bypass paywalls or access controls, to
-          harvest personal data, or to place load on sites you do not own or have permission to test.
-        </p>
-      </section>
-
-      <section class="stack gap-8">
-        <h2 class="h4">Quotas</h2>
-        <p class="small muted">
-          Each plan includes a monthly number of screenshots. A scroll series counts one screenshot per frame. Quotas
-          reset at the start of each calendar month (UTC).
-        </p>
-      </section>
-
-      <section class="stack gap-8">
-        <h2 class="h4">Availability</h2>
-        <p class="small muted">
-          Rendering depends on Cloudflare Browser Rendering. Captures may fail for pages that block automation, require
-          sign-in, or take too long to load.
-        </p>
-      </section>
-
-      <p class="xs muted-2">© {year} Easy Screen Capture · <a href="/privacy">Privacy</a></p>
-    </div>
+    <SiteFooter />
   </div>
 </Base>

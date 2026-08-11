@@ -295,6 +295,26 @@ consumer-facing EU pricing.
 **Where you must register to collect is a question for an accountant.** Stripe Tax will tell you
 where you have crossed a threshold (Settings → Tax → Monitoring); it will not register for you.
 
+### The withdrawal right
+
+Off unless `STRIPE_TOS_CONSENT=1`. Set a terms-of-service URL on the Stripe
+account's public details first, or Stripe rejects the session — the same shape
+of failure as automatic tax on an unconfigured account.
+
+An EU consumer buying a digital service has fourteen days to withdraw. That
+right *can* be waived, but only if the customer expressly asks for the service
+to start immediately and acknowledges losing it, and the acknowledgement has to
+be captured at the point of sale rather than written into the terms and assumed.
+Without it, someone can buy the top plan, spend 15,000 captures and withdraw.
+
+With the flag on, checkout shows a required checkbox and Stripe records the
+acceptance against the session, which is the part that matters if it is ever
+disputed. The wording is in `createCheckoutSession` — **have a lawyer read it
+before it takes real money.** It is a reasonable draft of a standard
+construction, not advice, and consumer law varies by country.
+
+This does not cover chargebacks, which no wording prevents.
+
 ### Invoicing
 
 Subscriptions invoice themselves — every renewal produces an invoice, and the customer portal

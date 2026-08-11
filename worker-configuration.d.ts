@@ -49,6 +49,13 @@ declare namespace Cloudflare {
      */
     STRIPE_AUTOMATIC_TAX?: string;
 
+    /**
+     * "1" makes checkout require the customer to accept the terms and waive the
+     * EU 14-day withdrawal right before paying. Needs a terms-of-service URL on
+     * the Stripe account's public details, or the session is rejected.
+     */
+    STRIPE_TOS_CONSENT?: string;
+
     /** Recurring price ids (price_…) per plan and interval. */
     STRIPE_PRICE_PLUS_MONTHLY?: string;
     STRIPE_PRICE_PLUS_YEARLY?: string;

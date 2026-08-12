@@ -5,6 +5,8 @@ import { readFactsInPage } from './page-facts-fn';
 import { LIMITS, type CaptureOptions } from './capture-options';
 import { acquireBrowser, releaseBrowser } from './browser-pool';
 import { applyWatermark, watermarkScript } from './watermark';
+import { PII_PATTERNS, redactInPage } from './redact-fn';
+import { DEVICES } from './capture-options';
 
 export interface RenderedFile {
   data: Uint8Array;
@@ -12,6 +14,8 @@ export interface RenderedFile {
   ext: string;
   /** 1-based index within a scroll series; 1 for single-file captures. */
   index: number;
+  /** Overrides the derived filename — used to name each viewport in `sizes`. */
+  name?: string;
   width: number;
   height: number;
 }
@@ -273,6 +277,32 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     if (options.mode !== 'visible') await autoScroll(page, options.height);
     if (options.delayMs > 0) await sleep(options.delayMs);
 
+    /*
+     * Redaction comes before facts and before the shutter. Removing the node or
+     * replacing its text means the information was never in the file; a blur
+     * applied to finished pixels can be undone by anyone patient.
+     */
+    if (options.hide.length || options.blur.length || options.redactPii) {
+      try {
+        const applied = await page.evaluate(
+          redactInPage,
+          { hide: options.hide, blur: options.blur, redactPii: options.redactPii },
+          PII_PATTERNS,
+        );
+        if (applied?.unmatched?.length) {
+          console.log(`[render] selectors matched nothing: ${applied.unmatched.join(', ')}`);
+        }
+      } catch (error) {
+        // A capture that quietly skipped its redaction would be worse than no
+        // capture: the caller asked for something to be covered.
+        throw new HttpError(
+          502,
+          'redaction_failed',
+          `The page could not be redacted, so nothing was captured: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // Before the watermark, so the mark is not part of what the page appears to
     // say about itself.
     let facts: PageFacts | undefined;
@@ -308,6 +338,39 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
 
     const shotOptions: Record<string, unknown> = { type: options.format === 'jpg' ? 'jpeg' : 'png' };
     if (options.format === 'jpg') shotOptions.quality = options.quality;
+
+    if (options.sizes.length) {
+      const files: RenderedFile[] = [];
+      for (const [i, size] of options.sizes.entries()) {
+        const preset = DEVICES[size];
+        await page.setViewport({
+          width: preset.width,
+          height: preset.height,
+          deviceScaleFactor: preset.scale,
+          isMobile: size !== 'desktop',
+          hasTouch: size !== 'desktop',
+        });
+        // A reflow after a viewport change is not instant, and a shot taken
+        // mid-reflow shows the previous layout at the new width.
+        await sleep(SETTLE_MS);
+        if (options.mode === 'fullpage') await autoScroll(page, preset.height);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await sleep(SETTLE_MS);
+
+        const fullPage = options.mode === 'fullpage';
+        const buffer = await page.screenshot({ ...shotOptions, fullPage, captureBeyondViewport: false });
+        files.push({
+          data: toUint8(buffer),
+          contentType,
+          ext,
+          index: i + 1,
+          name: `${size}.${ext}`,
+          width: preset.width,
+          height: fullPage ? Math.min(await documentHeight(page), LIMITS.maxFullPageHeight) : preset.height,
+        });
+      }
+      return { files, ...extras };
+    }
 
     if (options.mode === 'fullpage') {
       const pageHeight = Math.min(await documentHeight(page), LIMITS.maxFullPageHeight);

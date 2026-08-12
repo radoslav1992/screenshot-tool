@@ -31,6 +31,12 @@ declare namespace Cloudflare {
      */
     EMAIL?: SendEmail;
 
+    /**
+     * Workers AI. Used only to summarise what changed on a watched page; the
+     * alert degrades to a plain diff without it.
+     */
+    AI?: { run(model: string, input: unknown): Promise<unknown> };
+
     /** Optional: enables the REST Browser Rendering fallback. */
     CF_ACCOUNT_ID?: string;
     CF_API_TOKEN?: string;

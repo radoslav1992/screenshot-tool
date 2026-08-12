@@ -258,9 +258,10 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
 
     for (const file of result.files) {
       const name =
-        result.files.length > 1
+        file.name ??
+        (result.files.length > 1
           ? `${String(file.index).padStart(2, '0')}.${file.ext}`
-          : `capture.${file.ext}`;
+          : `capture.${file.ext}`);
       const key = `captures/${row.user_id}/${row.id}/${name}`;
       await env.SHOTS.put(key, file.data as unknown as ArrayBuffer, {
         httpMetadata: {

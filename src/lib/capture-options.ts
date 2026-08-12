@@ -188,6 +188,17 @@ export interface CaptureOptions {
   /** Collect what the page says about itself alongside the picture. */
   facts: boolean;
   /**
+   * Extra viewports to shoot in the same visit, on top of the main one. One
+   * page load, several sizes — the browser is already there and warm.
+   */
+  sizes: DeviceId[];
+  /** Selectors removed before the shot. */
+  hide: string[];
+  /** Selectors blurred before the shot. */
+  blur: string[];
+  /** Cover email addresses, phone numbers and card-shaped digits. */
+  redactPii: boolean;
+  /**
    * Whether the rendered file carries the free-plan mark. Decided from the
    * account's plan when the capture row is created, never from request input —
    * otherwise anyone could ask for an unmarked capture.
@@ -256,6 +267,19 @@ function intInRange(value: string | undefined, fallback: number, min: number, ma
     throw badRequest(`\`${param}\` must be between ${min} and ${max}.`, param);
   }
   return parsed;
+}
+
+/** Comma-separated CSS selectors, bounded so a request cannot become a script. */
+function selectorList(value: string | undefined, param: string): string[] {
+  const list = (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (list.length > 20) throw badRequest(`\`${param}\` takes at most 20 selectors.`, param);
+  for (const entry of list) {
+    if (entry.length > 200) throw badRequest(`A \`${param}\` selector is too long.`, param);
+  }
+  return list;
 }
 
 function boolValue(value: string | undefined, fallback = false): boolean {
@@ -332,6 +356,26 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     );
   }
 
+  /*
+   * `sizes` shoots the same page at several viewports in one visit. It is the
+   * whole point that the page is loaded once: three separate captures pay for
+   * three page loads, and a page that costs money to render (or that shows a
+   * cookie wall on first visit) behaves differently each time.
+   */
+  const sizes: DeviceId[] = [];
+  for (const entry of (input.sizes ?? '').split(',').map((part) => part.trim().toLowerCase()).filter(Boolean)) {
+    if (!DEVICE_LIST.some((preset) => preset.id === entry)) {
+      throw badRequest(`\`sizes\` may list only: ${DEVICE_LIST.map((preset) => preset.id).join(', ')}.`, 'sizes');
+    }
+    if (!sizes.includes(entry as DeviceId)) sizes.push(entry as DeviceId);
+  }
+  if (sizes.length && mode === 'series') {
+    throw badRequest('`sizes` and `mode=series` both produce several files; pick one.', 'sizes');
+  }
+  if (sizes.length && format === 'pdf') {
+    throw badRequest('`sizes` produces images. Choose PNG or JPG.', 'sizes');
+  }
+
   if (input.scale) {
     const parsed = Number.parseFloat(input.scale);
     if (!Number.isFinite(parsed) || parsed < LIMITS.minScale || parsed > LIMITS.maxScale) {
@@ -357,6 +401,10 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     quality: intInRange(input.quality, 85, 30, 100, 'quality'),
     maxFrames: intInRange(input.max_frames, LIMITS.maxSeriesFrames, 1, LIMITS.maxSeriesFrames, 'max_frames'),
     facts: boolValue(input.facts, false),
+    sizes,
+    hide: selectorList(input.hide, 'hide'),
+    blur: selectorList(input.blur, 'blur'),
+    redactPii: boolValue(input.redact_pii, false),
     watermark: false,
   };
 }

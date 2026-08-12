@@ -243,6 +243,30 @@ matter are the ones protecting the render pool and storage rather than the month
   browser and no network. The market-specific parts of that library — the Bulgarian page-role classifier, MX
   providers, hiring signals — were deliberately left behind.
 
+- **Every size in one visit.** `sizes=desktop,tablet,mobile` shoots each viewport during a single page load,
+  returning one file per device. One load rather than three: separate captures pay for three page loads, and a
+  page that shows a cookie wall or an A/B variant on first visit does not behave the same way twice. Each file
+  still counts against quota. Not valid with `mode=series` or `format=pdf`, which already mean several files.
+
+- **Hiding and redacting.** `hide` and `blur` take CSS selectors (20 max); `redact_pii=1` walks the text nodes
+  for emails, phone numbers, card numbers and IBANs and replaces the matches with covered spans. All of it runs
+  in the page before the shutter, so the information is never in the file — a blur applied to finished pixels can
+  be reversed. A redaction that fails fails the whole capture rather than quietly shipping an unredacted image.
+  `npm run redact:check` drives the shipped function in local Chromium: emails, phones and cards go; a price of
+  1999 and a year of 2019 stay.
+
+- **What changed, in words.** A watch alert now carries a text diff alongside the percentage, and — where the
+  Workers AI binding is present — one sentence saying what changed. Watch captures collect the page's visible
+  text (capped at 8k) inside `facts` to make that possible. The diff is a set difference rather than a
+  positional one, so a page that reorders its sections does not report every line as both added and removed.
+  With no AI binding, or on any model failure, the alert falls back to the plain list of added and removed
+  lines: an alert that arrives plain beats one that does not arrive.
+
+  The `ai` binding ships **commented out** in `wrangler.jsonc`. An AI binding has no local implementation —
+  the adapter proxies it to the real service — so `astro build` and `astro dev` fail with *user auth missing
+  api token* on any machine not logged into Cloudflare. Uncomment it when you want the summaries and every
+  build runs authenticated.
+
 - **Compare two pages.** `POST /v1/compare` (and `/api/compare`) captures two URLs and measures how much of the
   picture differs, reusing the watch diff engine. Each side takes the usual capture parameters prefixed `a_` and
   `b_`; unprefixed keys apply to both. It costs two screenshots, refuses to start with fewer than two left, and

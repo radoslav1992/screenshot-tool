@@ -38,6 +38,13 @@ const compareExample = `curl ${origin}/v1/compare \\
 # → { "before": {…}, "after": {…}, "change_pct": 4.71,
 #     "resized": false, "identical": false }`;
 
+const redactExample = `curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d url="https://example.com/dashboard" \\
+  -d hide=".cookie-banner,.intercom-launcher" \\
+  -d blur=".customer-name" \\
+  -d redact_pii=1`;
+
 const factsExample = `{
   "page": {
     "final_url": "https://stripe.com/pricing",
@@ -110,6 +117,10 @@ const params = [
   { name: 'url', type: 'string', required: true, desc: 'Page to capture. http/https only; private and loopback addresses are rejected. Omit when sending `html`.' },
   { name: 'html', type: 'string', required: false, desc: 'Markup to render instead of a URL, up to 512 KB. Cannot be combined with `url`.' },
   { name: 'facts', type: 'boolean', required: false, desc: 'Also return what the page says about itself, as `page`. Default false.' },
+  { name: 'sizes', type: 'string', required: false, desc: 'Comma-separated devices (desktop,tablet,mobile) shot in one page load. One file each, named for the device.' },
+  { name: 'hide', type: 'string', required: false, desc: 'Comma-separated CSS selectors removed before the shot. Up to 20.' },
+  { name: 'blur', type: 'string', required: false, desc: 'Comma-separated CSS selectors blurred before the shot. Up to 20.' },
+  { name: 'redact_pii', type: 'boolean', required: false, desc: 'Cover email addresses, phone numbers, card numbers and IBANs found in the page text.' },
   { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop.' },
   { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
   { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
@@ -197,6 +208,26 @@ const endpoints = [
           timings — read from the rendered DOM, so it is what a visitor got rather than what the server shipped.
         </p>
         <CodeBlock tag="RESPONSE · page" code={factsExample} light copyable={false} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Every size in one visit</h2>
+        <p class="small muted">
+          <span class="mono">sizes=desktop,tablet,mobile</span> shoots the same page at each viewport during a single
+          page load, returning one file per device named after it. One load matters: three separate captures pay for
+          three, and a page that shows a cookie wall on first visit behaves differently the second time.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Hiding and redacting</h2>
+        <p class="small muted">
+          <span class="mono">hide</span> removes elements, <span class="mono">blur</span> blurs them, and
+          {' '}<span class="mono">redact_pii=1</span> finds email addresses, phone numbers, card numbers and IBANs in
+          the page text and covers them. All three happen in the page before the shutter, so the information is never
+          in the file — a blur applied to finished pixels can be undone by anyone patient.
+        </p>
+        <CodeBlock tag="POST /v1/capture" code={redactExample} />
       </section>
 
       <section class="stack gap-8">

@@ -45,6 +45,25 @@ const redactExample = `curl ${origin}/v1/capture \\
   -d blur=".customer-name" \\
   -d redact_pii=1`;
 
+const actionsExample = `curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d url="https://example.com/app" \\
+  -d dismiss_consent=1 \\
+  -d actions="click:.tab-billing; wait_for:.invoice-table; scroll_to:#totals"`;
+
+const authExample = `curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d url="https://staging.example.com/dashboard" \\
+  -d basic_auth="staging:letmein" \\
+  -d cookies='{"session":"abc123"}'`;
+
+const batchExample = `curl ${origin}/v1/batch \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d sitemap="https://example.com/sitemap.xml" \\
+  -d mode="fullpage" -d device="desktop"
+
+# → { "requested": 18, "captures": [ … ], "failed": [] }`;
+
 const factsExample = `{
   "page": {
     "final_url": "https://stripe.com/pricing",
@@ -121,6 +140,11 @@ const params = [
   { name: 'hide', type: 'string', required: false, desc: 'Comma-separated CSS selectors removed before the shot. Up to 20.' },
   { name: 'blur', type: 'string', required: false, desc: 'Comma-separated CSS selectors blurred before the shot. Up to 20.' },
   { name: 'redact_pii', type: 'boolean', required: false, desc: 'Cover email addresses, phone numbers, card numbers and IBANs found in the page text.' },
+  { name: 'actions', type: 'string', required: false, desc: 'Steps before the shot: `click:.accept; wait_for:#main; scroll_to:footer`. Verbs: click, wait_for, wait, scroll_to, type. Max 10.' },
+  { name: 'dismiss_consent', type: 'boolean', required: false, desc: 'Click through a cookie or consent dialog before capturing.' },
+  { name: 'headers', type: 'string', required: false, desc: 'JSON object of request headers. Host and hop-by-hop headers are refused.' },
+  { name: 'cookies', type: 'string', required: false, desc: 'JSON object of cookies, scoped to the captured host.' },
+  { name: 'basic_auth', type: 'string', required: false, desc: '`username:password` for a page behind HTTP basic auth.' },
   { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop.' },
   { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
   { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
@@ -149,6 +173,7 @@ const errors = [
 const endpoints = [
   { method: 'POST', path: '/v1/capture', desc: 'Create a capture.' },
   { method: 'POST', path: '/v1/compare', desc: 'Capture two pages and measure the difference.' },
+  { method: 'POST', path: '/v1/batch', desc: 'Capture a list of URLs, or a whole sitemap.' },
   { method: 'GET', path: '/v1/captures', desc: 'List captures, newest first.' },
   { method: 'GET', path: '/v1/captures/:id', desc: 'Fetch one capture.' },
   { method: 'DELETE', path: '/v1/captures/:id', desc: 'Delete a capture and its files.' },
@@ -228,6 +253,40 @@ const endpoints = [
           in the file — a blur applied to finished pixels can be undone by anyone patient.
         </p>
         <CodeBlock tag="POST /v1/capture" code={redactExample} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Getting past what is in the way</h2>
+        <p class="small muted">
+          The most common reason a capture is unusable is a consent dialog or a chat bubble sitting on top of the
+          thing you wanted. <span class="mono">dismiss_consent=1</span> clicks through the usual ones;
+          {' '}<span class="mono">actions</span> handles the rest with four verbs and no expressions —
+          {' '}<span class="mono">click</span>, <span class="mono">wait_for</span>, <span class="mono">wait</span>,
+          {' '}<span class="mono">scroll_to</span> and <span class="mono">type</span>.
+        </p>
+        <CodeBlock tag="POST /v1/capture" code={actionsExample} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Pages behind a login</h2>
+        <p class="small muted">
+          <span class="mono">headers</span>, <span class="mono">cookies</span> and
+          {' '}<span class="mono">basic_auth</span> carry credentials for the length of one capture. Nothing is
+          stored: they arrive with the request, live in the browser session and go when it closes — which is also
+          why a watch cannot use them yet. Cookies are scoped to the host being captured, and
+          {' '}<span class="mono">Host</span> cannot be overridden.
+        </p>
+        <CodeBlock tag="POST /v1/capture" code={authExample} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">A list, or a whole sitemap</h2>
+        <p class="small muted">
+          <span class="mono">POST /v1/batch</span> takes <span class="mono">urls</span> or a
+          {' '}<span class="mono">sitemap</span> URL and captures up to 25 pages, with every other parameter applying
+          to each. A page that fails is reported in <span class="mono">failed</span> rather than losing the batch.
+        </p>
+        <CodeBlock tag="POST /v1/batch" code={batchExample} />
       </section>
 
       <section class="stack gap-8">

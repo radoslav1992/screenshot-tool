@@ -1,4 +1,6 @@
 import { env } from 'cloudflare:workers';
+import { parseActions, type Action } from './actions';
+import { parseRequestAuth, type RequestAuth } from './request-auth';
 import { badRequest } from './http';
 
 /** Physical devices — what the page is rendered as. */
@@ -198,6 +200,12 @@ export interface CaptureOptions {
   blur: string[];
   /** Cover email addresses, phone numbers and card-shaped digits. */
   redactPii: boolean;
+  /** Steps to run on the page before the shutter. */
+  actions: Action[];
+  /** Try to click through a consent dialog before capturing. */
+  dismissConsent: boolean;
+  /** Headers, cookies and basic auth for this capture only — never stored. */
+  auth: RequestAuth;
   /**
    * Whether the rendered file carries the free-plan mark. Decided from the
    * account's plan when the capture row is created, never from request input —
@@ -224,6 +232,11 @@ const PRIVATE_HOST_PATTERNS: RegExp[] = [
   /\.internal$/i,
   /^metadata\.google\.internal$/i,
 ];
+
+/** Public wrapper: the same validation a capture URL gets, for a sitemap. */
+export function assertPublicCaptureUrl(raw: string): URL {
+  return assertPublicUrl(raw);
+}
 
 function assertPublicUrl(raw: string): URL {
   let parsed: URL;
@@ -405,6 +418,9 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     hide: selectorList(input.hide, 'hide'),
     blur: selectorList(input.blur, 'blur'),
     redactPii: boolValue(input.redact_pii, false),
+    actions: parseActions(input.actions),
+    dismissConsent: boolValue(input.dismiss_consent, false),
+    auth: parseRequestAuth(input),
     watermark: false,
   };
 }

@@ -5,6 +5,7 @@ import { HttpError } from './http';
 import { prefixedId, randomToken } from './ids';
 import { getPlan } from './plans';
 import { render } from './renderer';
+import { safeParseFacts, type PageFacts } from './page-facts';
 
 /** Where a capture was asked for. Watch runs are nobody's click, so they count separately. */
 export type CaptureSource = 'app' | 'api' | 'watch';
@@ -38,6 +39,8 @@ export interface CaptureRow {
   duration_ms: number;
   created_at: string;
   completed_at: string | null;
+  /** JSON PageFacts, when the capture asked for them. */
+  facts: string | null;
 }
 
 export interface CaptureDTO {
@@ -57,6 +60,7 @@ export interface CaptureDTO {
   duration_ms: number;
   created_at: string;
   completed_at: string | null;
+  page?: PageFacts;
 }
 
 export function fileUrl(row: Pick<CaptureRow, 'id' | 'share_token'>, file: CaptureFile, origin: string): string {
@@ -65,6 +69,7 @@ export function fileUrl(row: Pick<CaptureRow, 'id' | 'share_token'>, file: Captu
 
 export function toDTO(row: CaptureRow, origin: string): CaptureDTO {
   const files: CaptureFile[] = safeParseFiles(row.files);
+  const facts = safeParseFacts(row.facts);
   const urls = files.map((file) => fileUrl(row, file, origin));
   return {
     id: row.id,
@@ -89,6 +94,7 @@ export function toDTO(row: CaptureRow, origin: string): CaptureDTO {
     duration_ms: row.duration_ms,
     created_at: row.created_at,
     completed_at: row.completed_at,
+    ...(facts ? { page: facts } : {}),
   };
 }
 
@@ -215,6 +221,7 @@ export async function createCaptureRow(
     duration_ms: 0,
     created_at: new Date().toISOString(),
     completed_at: null,
+    facts: null,
   };
 
   await env.DB.prepare(
@@ -274,11 +281,13 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
     }
 
     const completedAt = new Date().toISOString();
+    const facts = result.facts ? JSON.stringify(result.facts) : null;
     await env.DB.prepare(
-      `UPDATE captures SET status = 'done', files = ?, bytes = ?, duration_ms = ?, completed_at = ?, error = NULL
+      `UPDATE captures SET status = 'done', files = ?, bytes = ?, duration_ms = ?, completed_at = ?, error = NULL,
+              facts = ?
        WHERE id = ?`,
     )
-      .bind(JSON.stringify(files), totalBytes, result.durationMs, completedAt, row.id)
+      .bind(JSON.stringify(files), totalBytes, result.durationMs, completedAt, facts, row.id)
       .run();
 
     await consumeQuota(row.user_id, currentPeriod(new Date(row.created_at)), files.length, row.source as CaptureSource);
@@ -286,6 +295,7 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
     return {
       ...row,
       status: 'done',
+      facts,
       files: JSON.stringify(files),
       bytes: totalBytes,
       duration_ms: result.durationMs,

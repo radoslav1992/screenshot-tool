@@ -167,6 +167,12 @@ export const LIMITS = {
 export interface CaptureOptions {
   url: string;
   host: string;
+  /**
+   * Markup to render instead of navigating. When set, `url` is a placeholder
+   * (`about:inline`) and nothing is fetched — this is how a social card or an
+   * invoice becomes an image without being published somewhere first.
+   */
+  html?: string;
   device: ViewportId;
   width: number;
   height: number;
@@ -179,6 +185,8 @@ export interface CaptureOptions {
   darkMode: boolean;
   quality: number;
   maxFrames: number;
+  /** Collect what the page says about itself alongside the picture. */
+  facts: boolean;
   /**
    * Whether the rendered file carries the free-plan mark. Decided from the
    * account's plan when the capture row is created, never from request input —
@@ -259,8 +267,27 @@ function boolValue(value: string | undefined, fallback = false): boolean {
  * Normalises raw request params into a validated capture job.
  * Shared by the app UI and the public API so both behave identically.
  */
+/** Inline markup is capped: past this it is a document, not a card. */
+const MAX_INLINE_HTML = 512_000;
+
 export function parseCaptureOptions(input: Record<string, string>): CaptureOptions {
-  const url = assertPublicUrl((input.url ?? '').trim());
+  const inlineHtml = (input.html ?? '').trim();
+  if (inlineHtml && input.url) {
+    throw badRequest('Send either `url` or `html`, not both.', 'html');
+  }
+  if (inlineHtml.length > MAX_INLINE_HTML) {
+    throw badRequest(`\`html\` must be under ${Math.round(MAX_INLINE_HTML / 1000)} KB.`, 'html');
+  }
+
+  // Inline markup has no address of its own, so the checks that keep captures
+  // off private networks have nothing to check. The renderer blocks private
+  // destinations per subrequest instead — a page's own <img src> can point
+  // anywhere, and with no origin to compare against, only the fetch can be
+  // judged.
+  if (!inlineHtml && !(input.url ?? '').trim()) {
+    throw badRequest('Send a `url` to capture, or `html` to render.', 'url');
+  }
+  const url = inlineHtml ? null : assertPublicUrl((input.url ?? '').trim());
 
   const modeRaw = (input.mode ?? 'visible').toLowerCase();
   if (!MODES.some((mode) => mode.id === modeRaw)) {
@@ -314,8 +341,9 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
   }
 
   return {
-    url: url.toString(),
-    host: url.hostname,
+    url: url ? url.toString() : 'about:inline',
+    host: url ? url.hostname : 'inline',
+    ...(inlineHtml ? { html: inlineHtml } : {}),
     device,
     width,
     height,
@@ -328,6 +356,7 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     darkMode: boolValue(input.dark_mode, false),
     quality: intInRange(input.quality, 85, 30, 100, 'quality'),
     maxFrames: intInRange(input.max_frames, LIMITS.maxSeriesFrames, 1, LIMITS.maxSeriesFrames, 'max_frames'),
+    facts: boolValue(input.facts, false),
     watermark: false,
   };
 }

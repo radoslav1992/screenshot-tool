@@ -11,7 +11,17 @@ export interface RateLimitResult {
  * Fixed-window counter in KV. Windows are short (60s) so the read-modify-write
  * race only ever leaks a few extra requests, which is fine for API fairness.
  */
-export async function checkRateLimit(bucket: string, limit: number, windowSeconds = 60): Promise<RateLimitResult> {
+/**
+ * `cost` lets one request draw more than one unit — a comparison runs two
+ * captures, and charging it as one would let the burst limit be doubled by
+ * asking for pairs.
+ */
+export async function checkRateLimit(
+  bucket: string,
+  limit: number,
+  windowSeconds = 60,
+  cost = 1,
+): Promise<RateLimitResult> {
   if (limit <= 0) return { ok: false, limit, remaining: 0, resetSeconds: windowSeconds };
 
   const now = Math.floor(Date.now() / 1000);
@@ -20,12 +30,12 @@ export async function checkRateLimit(bucket: string, limit: number, windowSecond
   const resetSeconds = (window + 1) * windowSeconds - now;
 
   const current = Number.parseInt((await env.RATE.get(key)) ?? '0', 10) || 0;
-  if (current >= limit) {
-    return { ok: false, limit, remaining: 0, resetSeconds };
+  if (current + cost > limit) {
+    return { ok: false, limit, remaining: Math.max(0, limit - current), resetSeconds };
   }
 
-  await env.RATE.put(key, String(current + 1), { expirationTtl: Math.max(60, windowSeconds * 2) });
-  return { ok: true, limit, remaining: Math.max(0, limit - current - 1), resetSeconds };
+  await env.RATE.put(key, String(current + cost), { expirationTtl: Math.max(60, windowSeconds * 2) });
+  return { ok: true, limit, remaining: Math.max(0, limit - current - cost), resetSeconds };
 }
 
 export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {

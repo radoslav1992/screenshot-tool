@@ -301,6 +301,9 @@ function optionsFor(watch: WatchRow): CaptureOptions {
     darkMode: false,
     quality: 90,
     maxFrames: 1,
+    // A watch is about the picture. Facts would double the row's size on every
+    // run for something nothing on the watch screens reads.
+    facts: false,
     watermark: false,
   };
 }

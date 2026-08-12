@@ -102,7 +102,7 @@ npx wrangler kv namespace create RATE
    to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
 
    **Upgrading a database that already has an older schema?** Run the matching `db/000N-upgrade.sql`
-   files in order (`0002-upgrade.sql`, then `0003-upgrade.sql`) — `apply-manually.sql` creates tables
+   files in order (`0002-upgrade.sql` through `0005-upgrade.sql`) — `apply-manually.sql` creates tables
    but cannot add columns to existing ones.
 
    The D1 console flattens pasted SQL onto one line, which makes `--` comments swallow everything
@@ -157,6 +157,7 @@ curl https://your-domain/v1/capture \
 | Endpoint                    | Description                                       |
 | --------------------------- | ------------------------------------------------- |
 | `POST /v1/capture`          | Create a capture (`async=1` returns 202 + polls)  |
+| `POST /v1/compare`          | Capture two pages and measure the difference      |
 | `GET /v1/captures`          | List captures, newest first                       |
 | `GET /v1/captures/:id`      | Fetch one capture                                 |
 | `DELETE /v1/captures/:id`   | Delete a capture and its files                    |
@@ -224,6 +225,28 @@ matter are the ones protecting the render pool and storage rather than the month
 
   With neither, nothing is sent and the verification link goes to the log. `/api/health` reports
   which transport is live and what it would send from.
+
+- **Your own HTML.** `html` in place of `url` renders markup directly (`setContent`), up to 512 KB — OG images,
+  social cards, receipts. Inline markup never passes through `assertPublicUrl`, because there is no address to
+  check, so the renderer intercepts every subrequest and aborts private destinations instead: a page's own
+  `<img src>` can point anywhere, and with no origin to compare against only the fetch itself can be judged.
+  Needs the Browser Rendering binding; the REST fallback takes a URL and cannot do it.
+
+- **Page facts.** `facts=1` returns a `page` object beside the files: title, description, canonical, OG and
+  Twitter tags, headings, word count, link counts, JSON-LD types, CMS and framework, image-alt and form-label
+  coverage, page weight, request count and load timings. Read from the rendered DOM — what a visitor got, not
+  what the server shipped — and stored on the capture row as JSON.
+
+  The derived half (`lib/page-facts.ts`) is adapted from `packages/shared-audit` in
+  [radoslav1992/agency](https://github.com/radoslav1992/agency) (c1f5d68), where the same functions back the site
+  analyzer and the research crawler. Kept string-in/value-out so `npm run facts:check` can exercise it with no
+  browser and no network. The market-specific parts of that library — the Bulgarian page-role classifier, MX
+  providers, hiring signals — were deliberately left behind.
+
+- **Compare two pages.** `POST /v1/compare` (and `/api/compare`) captures two URLs and measures how much of the
+  picture differs, reusing the watch diff engine. Each side takes the usual capture parameters prefixed `a_` and
+  `b_`; unprefixed keys apply to both. It costs two screenshots, refuses to start with fewer than two left, and
+  draws two units from the burst limit rather than one.
 
 - **Watches.** A saved capture that re-runs on a schedule and alerts when the page actually looks
   different. Paid plans only (`WATCH_LIMIT` in `plans.ts`): 5 on Plus at daily or weekly, 25 on Pro

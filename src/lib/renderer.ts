@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { HttpError } from './http';
+import { buildFacts, type PageFacts } from './page-facts';
+import { readFactsInPage } from './page-facts-fn';
 import { LIMITS, type CaptureOptions } from './capture-options';
 import { acquireBrowser, releaseBrowser } from './browser-pool';
 import { applyWatermark, watermarkScript } from './watermark';
@@ -15,6 +17,12 @@ export interface RenderedFile {
 }
 
 export interface RenderResult {
+  /** Present only when facts were asked for and the binding path was used. */
+  facts?: PageFacts;
+  /** Where navigation ended up, and how it got there. */
+  finalUrl?: string;
+  status?: number | null;
+  redirects?: string[];
   files: RenderedFile[];
   engine: 'binding' | 'rest';
   durationMs: number;
@@ -77,8 +85,8 @@ export async function render(options: CaptureOptions): Promise<RenderResult> {
 
   if (hasBrowserBinding()) {
     try {
-      const files = await renderWithBinding(options);
-      return { files, engine: 'binding', durationMs: Date.now() - started };
+      const outcome = await renderWithBinding(options);
+      return { ...outcome, engine: 'binding', durationMs: Date.now() - started };
     } catch (error) {
       if (!hasRestCredentials()) throw asRenderError(error);
       // Binding unavailable in this environment — try the REST API instead.
@@ -86,6 +94,15 @@ export async function render(options: CaptureOptions): Promise<RenderResult> {
   }
 
   if (hasRestCredentials()) {
+    // The REST endpoint takes a URL and returns an image: no page to read facts
+    // from, and nothing to set content on.
+    if (options.html) {
+      throw new HttpError(
+        503,
+        'renderer_unavailable',
+        'Rendering your own HTML needs the Browser Rendering binding, which this deployment does not have.',
+      );
+    }
     const files = await renderWithRest(options);
     return { files, engine: 'rest', durationMs: Date.now() - started };
   }
@@ -116,7 +133,46 @@ function asRenderError(error: unknown): HttpError {
 /* Browser Rendering binding (@cloudflare/puppeteer)                           */
 /* -------------------------------------------------------------------------- */
 
-async function renderWithBinding(options: CaptureOptions): Promise<RenderedFile[]> {
+/**
+ * Whether a subrequest may leave for this address.
+ *
+ * Deliberately a denylist of shapes rather than a DNS resolution: the same
+ * bargain `assertPublicUrl` makes for capture URLs, and the same limits — a
+ * public hostname pointing at a private address is not caught here either.
+ */
+function isPublicResource(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  // data: and blob: carry their own bytes and reach no network.
+  if (parsed.protocol === 'data:' || parsed.protocol === 'blob:') return true;
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return !PRIVATE_RESOURCE_PATTERNS.some((pattern) => pattern.test(host));
+}
+
+const PRIVATE_RESOURCE_PATTERNS: RegExp[] = [
+  /^localhost$/,
+  /\.localhost$/,
+  /^127\./,
+  /^0\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^169\.254\./,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
+  /^::1$/,
+  /^f[cd][0-9a-f]{2}:/,
+  /^fe80:/,
+  /\.local$/,
+  /\.internal$/,
+];
+
+async function renderWithBinding(options: CaptureOptions): Promise<PageOutcome> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
   const lease = await acquireBrowser(puppeteer);
   let succeeded = false;
@@ -124,9 +180,9 @@ async function renderWithBinding(options: CaptureOptions): Promise<RenderedFile[
 
   try {
     page = await lease.browser.newPage();
-    const files = await capturePage(page, options);
+    const outcome = await capturePage(page, options);
     succeeded = true;
-    return files;
+    return outcome;
   } finally {
     // Always close the page. A reused session outlives the request, so a page
     // left open would leak into the next capture.
@@ -141,7 +197,15 @@ async function renderWithBinding(options: CaptureOptions): Promise<RenderedFile[
   }
 }
 
-async function capturePage(page: any, options: CaptureOptions): Promise<RenderedFile[]> {
+interface PageOutcome {
+  files: RenderedFile[];
+  facts?: PageFacts;
+  finalUrl?: string;
+  status?: number | null;
+  redirects?: string[];
+}
+
+async function capturePage(page: any, options: CaptureOptions): Promise<PageOutcome> {
   {
     await page.setViewport({
       width: options.width,
@@ -151,13 +215,27 @@ async function capturePage(page: any, options: CaptureOptions): Promise<Rendered
       hasTouch: options.device === 'mobile' || options.device === 'tablet',
     });
 
-    if (options.blockAds) {
+    /*
+     * Interception does two jobs. Blocking ad hosts is a quality choice the
+     * caller makes. Blocking private destinations is not optional for inline
+     * markup: `html` never passes through assertPublicUrl, because there is no
+     * address to check, so `<img src="http://192.168.0.1/">` would otherwise
+     * make the renderer fetch something on a private network on request. Here
+     * every subrequest is judged on its own.
+     */
+    const guardPrivate = Boolean(options.html);
+    if (options.blockAds || guardPrivate) {
       try {
         await page.setRequestInterception(true);
         page.on('request', (request: any) => {
           const url = String(request.url());
-          if (AD_HOST_FRAGMENTS.some((fragment) => url.includes(fragment))) request.abort();
-          else request.continue();
+          if (options.blockAds && AD_HOST_FRAGMENTS.some((fragment) => url.includes(fragment))) {
+            request.abort();
+          } else if (guardPrivate && !isPublicResource(url)) {
+            request.abort();
+          } else {
+            request.continue();
+          }
         });
       } catch {
         // Interception is best-effort; carry on without it.
@@ -172,23 +250,60 @@ async function capturePage(page: any, options: CaptureOptions): Promise<Rendered
       }
     }
 
-    await page.goto(options.url, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS });
+    const redirects: string[] = [];
+    let status: number | null = null;
+    let finalUrl = options.url;
+
+    if (options.html) {
+      await page.setContent(options.html, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS });
+    } else {
+      page.on('response', (response: any) => {
+        try {
+          const code = Number(response.status());
+          if (code >= 300 && code < 400) redirects.push(String(response.url()));
+        } catch {
+          /* a response we cannot read is not a redirect we can report */
+        }
+      });
+      const response = await page.goto(options.url, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS });
+      status = response ? Number(response.status()) : null;
+      finalUrl = page.url() ?? options.url;
+    }
 
     if (options.mode !== 'visible') await autoScroll(page, options.height);
     if (options.delayMs > 0) await sleep(options.delayMs);
+
+    // Before the watermark, so the mark is not part of what the page appears to
+    // say about itself.
+    let facts: PageFacts | undefined;
+    if (options.facts) {
+      try {
+        const raw = await page.evaluate(readFactsInPage);
+        facts = buildFacts({ raw, finalUrl, status, redirects });
+      } catch (error) {
+        // Facts are an extra. A page that will not be read is still a page that
+        // can be photographed.
+        console.error('[render] could not read page facts', error);
+      }
+    }
 
     // After the page has settled, so nothing the site renders on load can paint
     // over the mark, and after auto-scroll, so the document height it anchors to
     // is the final one.
     if (options.watermark && options.format !== 'pdf') await applyWatermark(page, options.mode);
 
+    const extras = { facts, finalUrl, status, redirects };
+
     const { contentType, ext } = contentTypeFor(options.format);
 
     if (options.format === 'pdf') {
       const buffer = await page.pdf({ printBackground: true, preferCSSPageSize: false });
-      return [
-        { data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height },
-      ];
+      return {
+        files: [
+          { data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height },
+        ],
+        ...extras,
+      };
     }
 
     const shotOptions: Record<string, unknown> = { type: options.format === 'jpg' ? 'jpeg' : 'png' };
@@ -199,16 +314,22 @@ async function capturePage(page: any, options: CaptureOptions): Promise<Rendered
       await page.evaluate(() => window.scrollTo(0, 0));
       await sleep(SETTLE_MS);
       const buffer = await page.screenshot({ ...shotOptions, fullPage: true });
-      return [{ data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: pageHeight }];
+      return {
+        files: [{ data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: pageHeight }],
+        ...extras,
+      };
     }
 
     if (options.mode === 'visible') {
       await page.evaluate(() => window.scrollTo(0, 0));
       await sleep(SETTLE_MS);
       const buffer = await page.screenshot({ ...shotOptions, fullPage: false, captureBeyondViewport: false });
-      return [
-        { data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height },
-      ];
+      return {
+        files: [
+          { data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height },
+        ],
+        ...extras,
+      };
     }
 
     // Scroll series: viewport-sized frames from the top of the page down.
@@ -231,7 +352,7 @@ async function capturePage(page: any, options: CaptureOptions): Promise<Rendered
       });
     }
 
-    return files;
+    return { files, ...extras };
   }
 }
 

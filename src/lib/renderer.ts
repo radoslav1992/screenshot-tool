@@ -6,6 +6,8 @@ import { LIMITS, type CaptureOptions } from './capture-options';
 import { acquireBrowser, releaseBrowser } from './browser-pool';
 import { applyWatermark, watermarkScript } from './watermark';
 import { PII_PATTERNS, redactInPage } from './redact-fn';
+import { CONSENT_SELECTORS, CONSENT_TEXTS, dismissConsentInPage } from './actions';
+import { hasRequestAuth } from './request-auth';
 import { DEVICES } from './capture-options';
 
 export interface RenderedFile {
@@ -33,6 +35,9 @@ export interface RenderResult {
 }
 
 const NAV_TIMEOUT_MS = 30_000;
+/** How long a single action may take before it counts as failed. */
+const ACTION_TIMEOUT_MS = 10_000;
+
 const SETTLE_MS = 250;
 
 const AD_HOST_FRAGMENTS = [
@@ -254,6 +259,27 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
       }
     }
 
+    if (hasRequestAuth(options.auth)) {
+      const headers = { ...options.auth.headers };
+      if (options.auth.basic) {
+        // Puppeteer's authenticate() answers a 401 challenge; sending the
+        // header outright also covers servers that never issue one.
+        const { username, password } = options.auth.basic;
+        await page.authenticate({ username, password }).catch(() => undefined);
+        headers.authorization = `Basic ${btoa(`${username}:${password}`)}`;
+      }
+      if (Object.keys(headers).length) await page.setExtraHTTPHeaders(headers);
+
+      if (options.auth.cookies.length && !options.html) {
+        // Scoped to the page being captured. A cookie without a domain would
+        // otherwise be offered to every host the page happens to talk to.
+        const { hostname } = new URL(options.url);
+        await page.setCookie(
+          ...options.auth.cookies.map((cookie) => ({ ...cookie, domain: hostname, path: '/' })),
+        );
+      }
+    }
+
     const redirects: string[] = [];
     let status: number | null = null;
     let finalUrl = options.url;
@@ -272,6 +298,51 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
       const response = await page.goto(options.url, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS });
       status = response ? Number(response.status()) : null;
       finalUrl = page.url() ?? options.url;
+    }
+
+    /*
+     * Consent first, then the caller's own steps. A dialog usually blocks the
+     * very selectors an action wants to click, and dismissing it afterwards
+     * would mean the actions ran against a page nobody could use.
+     */
+    if (options.dismissConsent) {
+      try {
+        const clicked = await page.evaluate(dismissConsentInPage, CONSENT_SELECTORS, CONSENT_TEXTS);
+        if (clicked) {
+          console.log(`[render] dismissed consent via ${clicked}`);
+          await sleep(SETTLE_MS);
+        }
+      } catch {
+        // Best effort: a page that will not be clicked is still worth shooting.
+      }
+    }
+
+    for (const action of options.actions) {
+      try {
+        if (action.kind === 'wait') {
+          await sleep(Number.parseInt(action.value, 10));
+        } else if (action.kind === 'wait_for') {
+          await page.waitForSelector(action.value, { timeout: ACTION_TIMEOUT_MS });
+        } else if (action.kind === 'click') {
+          await page.click(action.value, { timeout: ACTION_TIMEOUT_MS });
+          await sleep(SETTLE_MS);
+        } else if (action.kind === 'type') {
+          await page.type(action.value, action.text ?? '', { delay: 10 });
+        } else if (action.kind === 'scroll_to') {
+          await page.evaluate((selector: string) => {
+            document.querySelector(selector)?.scrollIntoView({ block: 'start' });
+          }, action.value);
+          await sleep(SETTLE_MS);
+        }
+      } catch (error) {
+        // A step that cannot run is the caller's mistake to see, not a reason
+        // to lose the capture — the picture may still be the one they wanted.
+        throw new HttpError(
+          400,
+          'action_failed',
+          `The \`${action.kind}\` step on \`${action.value}\` did not work: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     if (options.mode !== 'visible') await autoScroll(page, options.height);

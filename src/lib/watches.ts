@@ -11,6 +11,7 @@ import { compareImages, diffAvailable } from './visual-diff';
 import { safeParseFacts } from './page-facts';
 import { diffText } from './text-diff';
 import { summariseChange } from './summarise';
+import { webhookBody, webhookFlavour } from './chat-webhook';
 
 export interface WatchRow {
   id: string;
@@ -312,6 +313,14 @@ function optionsFor(watch: WatchRow): CaptureOptions {
     hide: [],
     blur: [],
     redactPii: false,
+    actions: [],
+    // A page that needs a consent click to be worth photographing needs it
+    // every run, not just the one a person watched.
+    dismissConsent: true,
+    // Watches cannot carry credentials: storing them would mean keeping a
+    // customer's session cookie at rest, which needs an encryption key and a
+    // rotation story this does not have yet.
+    auth: { headers: {}, cookies: [] },
     watermark: false,
   };
 }
@@ -573,21 +582,39 @@ async function notify(
   }
 
   if (watch.webhook_url) {
+    /*
+     * Slack and Discord render whatever shape they are handed, so a raw JSON
+     * post lands there as noise. Recognising those two hosts turns "paste your
+     * webhook URL" into a working integration; everything else — Zapier, n8n,
+     * a customer's own endpoint — keeps the JSON.
+     */
+    const flavour = webhookFlavour(watch.webhook_url);
+    const payload = webhookBody(flavour, {
+      name,
+      url: watch.url,
+      changePct,
+      summary: summary.sentence || null,
+      beforeUrl: firstFileUrl(before, origin),
+      afterUrl: firstFileUrl(after, origin),
+      watchUrl: link,
+    });
+
+    const body =
+      flavour === 'json'
+        ? {
+            ...(payload as Record<string, unknown>),
+            watch: { id: watch.id, label: watch.label, url: watch.url, frequency: watch.frequency },
+            text_added: change.added.slice(0, 20),
+            text_removed: change.removed.slice(0, 20),
+            detected_at: new Date().toISOString(),
+          }
+        : payload;
+
     try {
       await fetch(watch.webhook_url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'user-agent': 'EasyScreenCapture-Watch/1' },
-        body: JSON.stringify({
-          event: 'watch.changed',
-          watch: { id: watch.id, label: watch.label, url: watch.url, frequency: watch.frequency },
-          change_pct: changePct,
-          summary: summary.sentence || null,
-          text_added: change.added.slice(0, 20),
-          text_removed: change.removed.slice(0, 20),
-          before: firstFileUrl(before, origin),
-          after: firstFileUrl(after, origin),
-          detected_at: new Date().toISOString(),
-        }),
+        body: JSON.stringify(body),
       });
     } catch (error) {
       console.error(`[watch] webhook failed for ${watch.id}`, error);

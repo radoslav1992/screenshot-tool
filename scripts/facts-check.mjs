@@ -35,6 +35,8 @@ const load = async (name) => {
 
 const { diffText, toLines, describeChange } = await load('text-diff');
 const { PII_PATTERNS } = await load('redact-fn');
+const { parseSitemap } = await load('sitemap');
+const { webhookFlavour, webhookBody } = await load('chat-webhook');
 
 const cases = [];
 const check = (name, actual, expected) => {
@@ -128,6 +130,52 @@ check('IBAN is caught', matches('iban', 'BG80BNBG96611020345678 is the account')
 check('a price is not a card number', matches('card', 'it costs 1999 dollars'), false);
 check('a year is not a phone number', matches('phone', 'founded in 2019 by two people'), false);
 check('a plain word is not an email', matches('email', 'the at sign is missing here'), false);
+
+/* ---------------------------------------------------------------- */
+/* Sitemaps                                                          */
+/* ---------------------------------------------------------------- */
+
+const urlset = `<?xml version="1.0"?><urlset><url><loc>https://a.example/one</loc></url><url><loc>https://a.example/two</loc></url></urlset>`;
+const index = `<?xml version="1.0"?><sitemapindex><sitemap><loc>https://a.example/sitemap-1.xml</loc></sitemap></sitemapindex>`;
+
+check('a urlset yields pages', parseSitemap(urlset).pages, ['https://a.example/one', 'https://a.example/two']);
+check('a urlset yields no indexes', parseSitemap(urlset).indexes, []);
+check('an index yields children, not pages', parseSitemap(index), { pages: [], indexes: ['https://a.example/sitemap-1.xml'] });
+check('whitespace inside loc is trimmed', parseSitemap('<urlset><url><loc>\n  https://a.example/x\n</loc></url></urlset>').pages, ['https://a.example/x']);
+check('an empty document yields nothing', parseSitemap('<urlset></urlset>').pages, []);
+
+/* ---------------------------------------------------------------- */
+/* Chat webhooks                                                     */
+/* ---------------------------------------------------------------- */
+
+check('slack is recognised', webhookFlavour('https://hooks.slack.com/services/T/B/x'), 'slack');
+check('discord is recognised', webhookFlavour('https://discord.com/api/webhooks/1/x'), 'discord');
+check('anything else stays JSON', webhookFlavour('https://hooks.zapier.com/x'), 'json');
+check('a broken URL stays JSON', webhookFlavour('not a url'), 'json');
+check(
+  'a lookalike host is not slack',
+  webhookFlavour('https://hooks.slack.com.evil.example/x'),
+  'json',
+);
+
+const notice = {
+  name: 'Competitor pricing',
+  url: 'https://example.com/pricing',
+  changePct: 4.2,
+  summary: 'The Pro price went from $19 to $29.',
+  beforeUrl: 'https://esc/a.png',
+  afterUrl: 'https://esc/b.png',
+  watchUrl: 'https://esc/app/watches/wat_1',
+};
+
+check('slack body leads with the summary', webhookBody('slack', notice).text.includes('$19 to $29'), true);
+check('discord body uses markdown links', webhookBody('discord', notice).content.includes('[before](https://esc/a.png)'), true);
+check('json body keeps the fields', webhookBody('json', notice).event, 'watch.changed');
+check(
+  'without a summary the percentage carries the message',
+  webhookBody('slack', { ...notice, summary: null }).text.includes('4.2%'),
+  true,
+);
 
 let failures = 0;
 for (const c of cases) {

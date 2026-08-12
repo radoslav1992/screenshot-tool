@@ -158,6 +158,7 @@ curl https://your-domain/v1/capture \
 | --------------------------- | ------------------------------------------------- |
 | `POST /v1/capture`          | Create a capture (`async=1` returns 202 + polls)  |
 | `POST /v1/compare`          | Capture two pages and measure the difference      |
+| `POST /v1/batch`            | Capture a list of URLs, or a whole sitemap        |
 | `GET /v1/captures`          | List captures, newest first                       |
 | `GET /v1/captures/:id`      | Fetch one capture                                 |
 | `DELETE /v1/captures/:id`   | Delete a capture and its files                    |
@@ -242,6 +243,29 @@ matter are the ones protecting the render pool and storage rather than the month
   analyzer and the research crawler. Kept string-in/value-out so `npm run facts:check` can exercise it with no
   browser and no network. The market-specific parts of that library — the Bulgarian page-role classifier, MX
   providers, hiring signals — were deliberately left behind.
+
+- **Getting past what is in the way.** `dismiss_consent=1` clicks the first thing that looks like a consent
+  button — an explicit id, then the common framework classes, then button text in five languages, only ever one
+  of them, since clicking every match risks hitting "reject" after "accept". `actions` runs up to 10 steps of
+  `click`, `wait_for`, `wait`, `scroll_to` and `type`, in either `verb:value;…` or JSON form. Deliberately not a
+  scripting language: no expressions, no loops, nothing that turns a capture request into unbounded execution.
+  A step that fails fails the request with `action_failed` naming the step.
+
+- **Pages behind a login.** `headers`, `cookies` and `basic_auth` last for one capture and are never stored.
+  `Host` and the hop-by-hop headers are refused — `Host` in particular would let a validated public URL be
+  answered by a different origin than the one the SSRF check approved. Cookies are scoped to the captured
+  host. Watches deliberately cannot carry credentials: keeping a customer's session cookie at rest needs an
+  encryption key and a rotation story, and half of that is worse than none.
+
+- **A list, or a whole sitemap.** `POST /v1/batch` (and `/api/batch`) takes `urls` or a `sitemap` URL, up to 25
+  pages, sequentially — the session pool is the scarce resource and a parallel batch would starve everyone
+  else's captures. Sitemap indexes are followed one level, no further; that way lies a crawler. The sitemap URL
+  itself goes through the capture validator, and each URL it yields is validated again. The whole batch is
+  charged against the hourly burst limit at once, otherwise a batch is the way around it.
+
+- **Slack and Discord alerts.** A watch webhook pointed at `hooks.slack.com` or Discord gets a message shaped
+  for that app instead of raw JSON — one sentence and two links. Everything else, Zapier and n8n included,
+  keeps the JSON payload. Host matching is exact, so `hooks.slack.com.evil.example` is not Slack.
 
 - **Every size in one visit.** `sizes=desktop,tablet,mobile` shoots each viewport during a single page load,
   returning one file per device. One load rather than three: separate captures pay for three page loads, and a

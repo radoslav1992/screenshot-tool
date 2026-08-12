@@ -24,6 +24,45 @@ curl ${origin}/v1/capture \\
 curl ${origin}/v1/captures/cap_8Yx2 \\
   -H "Authorization: Bearer $ESC_API_KEY"`;
 
+const htmlExample = `curl ${origin}/v1/capture \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d device="og-image" \\
+  -d html='<div style="font:700 64px system-ui;padding:80px">Ship it.</div>'`;
+
+const compareExample = `curl ${origin}/v1/compare \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d a_url="https://staging.example.com/pricing" \\
+  -d b_url="https://example.com/pricing" \\
+  -d device="desktop" -d mode="fullpage"
+
+# → { "before": {…}, "after": {…}, "change_pct": 4.71,
+#     "resized": false, "identical": false }`;
+
+const factsExample = `{
+  "page": {
+    "final_url": "https://stripe.com/pricing",
+    "status": 200,
+    "redirects": [],
+    "title": "Pricing & Fees | Stripe Official Site",
+    "description": "Find Stripe fees and pricing information…",
+    "canonical": "https://stripe.com/pricing",
+    "lang": "en-US",
+    "og": { "title": "Pricing & Fees", "image": "https://…" },
+    "headings": ["Pricing built for businesses of all sizes"],
+    "word_count": 1841,
+    "images": 24,
+    "links": { "internal": 96, "external": 12 },
+    "schema_types": ["Organization", "WebPage"],
+    "cms": "none",
+    "framework": "React",
+    "is_spa": false,
+    "img_alt_coverage": 0.92,
+    "page_weight_kb": 412,
+    "request_count": 38,
+    "timings": { "ttfb_ms": 118, "load_ms": 1840 }
+  }
+}`;
+
 const jsExample = `const response = await fetch("${origin}/v1/capture", {
   method: "POST",
   headers: {
@@ -68,7 +107,9 @@ const errorSample = `{
 }`;
 
 const params = [
-  { name: 'url', type: 'string', required: true, desc: 'Page to capture. http/https only; private and loopback addresses are rejected.' },
+  { name: 'url', type: 'string', required: true, desc: 'Page to capture. http/https only; private and loopback addresses are rejected. Omit when sending `html`.' },
+  { name: 'html', type: 'string', required: false, desc: 'Markup to render instead of a URL, up to 512 KB. Cannot be combined with `url`.' },
+  { name: 'facts', type: 'boolean', required: false, desc: 'Also return what the page says about itself, as `page`. Default false.' },
   { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop.' },
   { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
   { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
@@ -96,6 +137,7 @@ const errors = [
 
 const endpoints = [
   { method: 'POST', path: '/v1/capture', desc: 'Create a capture.' },
+  { method: 'POST', path: '/v1/compare', desc: 'Capture two pages and measure the difference.' },
   { method: 'GET', path: '/v1/captures', desc: 'List captures, newest first.' },
   { method: 'GET', path: '/v1/captures/:id', desc: 'Fetch one capture.' },
   { method: 'DELETE', path: '/v1/captures/:id', desc: 'Delete a capture and its files.' },
@@ -133,6 +175,39 @@ const endpoints = [
         <h2 class="h4">Quick start</h2>
         <CodeBlock tag="POST /v1/capture" code={quickstart} />
         <CodeBlock tag="RESPONSE · 201" code={responseSample} light copyable={false} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Your own HTML</h2>
+        <p class="small muted">
+          Send <span class="mono">html</span> instead of <span class="mono">url</span> and the markup is rendered
+          directly — no publishing it somewhere first. This is the short path to an
+          <span class="mono">og:image</span>, a social card or a receipt. Up to 512 KB, and every subrequest the
+          markup makes is checked, so it cannot be used to reach a private address.
+        </p>
+        <CodeBlock tag="POST /v1/capture" code={htmlExample} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">What the page says about itself</h2>
+        <p class="small muted">
+          Add <span class="mono">facts=1</span> and the response carries a <span class="mono">page</span> object
+          alongside the files: title, meta description, canonical, OG and Twitter tags, headings, word count, link
+          counts, JSON-LD types, the CMS and framework it was built with, image alt coverage, page weight and load
+          timings — read from the rendered DOM, so it is what a visitor got rather than what the server shipped.
+        </p>
+        <CodeBlock tag="RESPONSE · page" code={factsExample} light copyable={false} />
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Comparing two pages</h2>
+        <p class="small muted">
+          <span class="mono">POST /v1/compare</span> captures two pages and measures how much of the picture differs.
+          Each side takes the same parameters as a capture, prefixed <span class="mono">a_</span> and
+          {' '}<span class="mono">b_</span>; anything unprefixed applies to both. Staging against production, a page
+          before and after a deploy, your pricing page against a competitor's.
+        </p>
+        <CodeBlock tag="POST /v1/compare" code={compareExample} />
       </section>
 
       <section class="stack gap-8">

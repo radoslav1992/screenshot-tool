@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS captures (
   bytes        INTEGER NOT NULL DEFAULT 0,
   duration_ms  INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
-  completed_at TEXT
+  completed_at TEXT,
+  facts        TEXT                                    -- JSON page facts, when asked for
 );
 CREATE INDEX IF NOT EXISTS idx_captures_user_created ON captures(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_captures_user_mode ON captures(user_id, mode);
@@ -175,3 +176,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0001_init.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0002_verification_and_retention.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0003_billing.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0004_watches.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0005_page_facts.sql');

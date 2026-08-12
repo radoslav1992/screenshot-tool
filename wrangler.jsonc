@@ -50,6 +50,19 @@
     "binding": "BROWSER"
   },
 
+  // Workers AI — one sentence saying what changed, on a watch alert.
+  //
+  // Left commented because an AI binding has no local implementation: the
+  // adapter proxies it to the real service, so `astro build` and `astro dev`
+  // fail with "user auth missing api token" on any machine not logged into
+  // Cloudflare. Uncomment when you want the summaries and are happy that every
+  // build runs authenticated; the alert falls back to a plain list of added and
+  // removed lines without it, so nothing breaks in the meantime.
+  //
+  // "ai": {
+  //   "binding": "AI"
+  // },
+
   // Cloudflare Email Sending (public beta) — confirmation emails with no API
   // key. Uncomment once easyscreencapture.com is onboarded under Email Service
   // in the dashboard and noreply@ is a verified sender; deploying the binding

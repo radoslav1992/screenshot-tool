@@ -43,6 +43,8 @@ export interface PageFacts {
   request_count: number;
   document_height: number;
   timings: { ttfb_ms: number | null; dom_content_loaded_ms: number | null; load_ms: number | null };
+  /** Visible text, capped. Used to say what changed between two captures. */
+  text: string;
   /** True when the page was too large to derive signals from in full. */
   truncated: boolean;
 }
@@ -243,6 +245,7 @@ export function buildFacts(input: FactsInput): PageFacts {
       dom_content_loaded_ms: raw.timings.domContentLoadedMs,
       load_ms: raw.timings.loadMs,
     },
+    text: raw.text,
     truncated: raw.htmlTruncated,
   };
 }

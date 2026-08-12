@@ -21,6 +21,21 @@ writeFileSync(file, js);
 
 const { visibleText, wordCount, schemaTypes, detectStack, deriveA11y, deriveWeight } = await import(file);
 
+const load = async (name) => {
+  const out = join(dir, `${name}.mjs`);
+  writeFileSync(
+    out,
+    transformSync(readFileSync(new URL(`../src/lib/${name}.ts`, import.meta.url), 'utf8'), {
+      loader: 'ts',
+      format: 'esm',
+    }).code,
+  );
+  return import(out);
+};
+
+const { diffText, toLines, describeChange } = await load('text-diff');
+const { PII_PATTERNS } = await load('redact-fn');
+
 const cases = [];
 const check = (name, actual, expected) => {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
@@ -67,6 +82,52 @@ check(
 
 check('weight counts the document plus its references', deriveWeight('<script src="a.js"></script><img src="b.png">').request_count, 3);
 check('weight in KB', deriveWeight('x'.repeat(2048)).page_weight_kb, 2);
+
+/* ---------------------------------------------------------------- */
+/* What changed, in words                                            */
+/* ---------------------------------------------------------------- */
+
+check('toLines splits on sentence ends', toLines('One thing. Two things. Three.'), ['One thing.', 'Two things.', 'Three.']);
+check(
+  'diffText finds the price that moved',
+  (() => {
+    const d = diffText('Pro costs $19 a month. Free trial for 14 days.', 'Pro costs $29 a month. Free trial for 14 days.');
+    return [d.added, d.removed];
+  })(),
+  [['Pro costs $29 a month.'], ['Pro costs $19 a month.']],
+);
+check(
+  'reordering is not a change',
+  (() => {
+    const d = diffText('Alpha here. Beta here.', 'Beta here. Alpha here.');
+    return [d.added.length, d.removed.length];
+  })(),
+  [0, 0],
+);
+check('identical text yields nothing', diffText('Same words here.', 'Same words here.').added.length, 0);
+check('an empty side is not comparable', diffText('', 'Something new.').comparable, false);
+check(
+  'describeChange quotes both directions',
+  describeChange(diffText('Old line here.', 'New line here.')).includes('+ New line here.'),
+  true,
+);
+
+/* ---------------------------------------------------------------- */
+/* Redaction patterns                                                */
+/* ---------------------------------------------------------------- */
+
+const matches = (name, text) => {
+  const p = PII_PATTERNS.find((entry) => entry.name === name);
+  return new RegExp(p.source, p.flags).test(text);
+};
+
+check('email is caught', matches('email', 'write to ada.lovelace+x@example.co.uk please'), true);
+check('card number is caught', matches('card', 'pay with 4111 1111 1111 1111 now'), true);
+check('international phone is caught', matches('phone', 'call +359 88 123 4567 today'), true);
+check('IBAN is caught', matches('iban', 'BG80BNBG96611020345678 is the account'), true);
+check('a price is not a card number', matches('card', 'it costs 1999 dollars'), false);
+check('a year is not a phone number', matches('phone', 'founded in 2019 by two people'), false);
+check('a plain word is not an email', matches('email', 'the at sign is missing here'), false);
 
 let failures = 0;
 for (const c of cases) {

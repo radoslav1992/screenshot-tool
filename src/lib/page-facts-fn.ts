@@ -23,6 +23,8 @@ export interface RawPageFacts {
   linksInternal: number;
   linksExternal: number;
   documentHeight: number;
+  /** Visible text, capped. What lets a change alert say what changed. */
+  text: string;
   /** Rendered markup, for the derived signals the Worker computes. */
   html: string;
   htmlTruncated: boolean;
@@ -35,6 +37,9 @@ export interface RawPageFacts {
  * it is capped rather than risking the round trip on a pathological document.
  */
 const MAX_HTML_BYTES = 2_000_000;
+
+/** Enough text to diff meaningfully without doubling the size of every row. */
+const MAX_TEXT_CHARS = 8_000;
 
 export function readFactsInPage(): RawPageFacts {
   const meta = (selector: string): string =>
@@ -94,6 +99,7 @@ export function readFactsInPage(): RawPageFacts {
     linksInternal: internal,
     linksExternal: external,
     documentHeight: Math.round(document.documentElement.scrollHeight),
+    text: (document.body?.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT_CHARS),
     html: html.length > MAX_HTML_BYTES ? html.slice(0, MAX_HTML_BYTES) : html,
     htmlTruncated: html.length > MAX_HTML_BYTES,
     timings: {

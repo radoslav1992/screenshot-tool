@@ -8,6 +8,9 @@ import { prefixedId } from './ids';
 import { sendMail } from './mailer';
 import { allowedFrequencies, frequencyHours, frequencyLabel, getPlan, watchLimit } from './plans';
 import { compareImages, diffAvailable } from './visual-diff';
+import { safeParseFacts } from './page-facts';
+import { diffText } from './text-diff';
+import { summariseChange } from './summarise';
 
 export interface WatchRow {
   id: string;
@@ -301,9 +304,14 @@ function optionsFor(watch: WatchRow): CaptureOptions {
     darkMode: false,
     quality: 90,
     maxFrames: 1,
-    // A watch is about the picture. Facts would double the row's size on every
-    // run for something nothing on the watch screens reads.
-    facts: false,
+    // Facts are on for a watch because they carry the page's visible text, and
+    // the text is what lets an alert say what changed rather than only that
+    // something did.
+    facts: true,
+    sizes: [],
+    hide: [],
+    blur: [],
+    redactPii: false,
     watermark: false,
   };
 }
@@ -531,13 +539,29 @@ async function notify(
   const name = watch.label || displayUrl(watch.url);
   const link = `${origin}/app/watches/${watch.id}`;
 
+  /*
+   * The percentage says a page moved. It cannot say a price went from $19 to
+   * $29, which is the thing anyone actually wants from an alert — so the text
+   * captured with each run is diffed and, where a model is available,
+   * summarised into one sentence.
+   */
+  const change = diffText(
+    safeParseFacts(before.facts)?.text ?? '',
+    safeParseFacts(after.facts)?.text ?? '',
+  );
+  const summary = await summariseChange(change, name);
+
   if (watch.notify_email) {
+    const headline = summary.sentence ? `${summary.sentence}\n\n` : '';
+    const body = summary.detail ? `${summary.detail}\n\n` : '';
     await sendMail({
       to: user.email,
-      subject: `${name} changed`,
+      subject: summary.sentence ? `${name}: ${summary.sentence.slice(0, 80)}` : `${name} changed`,
       text:
         `${name} looks different from the last check.\n\n` +
-        `${changePct}% of the page changed.\n\n` +
+        headline +
+        body +
+        `${changePct}% of the picture changed.\n\n` +
         `Before: ${firstFileUrl(before, origin) ?? '—'}\n` +
         `After:  ${firstFileUrl(after, origin) ?? '—'}\n\n` +
         `History and settings: ${link}\n\n` +
@@ -557,6 +581,9 @@ async function notify(
           event: 'watch.changed',
           watch: { id: watch.id, label: watch.label, url: watch.url, frequency: watch.frequency },
           change_pct: changePct,
+          summary: summary.sentence || null,
+          text_added: change.added.slice(0, 20),
+          text_removed: change.removed.slice(0, 20),
           before: firstFileUrl(before, origin),
           after: firstFileUrl(after, origin),
           detected_at: new Date().toISOString(),

@@ -83,8 +83,16 @@ export function wireCaptureForm(): void {
       if (text) payload[key] = text;
     }
     payload.url = url;
+
+    // FormData yields one entry per checked box, and the loop above keeps only
+    // the last. The API wants them as one comma-separated value.
+    const sizes = data.getAll('sizes').map(String).filter(Boolean);
+    if (sizes.length) payload.sizes = sizes.join(',');
+    else delete payload.sizes;
     if (!data.get('block_ads')) payload.block_ads = '0';
     if (!data.get('dark_mode')) payload.dark_mode = '0';
+    if (!data.get('dismiss_consent')) payload.dismiss_consent = '0';
+    if (!data.get('redact_pii')) payload.redact_pii = '0';
     // The width/height inputs only count when the custom panel is open.
     if (customSize?.hidden) {
       delete payload.width;

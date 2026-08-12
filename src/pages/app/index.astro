@@ -177,6 +177,66 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
           <span class="label">Prefer dark mode</span>
           <input type="checkbox" name="dark_mode" value="1" />
         </label>
+
+        <label class="row-between" style="cursor: pointer">
+          <span class="label">Click through cookie banners</span>
+          <input type="checkbox" name="dismiss_consent" value="1" checked />
+        </label>
+
+        <div class="field">
+          <div class="field__label" style="margin-bottom: 8px">Also capture at</div>
+          <div class="chips chips--wrap">
+            {
+              DEVICE_LIST.map((device) => (
+                <label class="chip chip--check">
+                  <input type="checkbox" name="sizes" value={device.id} />
+                  <span>{device.label}</span>
+                </label>
+              ))
+            }
+          </div>
+          <p class="xs muted-2" style="margin-top: 6px">
+            One page load, one file per size. Each counts as a screenshot.
+          </p>
+        </div>
+      </div>
+    </details>
+
+    <details class="card card--pad" style="padding: 14px 16px">
+      <summary class="label" style="cursor: pointer">Clean up the page</summary>
+      <div class="stack gap-12" style="margin-top: 14px">
+        <div class="field">
+          <label class="field__label" for="hide">Hide elements</label>
+          <input class="input input--mono" id="hide" name="hide" placeholder=".cookie-banner, #chat-widget" />
+          <p class="xs muted-2" style="margin-top: 6px">CSS selectors, comma separated.</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="blur">Blur elements</label>
+          <input class="input input--mono" id="blur" name="blur" placeholder=".customer-name" />
+        </div>
+
+        <label class="row-between" style="cursor: pointer">
+          <span>
+            <span class="label" style="display: block">Cover personal details</span>
+            <span class="xs muted-2">Emails, phone numbers, card numbers and IBANs</span>
+          </span>
+          <input type="checkbox" name="redact_pii" value="1" />
+        </label>
+
+        <div class="field">
+          <label class="field__label" for="actions">Do this first</label>
+          <input
+            class="input input--mono"
+            id="actions"
+            name="actions"
+            placeholder="click:.accept; wait_for:#main"
+          />
+          <p class="xs muted-2" style="margin-top: 6px">
+            Steps before the shot: <span class="mono">click</span>, <span class="mono">wait_for</span>,
+            {' '}<span class="mono">wait</span>, <span class="mono">scroll_to</span>, <span class="mono">type</span>.
+          </p>
+        </div>
       </div>
     </details>
 

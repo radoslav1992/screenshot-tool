@@ -51,6 +51,24 @@ export function automaticTaxEnabled(): boolean {
   return env.STRIPE_AUTOMATIC_TAX === '1';
 }
 
+/**
+ * Whether checkout asks the customer to accept the terms and waive the EU
+ * withdrawal right before paying.
+ *
+ * An EU consumer buying a digital service has fourteen days to withdraw. That
+ * right can be waived, but only if they expressly ask for the service to start
+ * immediately and acknowledge losing it — and the acknowledgement has to be
+ * given at the point of sale, not written into the terms and assumed. Without
+ * it, someone can buy the top plan, spend the month's quota and withdraw.
+ *
+ * Opt-in because Stripe rejects the session unless a terms-of-service URL is set
+ * on the account's public details, the same way it rejects automatic tax on an
+ * unconfigured account.
+ */
+export function tosConsentRequired(): boolean {
+  return env.STRIPE_TOS_CONSENT === '1';
+}
+
 /** The Stripe price id configured for a plan and interval, if any. */
 export function priceIdFor(planId: PlanId, interval: BillingInterval): string | null {
   const priceEnv = PLANS[planId]?.priceEnv;
@@ -98,7 +116,7 @@ function encodeForm(value: unknown, prefix = '', out = new URLSearchParams()): U
 
 async function stripe<T = any>(
   path: string,
-  init: { method?: 'GET' | 'POST'; body?: Record<string, unknown>; idempotencyKey?: string } = {},
+  init: { method?: 'GET' | 'POST' | 'DELETE'; body?: Record<string, unknown>; idempotencyKey?: string } = {},
 ): Promise<T> {
   if (!env.STRIPE_SECRET_KEY) {
     throw new HttpError(503, 'billing_unavailable', 'Payments are not configured on this deployment.');
@@ -258,6 +276,25 @@ export async function createCheckoutSession(input: {
       }
     : {};
 
+  /*
+   * `consent_collection` puts a required checkbox on the checkout page, and
+   * Stripe records the acceptance against the session — which is the part that
+   * matters if it is ever disputed. The wording asks for immediate performance
+   * and states what is given up, because a bare "I agree to the terms" does not
+   * carry the waiver.
+   */
+  const consent = tosConsentRequired()
+    ? {
+        consent_collection: { terms_of_service: 'required' },
+        custom_text: {
+          terms_of_service_acceptance: {
+            message:
+              'I ask for my plan to start immediately and I understand that I lose my right to withdraw once it does.',
+          },
+        },
+      }
+    : {};
+
   const session = await stripe<{ id: string; url: string | null }>('/checkout/sessions', {
     body: {
       mode: 'subscription',
@@ -266,6 +303,7 @@ export async function createCheckoutSession(input: {
       client_reference_id: input.user.id,
       allow_promotion_codes: true,
       ...tax,
+      ...consent,
       // Repeated on the subscription so webhooks can identify the account even
       // if the checkout session has aged out of Stripe's retention.
       subscription_data: { metadata: { user_id: input.user.id, plan: input.plan } },
@@ -279,6 +317,19 @@ export async function createCheckoutSession(input: {
     throw new HttpError(502, 'billing_error', 'Stripe did not return a checkout URL.');
   }
   return session.url;
+}
+
+/**
+ * Ends a subscription there and then, with no proration and no refund.
+ *
+ * Used when an account is being deleted. Cancelling at period end would be the
+ * kinder default for someone who is staying, but there will be no account left
+ * to serve the rest of the period to — and a subscription that outlives its
+ * account keeps its renewal date, which is how people get charged for something
+ * they thought they had closed.
+ */
+export async function cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+  await stripe(`/subscriptions/${subscriptionId}`, { method: 'DELETE' });
 }
 
 /**

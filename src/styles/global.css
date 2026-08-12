@@ -353,6 +353,17 @@ button {
   color: var(--danger);
 }
 
+/* Filled, for the one action that destroys something. */
+.btn--danger {
+  background: var(--danger);
+  color: var(--paper);
+}
+
+.btn--danger:hover {
+  color: var(--paper);
+  background: #94391f;
+}
+
 .icon-btn {
   width: 34px;
   height: 34px;
@@ -1106,6 +1117,56 @@ button {
   font-size: 12px;
   color: var(--muted);
   text-align: right;
+}
+
+/* --------------------------------------------------------------------------
+   Definition list
+
+   Like .rows, but for legal pages where both sides are sentences rather than a
+   label and a short value. Squeezing two of those into one flex line on a phone
+   leaves a column of single words, so it stacks first and only pairs up once
+   there is room.
+   -------------------------------------------------------------------------- */
+.deflist {
+  background: var(--white);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.deflist__row {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-3);
+}
+
+.deflist__row:last-child {
+  border-bottom: 0;
+}
+
+.deflist__label {
+  font: 600 13px var(--display);
+  color: var(--ink-2);
+}
+
+.deflist__value {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .deflist__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 16px;
+    align-items: baseline;
+  }
+
+  .deflist__value {
+    text-align: right;
+  }
 }
 
 /* --------------------------------------------------------------------------

@@ -1,55 +1,201 @@
 ---
 import Base from '../layouts/Base.astro';
-import Logo from '../components/Logo.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import Imprint from '../components/Imprint.astro';
+import { COMPANY } from '../lib/company';
+import { PLANS } from '../lib/plans';
+import { SESSION_COOKIE } from '../lib/auth';
 
-export const prerender = true;
+const user = Astro.locals.user;
 
-const year = new Date().getFullYear();
+/** Fixed on purpose — see the note in terms.astro. */
+const updated = '11 August 2026';
 ---
 
-<Base title="Privacy">
-  <div class="shell">
-    <div class="row-between" style="padding: 18px 20px; border-bottom: 1px solid var(--line-2)">
-      <Logo />
-      <a class="label" href="/">Home</a>
-    </div>
+<Base title="Privacy policy">
+  <div class="page">
+    <SiteHeader user={user} />
 
-    <div class="p-20 stack gap-16">
-      <h1 class="h2">Privacy</h1>
-      <p class="small muted">
-        Placeholder copy for a self-hosted deployment — replace it with your own policy before launch. What the code
-        actually does is described below.
+    <div class="wrap prose-wrap stack gap-20" style="padding-block: 48px 64px">
+      <header>
+        <h1 class="h2">Privacy policy</h1>
+        <p class="small muted" style="margin-top: 8px">
+          What Easy Screen Capture collects, why, where it goes and how long it stays. Last updated {updated}.
+        </p>
+      </header>
+
+      <Imprint heading="Who is responsible" />
+      <p class="small muted" style="margin-top: -12px">
+        {COMPANY.name} is the controller for the personal data described here. For anything about your data, write to{' '}
+        <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>. We have not appointed a data protection officer; the
+        scale of processing does not require one.
       </p>
 
       <section class="stack gap-8">
-        <h2 class="h4">What is stored</h2>
-        <ul class="stack gap-8 small muted">
-          <li>· Your email, display name and a PBKDF2 hash of your password (Cloudflare D1).</li>
-          <li>· Session records: a hash of the session cookie, its expiry and the user agent.</li>
-          <li>· API keys: a SHA-256 hash plus the visible prefix and last four characters.</li>
-          <li>· Captures: the URL, viewport, mode, format, timing and byte size.</li>
-          <li>· Rendered image and PDF files (Cloudflare R2).</li>
-          <li>· Per-minute API rate-limit counters (Cloudflare KV), which expire automatically.</li>
+        <h2 class="h4">What we collect</h2>
+        <ul class="stack gap-6 small muted">
+          <li>· <b>Account:</b> your email address, display name, and a PBKDF2 hash of your password. We never store the password itself.</li>
+          <li>· <b>Sessions:</b> a SHA-256 hash of the session cookie, its creation and expiry time, and the browser's user-agent string.</li>
+          <li>· <b>API keys:</b> a SHA-256 hash of each key with its visible prefix and last four characters, a label, and when it was last used. The key itself is shown once and never stored.</li>
+          <li>· <b>Captures:</b> the URL and host you captured, the device, viewport, mode and format, status, duration, byte size, and the rendered image or PDF files.</li>
+          <li>· <b>Usage:</b> a monthly counter of captures made through the app and through the API, and short-lived per-minute rate-limit counters.</li>
+          <li>· <b>Billing:</b> if you subscribe, your Stripe customer and subscription identifiers, plan, status, billing interval and paid-through date. Card details go to Stripe directly and never reach our servers.</li>
         </ul>
-      </section>
-
-      <section class="stack gap-8">
-        <h2 class="h4">Sharing</h2>
         <p class="small muted">
-          Every capture has a share token embedded in its file URLs. Anyone holding a link can view that capture's
-          files. Deleting a capture removes the files from R2 and invalidates the links.
+          We do not run analytics, advertising or third-party trackers, and we do not build profiles or make automated
+          decisions with legal effect. Cloudflare, which serves the site, keeps standard request logs including IP
+          addresses for its own security purposes; we do not keep our own access logs.
         </p>
       </section>
 
       <section class="stack gap-8">
-        <h2 class="h4">Deletion</h2>
+        <h2 class="h4">Why, and on what legal basis</h2>
+        <div class="deflist">
+          <div class="deflist__row">
+            <span class="deflist__label">Run your account and take captures</span>
+            <span class="deflist__value">Performance of the contract (Art. 6(1)(b) GDPR)</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Confirm your email address</span>
+            <span class="deflist__value">Performance of the contract</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Take payment and issue invoices</span>
+            <span class="deflist__value">Contract, and legal obligation (Art. 6(1)(c))</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Keep accounting and tax records</span>
+            <span class="deflist__value">Legal obligation</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Enforce quotas, prevent abuse, keep the service secure</span>
+            <span class="deflist__value">Legitimate interests (Art. 6(1)(f))</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Service emails about your account</span>
+            <span class="deflist__value">Contract</span>
+          </div>
+        </div>
         <p class="small muted">
-          Delete a capture from its detail page or via <span class="mono">DELETE /v1/captures/:id</span>. That removes
-          both the database row and the stored files.
+          Providing your email and password is necessary to have an account — without them the service cannot be
+          supplied.
         </p>
       </section>
 
-      <p class="xs muted-2">© {year} Easy Screen Capture · <a href="/terms">Terms</a></p>
+      <section class="stack gap-8">
+        <h2 class="h4">Pages you capture</h2>
+        <p class="small muted">
+          A capture is a picture of someone else's page, so it may contain personal data of other people. For that
+          content you are the controller and we act on your instructions as processor: we render it, store it and
+          serve it back to you, and nothing else. Do not capture pages behind a login or containing special-category
+          data unless you are entitled to.
+        </p>
+        <p class="small muted">
+          Every capture carries a share token embedded in its file links. Anyone who holds a link can open that
+          capture's files without signing in, so treat links as you would the files themselves. Deleting a capture
+          removes the stored files and invalidates its links.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">How long we keep it</h2>
+        <div class="deflist">
+          <div class="deflist__row">
+            <span class="deflist__label">Captures and their files</span>
+            <span class="deflist__value">
+              {PLANS.free.historyDays} days ({PLANS.free.name}) · {PLANS.plus.historyDays} days ({PLANS.plus.name} and
+              {' '}{PLANS.pro.name}) · {PLANS.business.historyDays} days ({PLANS.business.name})
+            </span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Sessions</span>
+            <span class="deflist__value">Until expiry or sign-out</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Email confirmation tokens</span>
+            <span class="deflist__value">Until used or expired</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Rate-limit counters</span>
+            <span class="deflist__value">Minutes — they expire by themselves</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Account and usage records</span>
+            <span class="deflist__value">While the account exists</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Invoices and accounting records</span>
+            <span class="deflist__value">As Bulgarian law requires, currently 10 years</span>
+          </div>
+        </div>
+        <p class="small muted">
+          A nightly job deletes captures past their plan's retention window, files included. Deleting your account
+          removes your captures, sessions and API keys with it; billing records that we are obliged to keep remain in
+          Stripe and in our accounts.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Who processes it for us</h2>
+        <div class="deflist">
+          <div class="deflist__row">
+            <span class="deflist__label">Cloudflare, Inc.</span>
+            <span class="deflist__value">Hosting, database, file storage and page rendering</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Stripe, Inc. / Stripe Payments Europe</span>
+            <span class="deflist__value">Payments, subscriptions, invoices and tax</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Resend, Inc.</span>
+            <span class="deflist__value">Sending account emails</span>
+          </div>
+        </div>
+        <p class="small muted">
+          Each is bound by a data processing agreement. They are US companies and processing may take place outside
+          the EEA; those transfers rely on the EU Standard Contractual Clauses and, where the provider is certified,
+          the EU–US Data Privacy Framework. We do not sell your data or share it for anyone else's marketing. We
+          disclose data to authorities only where the law requires it.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Cookies</h2>
+        <p class="small muted">
+          One cookie, <span class="mono">{SESSION_COOKIE}</span>, keeps you signed in. It is strictly necessary,
+          HttpOnly, Secure and SameSite=Lax, and it is removed when you sign out. There are no analytics or
+          advertising cookies, which is why the site does not ask for cookie consent. The app also stores a small
+          offline cache in your browser so it works without a connection; you can clear it from your browser
+          settings.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Your rights</h2>
+        <p class="small muted">
+          You can ask for access to your data, correction, erasure, restriction, portability, and you can object to
+          processing based on legitimate interests. Most of it is in your hands already: edit your profile, delete any
+          capture, revoke any API key, and delete the whole account — all from the account screen, with no need to ask
+          us. For anything else, write to <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a> — we answer within 30
+          days.
+        </p>
+        <p class="small muted">
+          If you think we have handled your data wrongly you may complain to the {COMPANY.dpa.name}, the Bulgarian
+          supervisory authority (<a href={COMPANY.dpa.url} rel="noopener">{COMPANY.dpa.url.replace('https://', '')}</a>),
+          or to the authority where you live.
+        </p>
+      </section>
+
+      <section class="stack gap-8">
+        <h2 class="h4">Changes</h2>
+        <p class="small muted">
+          We will update this policy as the service changes and revise the date above. If a change materially affects
+          you, we will tell you by email.
+        </p>
+      </section>
     </div>
+
+    <SiteFooter />
   </div>
 </Base>

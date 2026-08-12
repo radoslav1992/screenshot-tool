@@ -11,6 +11,7 @@ export interface SweepResult {
   truncated: boolean;
 }
 
+
 /**
  * A single sweep deletes at most this many captures. Cron invocations have a
  * CPU budget, and R2 deletes are one subrequest each — better to trim a bounded
@@ -109,4 +110,26 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     .run();
 
   return result;
+}
+
+/** A render that has not reported back in this long is never going to. */
+const STRANDED_AFTER_MS = 15 * 60_000;
+
+/**
+ * Marks captures that never finished as failed.
+ *
+ * A request killed mid-render — the isolate torn down, the client gone — leaves
+ * a row saying "pending" for ever, which reads in the library as a blank card
+ * nobody can explain. Run hourly rather than with the nightly sweep: a customer
+ * staring at a stuck capture should not have to wait until 03:00 to be told.
+ */
+export async function failStrandedCaptures(now = Date.now()): Promise<number> {
+  const result = await env.DB.prepare(
+    `UPDATE captures SET status = 'error', error = 'The capture did not finish. Try again.',
+       completed_at = ?
+     WHERE status = 'pending' AND created_at < ?`,
+  )
+    .bind(new Date(now).toISOString(), new Date(now - STRANDED_AFTER_MS).toISOString())
+    .run();
+  return result.meta.changes ?? 0;
 }

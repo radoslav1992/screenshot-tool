@@ -40,6 +40,22 @@ const ACTION_TIMEOUT_MS = 10_000;
 
 const SETTLE_MS = 250;
 
+/**
+ * How long a page gets to go quiet after the document is ready, before the
+ * shutter fires anyway. Generous enough for fonts, hero images and lazy content;
+ * short enough that a page which never stops talking still returns quickly.
+ */
+const NETWORK_IDLE_BUDGET_MS = 6_000;
+
+/** Best effort: a page that will not go quiet is still worth photographing. */
+async function settleNetwork(page: any): Promise<void> {
+  try {
+    await page.waitForNetworkIdle({ idleTime: 500, concurrency: 2, timeout: NETWORK_IDLE_BUDGET_MS });
+  } catch {
+    // Chatty analytics, a websocket, a poller. Not a reason to fail.
+  }
+}
+
 const AD_HOST_FRAGMENTS = [
   'doubleclick.net',
   'googlesyndication.com',
@@ -285,7 +301,8 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     let finalUrl = options.url;
 
     if (options.html) {
-      await page.setContent(options.html, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS });
+      await page.setContent(options.html, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
+      await settleNetwork(page);
     } else {
       page.on('response', (response: any) => {
         try {
@@ -295,9 +312,23 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
           /* a response we cannot read is not a redirect we can report */
         }
       });
-      const response = await page.goto(options.url, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS });
+      /*
+       * Two stages, and the second one is allowed to fail.
+       *
+       * `networkidle0` means zero connections for half a second, which a page
+       * with analytics, a chat widget or a video poller may never reach — and
+       * when it does not, `goto` throws at the timeout and the whole capture is
+       * lost after thirty seconds of waiting. Almost every page is photographable
+       * long before then. So: wait for the document, then give the network a
+       * bounded chance to settle, and shoot regardless.
+       */
+      const response = await page.goto(options.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: NAV_TIMEOUT_MS,
+      });
       status = response ? Number(response.status()) : null;
       finalUrl = page.url() ?? options.url;
+      await settleNetwork(page);
     }
 
     /*
@@ -411,15 +442,40 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     if (options.format === 'jpg') shotOptions.quality = options.quality;
 
     if (options.sizes.length) {
+      /*
+       * The chosen device comes first and always: the control reads "Also
+       * capture at", so ticking Mobile next to a Desktop capture must produce
+       * both. Sizes that repeat the chosen device are dropped rather than shot
+       * twice and charged twice.
+       */
+      const shots = [
+        {
+          id: options.device,
+          width: options.width,
+          height: options.height,
+          scale: options.scale,
+          mobile: options.device === 'mobile' || options.device === 'tablet',
+        },
+        ...options.sizes
+          .filter((size) => size !== options.device)
+          .map((size) => ({
+            id: size,
+            width: DEVICES[size].width,
+            height: DEVICES[size].height,
+            scale: DEVICES[size].scale,
+            mobile: size !== 'desktop',
+          })),
+      ];
+
       const files: RenderedFile[] = [];
-      for (const [i, size] of options.sizes.entries()) {
-        const preset = DEVICES[size];
+      for (const [i, preset] of shots.entries()) {
+        const size = preset.id;
         await page.setViewport({
           width: preset.width,
           height: preset.height,
           deviceScaleFactor: preset.scale,
-          isMobile: size !== 'desktop',
-          hasTouch: size !== 'desktop',
+          isMobile: preset.mobile,
+          hasTouch: preset.mobile,
         });
         // A reflow after a viewport change is not instant, and a shot taken
         // mid-reflow shows the previous layout at the new width.

@@ -1,0 +1,217 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import Icon from '../../components/Icon.astro';
+import { getUsage } from '../../lib/captures';
+import { formatRelative } from '../../lib/captures';
+import { DEVICE_LIST } from '../../lib/capture-options';
+import {
+  FREQUENCIES,
+  allowedFrequencies,
+  frequencyLabel,
+  getPlan,
+  cheapestPlanWith,
+  runsPerMonth,
+  watchLimit,
+} from '../../lib/plans';
+import { WATCH_LIMIT } from '../../lib/plans';
+import { listWatches } from '../../lib/watches';
+
+const user = Astro.locals.user!;
+const plan = getPlan(user.plan);
+const limit = watchLimit(user.plan);
+const [watches, usage] = await Promise.all([listWatches(user.id), getUsage(user)]);
+
+const frequencies = FREQUENCIES.filter((entry) => allowedFrequencies(user.plan).includes(entry.id));
+const atLimit = watches.length >= limit;
+const upgradeTo = cheapestPlanWith((candidate) => WATCH_LIMIT[candidate.id] > 0);
+---
+
+<AppShell title="Watches" tab="watches">
+  <header class="appbar" slot="appbar">
+    <div class="appbar__title">Watches</div>
+    {limit > 0 && <span class="pill pill--quota">{watches.length} / {limit}</span>}
+  </header>
+
+  <div class="app-wrap stack gap-16">
+    {
+      limit === 0 ? (
+        <div class="empty">
+          <div class="empty__icon"><Icon name="eye" size={34} /></div>
+          <p class="h4" style="margin-top: 10px">Have a page checked for you</p>
+          <p class="small muted" style="margin-top: 6px; max-width: 40ch; margin-inline: auto">
+            A watch re-takes a screenshot on a schedule and emails you when the page actually looks different —
+            with the before and after side by side.
+          </p>
+          <a class="btn btn--lime" href="/pricing" style="max-width: 260px; margin: 18px auto 0">
+            Available from {upgradeTo.name} — ${upgradeTo.priceMonthly}/mo
+          </a>
+        </div>
+      ) : (
+        <>
+          <section class="card card--pad stack gap-12">
+            <div>
+              <div style="font: 700 15px var(--display)">Watch a page</div>
+              <p class="xs muted" style="margin-top: 4px">
+                Checked on a schedule. Each check spends one screenshot from your monthly allowance —
+                {' '}{usage.remaining.toLocaleString()} left this month.
+              </p>
+            </div>
+
+            <form id="watch-form" class="stack gap-12">
+              <div class="field">
+                <label class="field__label" for="url">Page</label>
+                <input class="input" id="url" name="url" placeholder="stripe.com/pricing" required />
+              </div>
+
+              <div class="field">
+                <label class="field__label" for="label">Name <span class="muted-2">(optional)</span></label>
+                <input class="input" id="label" name="label" maxlength="80" placeholder="Competitor pricing" />
+              </div>
+
+              <div class="field">
+                <label class="field__label" for="frequency">How often</label>
+                <select class="input" id="frequency" name="frequency">
+                  {
+                    frequencies.map((entry) => (
+                      <option value={entry.id} selected={entry.id === 'daily'}>
+                        {entry.label} · about {runsPerMonth(entry.id).toLocaleString()} screenshots a month
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              <div class="field">
+                <label class="field__label" for="device">Device</label>
+                <select class="input" id="device" name="device">
+                  {DEVICE_LIST.map((device) => (
+                    <option value={device.id} selected={device.id === 'desktop'}>
+                      {device.label} · {device.width}×{device.height}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <details class="stack gap-12">
+                <summary class="label" style="cursor: pointer">More settings</summary>
+
+                <div class="field" style="margin-top: 12px">
+                  <label class="field__label" for="threshold">Alert when more than this much changes</label>
+                  <select class="input" id="threshold" name="threshold">
+                    <option value="0.5">0.5% of the page — very sensitive</option>
+                    <option value="1" selected>1% of the page</option>
+                    <option value="5">5% of the page</option>
+                    <option value="20">20% of the page — big changes only</option>
+                  </select>
+                  <p class="xs muted-2" style="margin-top: 6px">
+                    Pages carry clocks, carousels and ads. A threshold keeps those from alerting you every check.
+                  </p>
+                </div>
+
+                <div class="field">
+                  <label class="field__label" for="mode">What to capture</label>
+                  <select class="input" id="mode" name="mode">
+                    <option value="fullpage" selected>The whole page</option>
+                    <option value="visible">Just the first screen</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label class="field__label" for="webhook_url">Webhook <span class="muted-2">(optional)</span></label>
+                  <input class="input" id="webhook_url" name="webhook_url" placeholder="https://…" />
+                  <p class="xs muted-2" style="margin-top: 6px">POSTed a JSON body whenever the page changes.</p>
+                </div>
+              </details>
+
+              <div class="notice notice--error" id="watch-error" hidden></div>
+
+              <button type="submit" class="btn btn--ink" id="watch-submit" disabled={atLimit}>
+                {atLimit ? `${plan.name} covers ${limit} watches` : 'Start watching'}
+              </button>
+            </form>
+          </section>
+
+          {watches.length === 0 ? (
+            <div class="empty">
+              <div class="empty__icon"><Icon name="eye" size={34} /></div>
+              <p class="h4" style="margin-top: 10px">Nothing watched yet</p>
+              <p class="small muted" style="margin-top: 6px">
+                The first check runs straight away and becomes the baseline.
+              </p>
+            </div>
+          ) : (
+            <div class="rows">
+              {watches.map((watch) => (
+                <a class="row" href={`/app/watches/${watch.id}`}>
+                  <span style="min-width: 0">
+                    <span class="row__label truncate" style="display: block">
+                      {watch.label || watch.host}
+                    </span>
+                    <span class="xs muted-2">
+                      {frequencyLabel(watch.frequency)}
+                      {watch.status === 'paused'
+                        ? ' · paused'
+                        : watch.last_run_at
+                          ? ` · checked ${formatRelative(watch.last_run_at)}`
+                          : ' · first check due'}
+                    </span>
+                  </span>
+                  <span class="row__value">
+                    {watch.last_error ? (
+                      <span style="color: var(--danger)">needs attention</span>
+                    ) : watch.last_changed_at ? (
+                      <span style="color: var(--green)">changed {formatRelative(watch.last_changed_at)}</span>
+                    ) : (
+                      <span class="muted-2">no change yet</span>
+                    )}
+                    <span style="color: var(--muted-2)"> ›</span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          )}
+        </>
+      )
+    }
+  </div>
+</AppShell>
+
+<script>
+  const form = document.getElementById('watch-form') as HTMLFormElement | null;
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const errorBox = document.getElementById('watch-error') as HTMLElement | null;
+    const submit = document.getElementById('watch-submit') as HTMLButtonElement | null;
+    if (errorBox) errorBox.hidden = true;
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Starting…';
+    }
+
+    const payload: Record<string, string> = {};
+    for (const [key, value] of new FormData(form).entries()) payload[key] = String(value);
+
+    const response = await fetch('/api/watches', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+
+    if (response?.ok) {
+      const watch = (await response.json()) as { id: string };
+      window.location.href = `/app/watches/${watch.id}`;
+      return;
+    }
+
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Start watching';
+    }
+    if (errorBox) {
+      const body = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      errorBox.textContent = body?.error?.message ?? 'The watch could not be created.';
+      errorBox.hidden = false;
+    }
+  });
+</script>

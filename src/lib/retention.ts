@@ -50,10 +50,16 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     const plan = getPlan(planId);
     const cutoff = cutoffFor(plan.historyDays, now);
 
+    /*
+     * A watch's baseline is exempt. It is the only thing the next run has to
+     * compare against, so sweeping it would silently turn a weekly watch into
+     * one that can never report a change.
+     */
     const { results } = await env.DB.prepare(
       `SELECT c.* FROM captures c
        JOIN users u ON u.id = c.user_id
        WHERE u.plan = ? AND c.created_at < ?
+         AND c.id NOT IN (SELECT baseline_capture_id FROM watches WHERE baseline_capture_id IS NOT NULL)
        ORDER BY c.created_at ASC
        LIMIT ?`,
     )

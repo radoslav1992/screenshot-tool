@@ -1,0 +1,207 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import Icon from '../../../components/Icon.astro';
+import { fileUrl, formatRelative, safeParseFiles, type CaptureRow } from '../../../lib/captures';
+import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options';
+import { frequencyLabel } from '../../../lib/plans';
+import { getWatch, listRuns } from '../../../lib/watches';
+import { env } from 'cloudflare:workers';
+
+const user = Astro.locals.user!;
+const watch = await getWatch(Astro.params.id ?? '');
+if (!watch || watch.user_id !== user.id) return Astro.redirect('/app/watches', 302);
+
+const runs = await listRuns(watch.id, 25);
+const origin = Astro.url.origin;
+
+/** The images for the most recent comparison, when there is one to show. */
+const lastComparison = runs.find((run) => run.status === 'done' && run.capture_id && run.baseline_capture_id);
+
+async function capture(id: string | null): Promise<CaptureRow | null> {
+  if (!id) return null;
+  return env.DB.prepare(`SELECT * FROM captures WHERE id = ?`).bind(id).first<CaptureRow>();
+}
+
+const [afterRow, beforeRow] = await Promise.all([
+  capture(lastComparison?.capture_id ?? null),
+  capture(lastComparison?.baseline_capture_id ?? null),
+]);
+
+function firstUrl(row: CaptureRow | null): string | null {
+  if (!row) return null;
+  const file = safeParseFiles(row.files)[0];
+  return file ? fileUrl(row, file, origin) : null;
+}
+
+const beforeUrl = firstUrl(beforeRow);
+const afterUrl = firstUrl(afterRow);
+const changedPct = lastComparison?.change_pct ?? null;
+---
+
+<AppShell title={watch.label || displayUrl(watch.url)} tab="watches">
+  <header class="appbar" slot="appbar">
+    <a class="icon-btn" href="/app/watches" aria-label="Back to watches">‹</a>
+    <div class="appbar__title truncate">{watch.label || displayUrl(watch.url)}</div>
+  </header>
+
+  <div class="app-wrap app-split stack gap-16">
+    <div class="app-col">
+      {
+        watch.last_error && (
+          <div class="notice notice--error">
+            <strong>Last check failed.</strong> {watch.last_error}
+            {watch.status === 'paused' && ' The watch has been paused.'}
+          </div>
+        )
+      }
+
+      <section class="card card--pad stack gap-10">
+        <div class="row-between">
+          <span class="label">{frequencyLabel(watch.frequency)}</span>
+          <span class={`pill ${watch.status === 'active' ? 'pill--quota' : ''}`}>
+            {watch.status === 'active' ? 'Watching' : 'Paused'}
+          </span>
+        </div>
+        <a class="small mono truncate" href={watch.url} target="_blank" rel="noopener nofollow">{watch.url}</a>
+        <p class="xs muted-2">
+          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · alerts over
+          {' '}{watch.threshold}% change
+          {watch.webhook_url && ' · webhook on'}
+        </p>
+        <div class="rows" style="margin-top: 4px">
+          <div class="row">
+            <span class="row__label">Last checked</span>
+            <span class="row__value">{watch.last_run_at ? formatRelative(watch.last_run_at) : 'not yet'}</span>
+          </div>
+          <div class="row">
+            <span class="row__label">Next check</span>
+            <span class="row__value">
+              {watch.status === 'active' ? new Date(watch.next_run_at).toUTCString().slice(5, 22) + ' UTC' : 'paused'}
+            </span>
+          </div>
+          <div class="row">
+            <span class="row__label">Last change</span>
+            <span class="row__value">
+              {watch.last_changed_at ? formatRelative(watch.last_changed_at) : 'none seen yet'}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {
+        beforeUrl && afterUrl && (
+          <section class="stack gap-8">
+            <div class="row-between">
+              <h2 class="h4">Last change</h2>
+              {changedPct !== null && <span class="pill">{changedPct}% different</span>}
+            </div>
+            <div class="compare">
+              <figure class="compare__side">
+                <figcaption class="xs muted-2">Before</figcaption>
+                <img src={beforeUrl} alt="The page before the change" loading="lazy" />
+              </figure>
+              <figure class="compare__side">
+                <figcaption class="xs muted-2">After</figcaption>
+                <img src={afterUrl} alt="The page after the change" loading="lazy" />
+              </figure>
+            </div>
+          </section>
+        )
+      }
+    </div>
+
+    <div class="app-col">
+      <section class="stack gap-8">
+        <h2 class="h4">History</h2>
+        {
+          runs.length === 0 ? (
+            <div class="empty">
+              <div class="empty__icon"><Icon name="eye" size={30} /></div>
+              <p class="small muted" style="margin-top: 8px">The first check runs within the hour.</p>
+            </div>
+          ) : (
+            <div class="rows">
+              {runs.map((run) => (
+                <div class="row">
+                  <span style="min-width: 0">
+                    <span class="row__label" style="display: block">
+                      {run.status === 'error'
+                        ? 'Check failed'
+                        : run.status === 'skipped'
+                          ? 'Skipped'
+                          : run.changed
+                            ? 'Changed'
+                            : 'No change'}
+                    </span>
+                    <span class="xs muted-2">{formatRelative(run.created_at)}</span>
+                  </span>
+                  <span class="row__note" style="max-width: 55%">
+                    {run.change_pct !== null && run.status === 'done'
+                      ? `${run.change_pct}% different`
+                      : (run.detail ?? '')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        }
+      </section>
+
+      <div class="rows">
+        <button type="button" class="row" data-action="run" style="width: 100%">
+          <span class="row__label">Check now</span>
+          <span class="row__value" style="color: var(--muted-2)">Uses one screenshot ›</span>
+        </button>
+        <button type="button" class="row" data-action={watch.status === 'active' ? 'pause' : 'resume'} style="width: 100%">
+          <span class="row__label">{watch.status === 'active' ? 'Pause' : 'Resume'}</span>
+          <span class="row__value" style="color: var(--muted-2)">›</span>
+        </button>
+        <button type="button" class="row" data-action="delete" style="width: 100%">
+          <span class="row__label" style="color: var(--danger)">Delete watch</span>
+          <span class="row__value" style="color: var(--muted-2)">›</span>
+        </button>
+      </div>
+      <div class="notice notice--error" id="watch-error" hidden></div>
+    </div>
+  </div>
+</AppShell>
+
+<script define:vars={{ watchId: watch.id }}>
+  const errorBox = document.getElementById('watch-error');
+
+  const fail = (message) => {
+    if (!errorBox) return;
+    errorBox.textContent = message;
+    errorBox.hidden = false;
+  };
+
+  document.querySelectorAll('[data-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.getAttribute('data-action');
+      if (errorBox) errorBox.hidden = true;
+
+      if (action === 'delete' && !window.confirm('Delete this watch and its history?')) return;
+
+      const label = button.querySelector('.row__label');
+      const original = label?.textContent;
+      if (label) label.textContent = action === 'run' ? 'Checking…' : 'Working…';
+      button.disabled = true;
+
+      const response = await fetch(`/api/watches/${watchId}`, {
+        method: action === 'delete' ? 'DELETE' : 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        ...(action === 'delete' ? {} : { body: JSON.stringify({ action }) }),
+      }).catch(() => null);
+
+      if (response?.ok) {
+        window.location.href = action === 'delete' ? '/app/watches' : window.location.pathname;
+        return;
+      }
+
+      button.disabled = false;
+      if (label && original) label.textContent = original;
+      const body = await response?.json().catch(() => null);
+      fail(body?.error?.message ?? 'That did not work. Try again.');
+    });
+  });
+</script>

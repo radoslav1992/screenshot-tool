@@ -8,10 +8,11 @@
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Nightly retention sweep: deletes captures past their plan's history window
-  // and purges spent verification tokens and expired sessions.
+  // Hourly, because a watch can be checked hourly. The handler runs the due
+  // watches every tick and the retention sweep only on the 03:00 UTC tick —
+  // `scheduled` cannot tell which expression woke it, so the hour is the gate.
   "triggers": {
-    "crons": ["0 3 * * *"]
+    "crons": ["0 * * * *"]
   },
 
   "observability": {

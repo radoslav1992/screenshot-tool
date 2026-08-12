@@ -21,6 +21,8 @@ const TABLES = [
   'usage_counters',
   'email_verifications',
   'billing_events',
+  'watches',
+  'watch_runs',
 ];
 
 async function checkDatabase(): Promise<CheckResult & { tables?: string[]; missing?: string[] }> {

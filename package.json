@@ -14,7 +14,8 @@
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
     "stripe:setup": "node scripts/stripe-setup.mjs",
     "icons": "node scripts/build-icons.mjs",
-    "api:smoke": "node scripts/api-smoke.mjs"
+    "api:smoke": "node scripts/api-smoke.mjs",
+    "diff:check": "node scripts/diff-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

@@ -3,7 +3,7 @@ import Icon from './Icon.astro';
 import Logo from './Logo.astro';
 
 interface Props {
-  current: 'capture' | 'library' | 'api' | 'account';
+  current: 'capture' | 'library' | 'watches' | 'api' | 'account';
 }
 
 const { current } = Astro.props;
@@ -11,6 +11,7 @@ const { current } = Astro.props;
 const tabs = [
   { id: 'capture', href: '/app', icon: 'camera', label: 'Capture' },
   { id: 'library', href: '/app/library', icon: 'library', label: 'Library' },
+  { id: 'watches', href: '/app/watches', icon: 'eye', label: 'Watches' },
   { id: 'api', href: '/app/api', icon: 'key', label: 'API' },
   { id: 'account', href: '/app/account', icon: 'user', label: 'Account' },
 ] as const;

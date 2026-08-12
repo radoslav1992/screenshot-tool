@@ -6,6 +6,9 @@ import { prefixedId, randomToken } from './ids';
 import { getPlan } from './plans';
 import { render } from './renderer';
 
+/** Where a capture was asked for. Watch runs are nobody's click, so they count separately. */
+export type CaptureSource = 'app' | 'api' | 'watch';
+
 export interface CaptureFile {
   key: string;
   name: string;
@@ -106,6 +109,7 @@ export interface UsageSnapshot {
   used: number;
   viaApp: number;
   viaApi: number;
+  viaWatch: number;
   quota: number;
   remaining: number;
   period: string;
@@ -115,9 +119,11 @@ export interface UsageSnapshot {
 
 export async function getUsage(user: SessionUser): Promise<UsageSnapshot> {
   const period = currentPeriod();
-  const row = await env.DB.prepare(`SELECT used, via_app, via_api FROM usage_counters WHERE user_id = ? AND period = ?`)
+  const row = await env.DB.prepare(
+    `SELECT used, via_app, via_api, via_watch FROM usage_counters WHERE user_id = ? AND period = ?`,
+  )
     .bind(user.id, period)
-    .first<{ used: number; via_app: number; via_api: number }>();
+    .first<{ used: number; via_app: number; via_api: number; via_watch: number }>();
 
   const quota = getPlan(user.plan).quota;
   const used = row?.used ?? 0;
@@ -129,6 +135,7 @@ export async function getUsage(user: SessionUser): Promise<UsageSnapshot> {
     used,
     viaApp: row?.via_app ?? 0,
     viaApi: row?.via_api ?? 0,
+    viaWatch: row?.via_watch ?? 0,
     quota,
     remaining: Math.max(0, quota - used),
     period,
@@ -137,16 +144,24 @@ export async function getUsage(user: SessionUser): Promise<UsageSnapshot> {
   };
 }
 
-async function consumeQuota(userId: string, period: string, count: number, source: 'app' | 'api'): Promise<void> {
+async function consumeQuota(userId: string, period: string, count: number, source: CaptureSource): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO usage_counters (user_id, period, used, via_app, via_api)
-     VALUES (?1, ?2, ?3, ?4, ?5)
+    `INSERT INTO usage_counters (user_id, period, used, via_app, via_api, via_watch)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
      ON CONFLICT(user_id, period) DO UPDATE SET
        used = used + ?3,
        via_app = via_app + ?4,
-       via_api = via_api + ?5`,
+       via_api = via_api + ?5,
+       via_watch = via_watch + ?6`,
   )
-    .bind(userId, period, count, source === 'app' ? count : 0, source === 'api' ? count : 0)
+    .bind(
+      userId,
+      period,
+      count,
+      source === 'app' ? count : 0,
+      source === 'api' ? count : 0,
+      source === 'watch' ? count : 0,
+    )
     .run();
 }
 
@@ -157,7 +172,7 @@ async function consumeQuota(userId: string, period: string, count: number, sourc
 export async function createCaptureRow(
   user: SessionUser,
   options: CaptureOptions,
-  source: 'app' | 'api',
+  source: CaptureSource,
 ): Promise<CaptureRow> {
   const usage = await getUsage(user);
   if (usage.remaining <= 0) {
@@ -266,7 +281,7 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
       .bind(JSON.stringify(files), totalBytes, result.durationMs, completedAt, row.id)
       .run();
 
-    await consumeQuota(row.user_id, currentPeriod(new Date(row.created_at)), files.length, row.source as 'app' | 'api');
+    await consumeQuota(row.user_id, currentPeriod(new Date(row.created_at)), files.length, row.source as CaptureSource);
 
     return {
       ...row,

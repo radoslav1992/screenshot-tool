@@ -225,6 +225,30 @@ matter are the ones protecting the render pool and storage rather than the month
   With neither, nothing is sent and the verification link goes to the log. `/api/health` reports
   which transport is live and what it would send from.
 
+- **Watches.** A saved capture that re-runs on a schedule and alerts when the page actually looks
+  different. Paid plans only (`WATCH_LIMIT` in `plans.ts`): 5 on Plus at daily or weekly, 25 on Pro
+  and 100 on Business, both down to hourly.
+
+  Each run is an ordinary capture and spends one screenshot from the monthly quota, counted
+  separately as `via_watch` so a customer can see what ran without them. The new capture is compared
+  against the previous one and becomes the next baseline, so a watch reports "changed since last
+  check" rather than drift from some distant original. The retention sweep skips whatever a watch is
+  currently using as its baseline — otherwise a weekly watch on the 7-day Free window could never
+  compare anything.
+
+  Comparison happens inside a Browser Rendering page (`lib/visual-diff.ts`): both images are drawn to
+  canvases and the differing pixels counted, with a per-channel tolerance so compression and
+  antialiasing do not read as a change, and downsampling above 2M pixels because the *share* of
+  pixels that moved is just as accurate from a quarter of them. `npm run diff:check` runs that exact
+  function in local Chromium against images whose answer is known in advance.
+
+  The cron trigger is hourly, since a watch can be. Retention still runs once a day, gated on the
+  03:00 UTC tick — `scheduled` cannot tell which expression woke it. Five consecutive failures pause
+  a watch rather than spending quota for ever on a page that has moved.
+
+  Watches are app-only for now (`/api/watches`, session-authenticated). Exposing them under `/v1`
+  with bearer auth is the obvious next step.
+
 - **Account deletion.** `DELETE /api/account`, from the account screen. It confirms with the
   password (or, for an account with none, the email address typed out), cancels any live Stripe
   subscription first — immediately, with no refund — then removes every R2 object under

@@ -5,6 +5,8 @@ import { fileUrl, formatRelative, safeParseFiles, type CaptureRow } from '../../
 import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options';
 import { frequencyLabel } from '../../../lib/plans';
 import { getWatch, listRuns } from '../../../lib/watches';
+import { safeParseFacts } from '../../../lib/page-facts';
+import { diffText } from '../../../lib/text-diff';
 import { env } from 'cloudflare:workers';
 
 const user = Astro.locals.user!;
@@ -36,6 +38,17 @@ function firstUrl(row: CaptureRow | null): string | null {
 const beforeUrl = firstUrl(beforeRow);
 const afterUrl = firstUrl(afterRow);
 const changedPct = lastComparison?.change_pct ?? null;
+
+/*
+ * The same diff the alert email carries, recomputed from the two captures
+ * rather than stored on the run: it costs nothing here, and storing it would
+ * mean a second copy that can disagree with the text it came from.
+ */
+const change = diffText(
+  safeParseFacts(beforeRow?.facts ?? null)?.text ?? '',
+  safeParseFacts(afterRow?.facts ?? null)?.text ?? '',
+);
+const hasWords = change.comparable && (change.added.length > 0 || change.removed.length > 0);
 ---
 
 <AppShell title={watch.label || displayUrl(watch.url)} tab="watches">
@@ -95,6 +108,34 @@ const changedPct = lastComparison?.change_pct ?? null;
               <h2 class="h4">Last change</h2>
               {changedPct !== null && <span class="pill">{changedPct}% different</span>}
             </div>
+            {
+              hasWords && (
+                <div class="card card--pad stack gap-10">
+                  {change.added.length > 0 && (
+                    <div class="stack gap-6">
+                      <div class="xs muted-2">Now on the page</div>
+                      {change.added.slice(0, 5).map((line) => (
+                        <p class="diff-line diff-line--add">{line}</p>
+                      ))}
+                    </div>
+                  )}
+                  {change.removed.length > 0 && (
+                    <div class="stack gap-6">
+                      <div class="xs muted-2">Gone since last check</div>
+                      {change.removed.slice(0, 5).map((line) => (
+                        <p class="diff-line diff-line--remove">{line}</p>
+                      ))}
+                    </div>
+                  )}
+                  {change.added.length + change.removed.length > 10 && (
+                    <p class="xs muted-2">
+                      …and {change.added.length + change.removed.length - 10} more lines.
+                    </p>
+                  )}
+                </div>
+              )
+            }
+
             <div class="compare">
               <figure class="compare__side">
                 <figcaption class="xs muted-2">Before</figcaption>

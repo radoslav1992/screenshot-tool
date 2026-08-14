@@ -1,5 +1,13 @@
 import type { SessionUser } from './auth';
-import { createCaptureRow, getUsage, runCapture, safeParseFiles, toDTO, type CaptureDTO } from './captures';
+import {
+  createCaptureRow,
+  getUsage,
+  runCapture,
+  safeParseFiles,
+  toDTO,
+  type CaptureDTO,
+  type CaptureSource,
+} from './captures';
 import { fileUrl } from './captures';
 import type { CaptureOptions } from './capture-options';
 import { HttpError } from './http';
@@ -31,6 +39,7 @@ export async function compareCaptures(
   before: CaptureOptions,
   after: CaptureOptions,
   origin: string,
+  source: CaptureSource = 'app',
 ): Promise<CompareResult> {
   const usage = await getUsage(user);
   if (usage.remaining < 2) {
@@ -43,8 +52,8 @@ export async function compareCaptures(
 
   // Sequential, not parallel: two browsers at once doubles this account's draw
   // on the session pool, and the pool is the scarce thing.
-  const beforeRow = await runCapture(await createCaptureRow(user, before, 'app'), before);
-  const afterRow = await runCapture(await createCaptureRow(user, after, 'app'), after);
+  const beforeRow = await runCapture(await createCaptureRow(user, before, source), before);
+  const afterRow = await runCapture(await createCaptureRow(user, after, source), after);
 
   const result: CompareResult = {
     before: toDTO(beforeRow, origin),

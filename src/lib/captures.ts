@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { currentPeriod, type SessionUser } from './auth';
-import { displayUrl, type CaptureOptions } from './capture-options';
+import { displayUrl, plannedShots, type CaptureOptions } from './capture-options';
 import { HttpError } from './http';
 import { prefixedId, randomToken } from './ids';
 import { getPlan } from './plans';
@@ -187,6 +187,29 @@ export async function createCaptureRow(
       'quota_exceeded',
       `You have used all ${usage.quota} screenshots on the ${getPlan(user.plan).name} plan this month.`,
     );
+  }
+
+  /*
+   * Quota is charged per file, so a capture asking for several has to be able
+   * to afford all of them. Checking only for "more than zero left" let one
+   * request overrun the quota it was billed against.
+   */
+  const wanted = plannedShots(options);
+  if (wanted > usage.remaining) {
+    throw new HttpError(
+      402,
+      'quota_exceeded',
+      `That capture takes ${wanted} screenshots and you have ${usage.remaining} left on the ${getPlan(user.plan).name} plan this month.`,
+    );
+  }
+
+  /*
+   * A series does not know its frame count until the page is measured, so it
+   * cannot be checked up front — it is capped at what is left instead. Better a
+   * short series than a bill for frames nobody agreed to.
+   */
+  if (options.mode === 'series') {
+    options.maxFrames = Math.min(options.maxFrames, usage.remaining);
   }
 
   const plan = getPlan(user.plan);

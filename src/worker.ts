@@ -1,6 +1,6 @@
 import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
-import { sweepExpiredCaptures } from './lib/retention';
+import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
 import { runDueWatches } from './lib/watches';
 
 /**
@@ -25,6 +25,14 @@ export default {
    */
   async scheduled(event: ScheduledController, _env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(event.scheduledTime);
+
+    ctx.waitUntil(
+      failStrandedCaptures(now.getTime())
+        .then((failed) => {
+          if (failed) console.log(`[capture] marked ${failed} stranded capture(s) failed`);
+        })
+        .catch((error) => console.error('[capture] stranded sweep failed', error)),
+    );
 
     ctx.waitUntil(
       runDueWatches(siteOrigin(), now)

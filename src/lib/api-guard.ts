@@ -3,6 +3,7 @@ import { CORS_HEADERS, HttpError } from './http';
 import { toHttpError } from './errors';
 import { API_RATE_LIMIT, getPlan } from './plans';
 import { checkRateLimit, rateLimitHeaders } from './rate-limit';
+import { assertVerified } from './verification';
 
 export interface GuardResult {
   auth: ApiKeyAuth;
@@ -24,6 +25,14 @@ export async function guardApiRequest(request: Request): Promise<GuardResult> {
       'API access is available on the Pro and Business plans. Upgrade to start using keys.',
     );
   }
+
+  /*
+   * The same gate the app applies. Checked here rather than per route so a new
+   * endpoint cannot forget it — an unverified account could otherwise be
+   * refused in the app and served through a key it made before confirming.
+   * Dormant unless REQUIRE_EMAIL_VERIFICATION is on and a mailer is configured.
+   */
+  await assertVerified(auth.user);
 
   const limit = API_RATE_LIMIT[plan.id];
   const rate = await checkRateLimit(`key:${auth.keyId}`, limit);

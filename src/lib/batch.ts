@@ -1,6 +1,6 @@
 import type { SessionUser } from './auth';
 import { createCaptureRow, getUsage, runCapture, toDTO, type CaptureDTO } from './captures';
-import { parseCaptureOptions, type CaptureOptions } from './capture-options';
+import { parseCaptureOptions, plannedShots, type CaptureOptions } from './capture-options';
 import { HttpError, badRequest } from './http';
 import { getPlan } from './plans';
 import { parseSitemap } from './sitemap';
@@ -69,29 +69,38 @@ export async function runBatch(
     throw badRequest(`A batch takes at most ${MAX_BATCH} URLs.`, 'urls');
   }
 
+  const result: BatchResult = { requested: urls.length, captures: [], failed: [] };
+
+  /*
+   * Everything is parsed before anything is captured. Two reasons: a batch with
+   * one malformed URL should say so immediately rather than after spending
+   * quota on the others, and the real cost cannot be known until it is — with
+   * `sizes` set, each URL is several screenshots, so counting URLs would let a
+   * batch overrun the quota it was checked against.
+   */
+  const jobs: Array<{ url: string; options: CaptureOptions }> = [];
+  for (const url of urls) {
+    try {
+      jobs.push({ url, options: parseCaptureOptions({ ...shared, url }) });
+    } catch (error) {
+      result.failed.push({ url, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const shots = jobs.reduce((total, job) => total + plannedShots(job.options), 0);
   const usage = await getUsage(user);
-  if (usage.remaining < urls.length) {
+  if (shots > usage.remaining) {
     throw new HttpError(
       402,
       'quota_exceeded',
-      `That batch needs ${urls.length} screenshots and you have ${usage.remaining} left on the ${getPlan(user.plan).name} plan this month.`,
+      `That batch needs ${shots} screenshot${shots === 1 ? '' : 's'} and you have ${usage.remaining} left on the ${getPlan(user.plan).name} plan this month.`,
     );
   }
-
-  const result: BatchResult = { requested: urls.length, captures: [], failed: [] };
 
   // Sequential. Each capture holds a browser session, and the session pool is
   // the scarce resource — a parallel batch would starve everyone else's
   // captures to finish this one sooner.
-  for (const url of urls) {
-    let options: CaptureOptions;
-    try {
-      options = parseCaptureOptions({ ...shared, url });
-    } catch (error) {
-      result.failed.push({ url, error: error instanceof Error ? error.message : String(error) });
-      continue;
-    }
-
+  for (const { url, options } of jobs) {
     try {
       const row = await runCapture(await createCaptureRow(user, options, source), options);
       if (row.status === 'done') result.captures.push(toDTO(row, origin));

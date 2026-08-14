@@ -107,12 +107,21 @@ export const CONSENT_SELECTORS = [
   '[class*="accept-all" i]',
 ];
 
-/** Button text that means yes, in the languages this service sees most. */
+/**
+ * Button text that means yes, in the languages this service sees most.
+ *
+ * Order is precedence: the list is walked in turn and the first phrase that
+ * matches wins, so every specific wording has to sit above the bare word it
+ * contains.
+ */
 export const CONSENT_TEXTS = [
   'accept all',
   'accept cookies',
+  'accept and continue',
   'allow all',
+  'allow cookies',
   'i agree',
+  'i accept',
   'agree',
   'accept',
   'got it',
@@ -143,25 +152,56 @@ export function dismissConsentInPage(selectors: string[], texts: string[]): stri
     return element;
   };
 
+  /*
+   * The document plus every open shadow root inside it. Several of the big
+   * consent vendors mount their dialog in a shadow root precisely so the host
+   * page's CSS cannot touch it, and `document.querySelectorAll` does not cross
+   * that boundary — so a banner sitting in one is invisible to a search that
+   * only looks at the document.
+   */
+  const roots: Array<Document | ShadowRoot> = [document];
+  const pending: Element[] = [...document.querySelectorAll('*')].slice(0, 4_000);
+  for (let i = 0; i < pending.length && roots.length < 50; i++) {
+    const root = (pending[i] as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+    if (!root) continue;
+    roots.push(root);
+    if (pending.length < 6_000) pending.push(...root.querySelectorAll('*'));
+  }
+
   for (const selector of selectors) {
-    try {
-      const target = clickable(document.querySelector(selector));
-      if (target) {
-        target.click();
-        return selector;
+    for (const root of roots) {
+      try {
+        const target = clickable(root.querySelector(selector));
+        if (target) {
+          target.click();
+          return selector;
+        }
+      } catch {
+        /* an invalid selector should not stop the rest */
       }
-    } catch {
-      /* an invalid selector should not stop the rest */
     }
   }
 
-  const buttons = [...document.querySelectorAll('button, [role="button"], a')].slice(0, 400);
+  /*
+   * Searched from the end of the document backwards, and that is the whole
+   * trick: a consent dialog is injected last, so it lives at the bottom of the
+   * DOM. Taking the first N nodes — as this did — means a marketing page with
+   * hundreds of navigation and footer links never reaches the banner at all.
+   */
+  const all = roots.flatMap((root) => [...root.querySelectorAll('button, [role="button"], a')]);
+  const buttons = all.slice(Math.max(0, all.length - 800)).reverse();
+
   for (const text of texts) {
     for (const node of buttons) {
-      const label = (node.textContent ?? '').trim().toLowerCase();
-      // Exact-ish match only: "accept" must not fire on "accept our terms of
-      // service and privacy policy", which is usually a link away from the page.
-      if (label === text || label === `${text} cookies`) {
+      const label = (node.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!label || label.length > 30) continue;
+      /*
+       * Equal, or a short label that begins with the phrase — "accept all" has
+       * to catch "Accept all cookies" without "accept" firing on "accept our
+       * terms of service", which is a link away from the page. The length cap
+       * is what keeps the second case out.
+       */
+      if (label === text || label.startsWith(`${text} `)) {
         const target = clickable(node);
         if (target) {
           target.click();

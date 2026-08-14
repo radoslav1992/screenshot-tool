@@ -15,8 +15,10 @@
     "stripe:setup": "node scripts/stripe-setup.mjs",
     "icons": "node scripts/build-icons.mjs",
     "api:smoke": "node scripts/api-smoke.mjs",
+    "consent:check": "node scripts/consent-check.mjs",
     "diff:check": "node scripts/diff-check.mjs",
     "facts:check": "node scripts/facts-check.mjs",
+    "fullpage:check": "node scripts/fullpage-check.mjs",
     "redact:check": "node scripts/redact-check.mjs"
   },
   "dependencies": {

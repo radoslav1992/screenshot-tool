@@ -342,17 +342,9 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
      * very selectors an action wants to click, and dismissing it afterwards
      * would mean the actions ran against a page nobody could use.
      */
-    if (options.dismissConsent) {
-      try {
-        const clicked = await page.evaluate(dismissConsentInPage, CONSENT_SELECTORS, CONSENT_TEXTS);
-        if (clicked) {
-          console.log(`[render] dismissed consent via ${clicked}`);
-          await sleep(SETTLE_MS);
-        }
-      } catch {
-        // Best effort: a page that will not be clicked is still worth shooting.
-      }
-    }
+    await freezeAnimations(page);
+
+    if (options.dismissConsent) await dismissConsent(page);
 
     for (const action of options.actions) {
       try {
@@ -495,28 +487,43 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
         // one first, so marks do not stack.
         if (options.watermark) await applyWatermark(page, options.mode);
 
-        const fullPage = options.mode === 'fullpage';
-        const buffer = await page.screenshot({ ...shotOptions, fullPage, captureBeyondViewport: false });
+        const shot =
+          options.mode === 'fullpage'
+            ? await captureTallViewport(page, preset, shotOptions)
+            : {
+                data: toUint8(
+                  await page.screenshot({ ...shotOptions, fullPage: false, captureBeyondViewport: false }),
+                ),
+                height: preset.height,
+              };
         files.push({
-          data: toUint8(buffer),
+          data: shot.data,
           contentType,
           ext,
           index: i + 1,
           name: `${size}.${ext}`,
           width: preset.width,
-          height: fullPage ? Math.min(await documentHeight(page), LIMITS.maxFullPageHeight) : preset.height,
+          height: shot.height,
         });
       }
       return { files, ...extras };
     }
 
     if (options.mode === 'fullpage') {
-      const pageHeight = Math.min(await documentHeight(page), LIMITS.maxFullPageHeight);
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await sleep(SETTLE_MS);
-      const buffer = await page.screenshot({ ...shotOptions, fullPage: true });
+      const shot = await captureTallViewport(
+        page,
+        {
+          width: options.width,
+          height: options.height,
+          scale: options.scale,
+          mobile: options.device === 'mobile' || options.device === 'tablet',
+        },
+        shotOptions,
+      );
       return {
-        files: [{ data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: pageHeight }],
+        files: [
+          { data: shot.data, contentType, ext, index: 1, width: options.width, height: shot.height },
+        ],
         ...extras,
       };
     }
@@ -569,6 +576,139 @@ async function documentHeight(page: any): Promise<number> {
     );
   });
   return Number.isFinite(height) && height > 0 ? Number(height) : 0;
+}
+
+/** How many times to look for a consent dialog, and how long between looks. */
+const CONSENT_ATTEMPTS = 3;
+const CONSENT_RETRY_MS = 700;
+
+/**
+ * Clicks a cookie dialog away, more than once if it takes that.
+ *
+ * Consent banners are rarely in the first paint — the vendor's script loads,
+ * decides the visitor's region, and only then injects the dialog. Looking once,
+ * the moment the network goes quiet, is how a banner ends up in a screenshot
+ * despite the box being ticked. So: look, wait, look again, and stop early the
+ * moment something is clicked.
+ */
+async function dismissConsent(page: any): Promise<void> {
+  for (let attempt = 0; attempt < CONSENT_ATTEMPTS; attempt++) {
+    if (attempt) await sleep(CONSENT_RETRY_MS);
+    try {
+      const clicked = await page.evaluate(dismissConsentInPage, CONSENT_SELECTORS, CONSENT_TEXTS);
+      if (clicked) {
+        console.log(`[render] dismissed consent via ${clicked}`);
+        await sleep(SETTLE_MS);
+        return;
+      }
+    } catch {
+      // Best effort: a page that will not be clicked is still worth shooting.
+      return;
+    }
+  }
+}
+
+/**
+ * Makes reveal animations land instantly instead of being caught mid-fade.
+ *
+ * Zeroing the durations rather than pausing them: a paused animation holds
+ * whatever frame it was on, which for a fade-in is usually invisible.
+ */
+async function freezeAnimations(page: any): Promise<void> {
+  try {
+    await page.addStyleTag({
+      content: `*,*::before,*::after{animation-duration:0s !important;animation-delay:0s !important;` +
+        `transition-duration:0s !important;transition-delay:0s !important}` +
+        `html{scroll-behavior:auto !important}`,
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+interface ViewportPreset {
+  width: number;
+  height: number;
+  scale: number;
+  mobile: boolean;
+}
+
+/**
+ * Captures the whole document by making the viewport as tall as the page.
+ *
+ * Chrome's own full-page screenshot stitches from a short viewport, which fails
+ * on any site that reveals content as you scroll: the scroll pass triggers the
+ * reveals, scrolling back to the top puts them away again, and what is captured
+ * is a page of empty sections — black, on a dark site. Making the viewport the
+ * height of the document means everything is genuinely on screen at once, so
+ * every observer fires and nothing is scrolled out of view to be hidden again.
+ *
+ * Returns the height actually captured, because it is not always the height
+ * that was asked for: the page is measured again after the resize, and a very
+ * long page is clamped rather than refused.
+ *
+ * Exported so `scripts/fullpage-check.mjs` can run this exact function against
+ * a scroll-reveal page in local Chromium.
+ */
+export async function captureTallViewport(
+  page: any,
+  preset: ViewportPreset,
+  shotOptions: Record<string, unknown>,
+): Promise<{ data: Uint8Array; height: number }> {
+  const tallest = LIMITS.maxFullPageHeight;
+  let height = Math.min(await documentHeight(page), tallest) || preset.height;
+
+  const resize = async (to: number): Promise<void> => {
+    await page.setViewport({
+      width: preset.width,
+      height: to,
+      deviceScaleFactor: preset.scale,
+      isMobile: preset.mobile,
+      hasTouch: preset.mobile,
+    });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    // Long enough for reveal observers to fire against the new viewport.
+    await sleep(SETTLE_MS * 3);
+  };
+
+  try {
+    await resize(height);
+
+    /*
+     * A viewport that tall is a different layout, and some pages get taller in
+     * it — sections sized in viewport units are the usual reason. One correction
+     * pass, so the shot is not short of the content; a second would risk a page
+     * that grows every time it is measured.
+     */
+    const settled = Math.min(await documentHeight(page), tallest);
+    if (settled > height + 8) {
+      height = settled;
+      await resize(height);
+    }
+
+    const buffer = await page.screenshot({
+      ...shotOptions,
+      fullPage: false,
+      captureBeyondViewport: false,
+    });
+    return { data: toUint8(buffer), height };
+  } catch (error) {
+    // Chrome refuses a surface beyond its texture limit, which a long page at
+    // a 2x scale factor can reach. Stitching is worse on animated sites and
+    // better than no screenshot at all.
+    console.error('[render] tall-viewport capture failed, stitching instead', error);
+    await page.setViewport({
+      width: preset.width,
+      height: preset.height,
+      deviceScaleFactor: preset.scale,
+      isMobile: preset.mobile,
+      hasTouch: preset.mobile,
+    });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(SETTLE_MS);
+    const buffer = await page.screenshot({ ...shotOptions, fullPage: true });
+    return { data: toUint8(buffer), height: Math.min(await documentHeight(page), tallest) };
+  }
 }
 
 /** Scrolls to the bottom in viewport steps so lazy-loaded content renders. */

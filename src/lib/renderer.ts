@@ -49,6 +49,12 @@ const NETWORK_IDLE_BUDGET_MS = 6_000;
 
 /** Best effort: a page that will not go quiet is still worth photographing. */
 async function settleNetwork(page: any): Promise<void> {
+  if (typeof page.waitForNetworkIdle !== 'function') {
+    // Without the helper, a fixed pause is far better than shooting the instant
+    // the document parses — that is how blank and unstyled captures happen.
+    await sleep(2_000);
+    return;
+  }
   try {
     await page.waitForNetworkIdle({ idleTime: 500, concurrency: 2, timeout: NETWORK_IDLE_BUDGET_MS });
   } catch {
@@ -483,6 +489,11 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
         if (options.mode === 'fullpage') await autoScroll(page, preset.height);
         await page.evaluate(() => window.scrollTo(0, 0));
         await sleep(SETTLE_MS);
+
+        // The mark was anchored to the previous viewport and page height, so it
+        // is re-applied against this layout. The script removes any existing
+        // one first, so marks do not stack.
+        if (options.watermark) await applyWatermark(page, options.mode);
 
         const fullPage = options.mode === 'fullpage';
         const buffer = await page.screenshot({ ...shotOptions, fullPage, captureBeyondViewport: false });

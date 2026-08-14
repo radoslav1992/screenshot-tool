@@ -425,6 +425,16 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
   };
 }
 
+/**
+ * How many files this capture will produce, and therefore how much quota it
+ * spends. A scroll series is not included: its frame count is not known until
+ * the page is measured, so it is clamped at render time instead.
+ */
+export function plannedShots(options: CaptureOptions): number {
+  if (!options.sizes.length) return 1;
+  return 1 + options.sizes.filter((size) => size !== options.device).length;
+}
+
 export function displayUrl(url: string): string {
   try {
     const parsed = new URL(url);

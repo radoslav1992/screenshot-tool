@@ -18,7 +18,8 @@
     "diff:check": "node scripts/diff-check.mjs",
     "facts:check": "node scripts/facts-check.mjs",
     "redact:check": "node scripts/redact-check.mjs",
-    "library:check": "node --experimental-strip-types scripts/library-check.mjs"
+    "library:check": "node --experimental-strip-types scripts/library-check.mjs",
+    "monitor:check": "node --experimental-strip-types scripts/monitor-check.mjs && node --experimental-strip-types scripts/monitor-integration-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

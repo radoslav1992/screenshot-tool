@@ -1,4 +1,7 @@
 ---
+import MonitorBudget from '../../components/MonitorBudget.astro';
+import { monitorDashboard } from '../../lib/monitor-dashboard';
+import { forecast, runLabel, deliveryLabel } from '../../lib/monitor-health';
 import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import { getUsage } from '../../lib/captures';
@@ -19,7 +22,8 @@ import { listWatches } from '../../lib/watches';
 const user = Astro.locals.user!;
 const plan = getPlan(user.plan);
 const limit = watchLimit(user.plan);
-const [watches, usage] = await Promise.all([listWatches(user.id), getUsage(user)]);
+const [watches, usage, health] = await Promise.all([listWatches(user.id), getUsage(user), monitorDashboard(user.id)]);
+const budget = forecast(watches, usage);
 
 const frequencies = FREQUENCIES.filter((entry) => allowedFrequencies(user.plan).includes(entry.id));
 const atLimit = watches.length >= limit;
@@ -44,6 +48,42 @@ const upgradeTo = cheapestPlanWith((candidate) => WATCH_LIMIT[candidate.id] > 0)
         <p>Your important pages, checked on your schedule.</p>
       </div>
     </div>
+    <section class="health-grid" aria-label="Capture health in retained history from the last seven days">
+      <article>
+        <span>Capture success</span>
+        <strong>{health.successRate === null ? '—' : `${health.successRate}%`}</strong>
+        <small>
+          {health.stats.succeeded || 0} succeeded · {health.stats.failed || 0} failed
+        </small>
+      </article>
+      <article>
+        <span>Average capture time</span>
+        <strong>{health.stats.average_ms === null ? '—' : `${(health.stats.average_ms / 1000).toFixed(1)}s`}</strong>
+        <small>Successful captures only · {health.stats.pending || 0} pending</small>
+      </article>
+      <article>
+        <span>Monthly monitoring estimate</span>
+        <strong>{budget.monthly.toLocaleString()}</strong>
+        <small>{budget.active} active monitors · per 30 days</small>
+      </article>
+      <article>
+        <span>Remaining screenshots</span>
+        <strong>{usage.remaining.toLocaleString()}</strong>
+        <small>Resets {usage.renewsOn} UTC</small>
+      </article>
+    </section>
+    <p class="xs muted">
+      Capture metrics cover your retained history from the last 7 days. Deleted captures are not included.
+    </p>
+    {(budget.shortfall > 0 || budget.monthlyOver || usage.remaining === 0) && (
+      <div class="notice notice--info" role="status">
+        <strong>
+          {usage.remaining === 0 ? 'Screenshot allowance exhausted.' : 'Your schedule needs more screenshots.'}
+        </strong>{' '}
+        {budget.untilReset.toLocaleString()} checks are estimated before reset. Lower a monitor’s frequency, pause it,
+        or <a href="/app/upgrade">review your plan</a>. Checks are skipped while no quota remains.
+      </div>
+    )}
     {limit === 0 ? (
       <div class="empty">
         <div class="empty__icon">
@@ -164,6 +204,8 @@ const upgradeTo = cheapestPlanWith((candidate) => WATCH_LIMIT[candidate.id] > 0)
               </div>
             </details>
 
+            <MonitorBudget schedules={watches} budget={usage} allowed={frequencies.map((entry) => entry.id)} />
+
             <div class="notice notice--error" id="watch-error" hidden></div>
 
             <button type="submit" class="btn btn--ink" id="watch-submit" disabled={atLimit}>
@@ -181,7 +223,7 @@ const upgradeTo = cheapestPlanWith((candidate) => WATCH_LIMIT[candidate.id] > 0)
               Nothing watched yet
             </p>
             <p class="small muted" style="margin-top: 6px">
-              The first check runs straight away and becomes the baseline.
+              The first check runs on the next scheduler tick, usually within an hour, and becomes the baseline.
             </p>
           </div>
         ) : (
@@ -197,19 +239,31 @@ const upgradeTo = cheapestPlanWith((candidate) => WATCH_LIMIT[candidate.id] > 0)
                     {watch.status === 'paused'
                       ? ' · paused'
                       : watch.last_run_at
-                        ? ` · checked ${formatRelative(watch.last_run_at)}`
+                        ? ` · attempted ${formatRelative(watch.last_run_at)}`
                         : ' · first check due'}
                   </span>
                 </span>
-                <span class="row__value">
-                  {watch.last_error ? (
-                    <span style="color: var(--danger)">needs attention</span>
-                  ) : watch.last_changed_at ? (
-                    <span style="color: var(--green)">changed {formatRelative(watch.last_changed_at)}</span>
-                  ) : (
-                    <span class="muted-2">no change yet</span>
+                <span class="row__value monitor-row-status">
+                  <strong>
+                    {watch.status === 'paused'
+                      ? 'Paused'
+                      : watch.last_error
+                        ? 'Needs attention'
+                        : health.latest.has(watch.id)
+                          ? runLabel(health.latest.get(watch.id)!)
+                          : 'Awaiting first check'}
+                  </strong>
+                  <span class="xs muted">
+                    Last successful check:{' '}
+                    {health.successes.has(watch.id) ? formatRelative(health.successes.get(watch.id)!) : 'not recorded'}
+                  </span>
+                  {health.alerts.has(watch.id) && (
+                    <span class="xs muted">
+                      Email: {deliveryLabel[health.alerts.get(watch.id)!.delivery.email]} · Webhook:{' '}
+                      {deliveryLabel[health.alerts.get(watch.id)!.delivery.webhook]} ·{' '}
+                      {formatRelative(health.alerts.get(watch.id)!.created_at)}
+                    </span>
                   )}
-                  <span style="color: var(--muted-2)"> ›</span>
                 </span>
               </a>
             ))}

@@ -1,3 +1,4 @@
+import { decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
 import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
 import { toSessionUser, type UserRow } from './auth';
@@ -5,7 +6,7 @@ import { createCaptureRow, fileUrl, getUsage, runCapture, safeParseFiles, type C
 import { displayUrl, type CaptureMode, type CaptureOptions, type ViewportId } from './capture-options';
 import { HttpError } from './http';
 import { prefixedId } from './ids';
-import { sendMail } from './mailer';
+import { canSendEmail, sendMail } from './mailer';
 import { allowedFrequencies, frequencyHours, frequencyLabel, getPlan, watchLimit } from './plans';
 import { compareImages, diffAvailable } from './visual-diff';
 import { safeParseFacts } from './page-facts';
@@ -130,13 +131,13 @@ export async function getWatch(id: string): Promise<WatchRow | null> {
   return env.DB.prepare(`SELECT * FROM watches WHERE id = ?`).bind(id).first<WatchRow>();
 }
 
-export async function listRuns(watchId: string, limit = 30): Promise<WatchRunRow[]> {
+export async function listRuns(watchId: string, limit = 30): Promise<Array<WatchRunRow & { delivery: Delivery }>> {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM watch_runs WHERE watch_id = ? ORDER BY created_at DESC LIMIT ?`,
+    `SELECT * FROM watch_runs WHERE watch_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
   )
     .bind(watchId, limit)
     .all<WatchRunRow>();
-  return results ?? [];
+  return (results ?? []).map((run) => ({ ...run, ...decodeRunDetail(run.detail) }));
 }
 
 export async function countWatches(userId: string): Promise<number> {
@@ -267,6 +268,19 @@ export async function setWatchStatus(id: string, status: 'active' | 'paused'): P
     .run();
 }
 
+export async function setWatchFrequency(watch: WatchRow, user: SessionUser, frequency: string): Promise<void> {
+  if (watch.user_id !== user.id || !allowedFrequencies(user.plan).includes(frequency as never)) {
+    throw new HttpError(403, 'plan_required', 'Choose a check frequency included in your plan.');
+  }
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE watches SET frequency = ?, updated_at = ?,
+    next_run_at = CASE WHEN status = 'active' THEN ? ELSE next_run_at END WHERE id = ? AND user_id = ?`,
+  )
+    .bind(frequency, now, now, watch.id, user.id)
+    .run();
+}
+
 export async function deleteWatch(id: string): Promise<void> {
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM watch_runs WHERE watch_id = ?`).bind(id),
@@ -325,13 +339,14 @@ function optionsFor(watch: WatchRow): CaptureOptions {
   };
 }
 
-async function recordRun(run: Omit<WatchRunRow, 'id' | 'created_at'>): Promise<void> {
+async function recordRun(run: Omit<WatchRunRow, 'id' | 'created_at'>): Promise<string> {
+  const id = prefixedId('wrn', 10);
   await env.DB.prepare(
     `INSERT INTO watch_runs (id, watch_id, user_id, capture_id, baseline_capture_id, status, changed, change_pct, detail, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
-      prefixedId('wrn', 10),
+      id,
       run.watch_id,
       run.user_id,
       run.capture_id,
@@ -343,6 +358,7 @@ async function recordRun(run: Omit<WatchRunRow, 'id' | 'created_at'>): Promise<v
       new Date().toISOString(),
     )
     .run();
+  return id;
 }
 
 export interface WatchOutcome {
@@ -371,8 +387,8 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   const user = toSessionUser(userRow);
 
   // A plan downgrade should stop the watch running, not silently keep spending.
-  if (watchLimit(user.plan) === 0) {
-    await pause(watch.id, 'Watching pages is not included on this plan any more.');
+  if (watchLimit(user.plan) === 0 || !allowedFrequencies(user.plan).includes(watch.frequency as never)) {
+    await pause(watch.id, 'This monitoring schedule is not included on your current plan.');
     await recordRun({
       watch_id: watch.id,
       user_id: watch.user_id,
@@ -381,9 +397,9 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
       status: 'skipped',
       changed: 0,
       change_pct: null,
-      detail: 'plan no longer includes watches',
+      detail: 'current schedule is not included in this plan',
     });
-    return { status: 'skipped', changed: false, detail: 'plan no longer includes watches' };
+    return { status: 'skipped', changed: false, detail: 'current schedule is not included in this plan' };
   }
 
   const usage = await getUsage(user);
@@ -428,13 +444,13 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   if (!baseline) {
     detail = 'first check — saved as the baseline';
   } else if (!diffAvailable()) {
-    detail = 'no rendering binding, so pages cannot be compared';
+    return failed(watch, 'Comparison unavailable: rendering service is not configured.', now, capture.id);
   } else {
     try {
       const before = firstFileUrl(baseline, origin);
       const after = firstFileUrl(capture, origin);
       if (!before || !after) {
-        detail = 'a capture had no comparable file';
+        return failed(watch, 'Comparison unavailable: a capture has no comparable image.', now, capture.id);
       } else {
         const diff = await compareImages(before, after);
         changePct = diff.changedPct;
@@ -442,9 +458,8 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
         detail = diff.resized ? `page height changed, ${diff.changedPct}% of the shared area differs` : null;
       }
     } catch (error) {
-      // A failed comparison is worth recording but the capture itself is good,
-      // so the run still counts and the new capture still becomes the baseline.
-      detail = `could not compare: ${error instanceof Error ? error.message : String(error)}`;
+      // Preserve the last good baseline so the next successful check can still detect the change.
+      return failed(watch, 'Comparison failed. The previous baseline has been kept.', now, capture.id);
     }
   }
 
@@ -467,7 +482,10 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     )
     .run();
 
-  await recordRun({
+  const delivery: Delivery = changed
+    ? { email: watch.notify_email ? 'pending' : 'disabled', webhook: watch.webhook_url ? 'pending' : 'disabled' }
+    : { email: 'not_needed', webhook: 'not_needed' };
+  const runId = await recordRun({
     watch_id: watch.id,
     user_id: watch.user_id,
     capture_id: capture.id,
@@ -475,11 +493,15 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     status: 'done',
     changed: changed ? 1 : 0,
     change_pct: changePct,
-    detail,
+    detail: encodeRunDetail(detail, delivery),
   });
 
   if (changed && baseline) {
-    await notify(watch, user, baseline, capture, changePct ?? 0, origin);
+    await notify(watch, user, baseline, capture, changePct ?? 0, origin, delivery, async () => {
+      await env.DB.prepare('UPDATE watch_runs SET detail = ? WHERE id = ? AND user_id = ?')
+        .bind(encodeRunDetail(detail, delivery), runId, watch.user_id)
+        .run();
+    });
   }
 
   return { status: 'done', changed, changePct: changePct ?? undefined, detail: detail ?? undefined };
@@ -500,7 +522,12 @@ async function pause(id: string, reason: string): Promise<void> {
     .run();
 }
 
-async function failed(watch: WatchRow, message: string, now: Date): Promise<WatchOutcome> {
+async function failed(
+  watch: WatchRow,
+  message: string,
+  now: Date,
+  captureId: string | null = null,
+): Promise<WatchOutcome> {
   const errors = watch.consecutive_errors + 1;
   const givingUp = errors >= MAX_CONSECUTIVE_ERRORS;
 
@@ -522,7 +549,7 @@ async function failed(watch: WatchRow, message: string, now: Date): Promise<Watc
   await recordRun({
     watch_id: watch.id,
     user_id: watch.user_id,
-    capture_id: null,
+    capture_id: captureId,
     baseline_capture_id: watch.baseline_capture_id,
     status: 'error',
     changed: 0,
@@ -544,6 +571,8 @@ async function notify(
   after: CaptureRow,
   changePct: number,
   origin: string,
+  delivery: Delivery,
+  saveDelivery: () => Promise<void>,
 ): Promise<void> {
   const name = watch.label || displayUrl(watch.url);
   const link = `${origin}/app/watches/${watch.id}`;
@@ -554,31 +583,30 @@ async function notify(
    * captured with each run is diffed and, where a model is available,
    * summarised into one sentence.
    */
-  const change = diffText(
-    safeParseFacts(before.facts)?.text ?? '',
-    safeParseFacts(after.facts)?.text ?? '',
-  );
-  const summary = await summariseChange(change, name);
+  const change = diffText(safeParseFacts(before.facts)?.text ?? '', safeParseFacts(after.facts)?.text ?? '');
+  const summary = await summariseChange(change, name).catch(() => ({ sentence: '', detail: '' }));
 
   if (watch.notify_email) {
     const headline = summary.sentence ? `${summary.sentence}\n\n` : '';
     const body = summary.detail ? `${summary.detail}\n\n` : '';
-    await sendMail({
-      to: user.email,
-      subject: summary.sentence ? `${name}: ${summary.sentence.slice(0, 80)}` : `${name} changed`,
-      text:
-        `${name} looks different from the last check.\n\n` +
-        headline +
-        body +
-        `${changePct}% of the picture changed.\n\n` +
-        `Before: ${firstFileUrl(before, origin) ?? '—'}\n` +
-        `After:  ${firstFileUrl(after, origin) ?? '—'}\n\n` +
-        `History and settings: ${link}\n\n` +
-        `Stop these emails by pausing or deleting the watch on that page.`,
-    }).catch((error) => {
-      console.error(`[watch] alert email failed for ${watch.id}`, error);
-      return false;
-    });
+    delivery.email = canSendEmail()
+      ? await observeDelivery(() =>
+          sendMail({
+            to: user.email,
+            subject: summary.sentence ? `${name}: ${summary.sentence.slice(0, 80)}` : `${name} changed`,
+            text:
+              `${name} looks different from the last check.\n\n` +
+              headline +
+              body +
+              `${changePct}% of the picture changed.\n\n` +
+              `Before: ${firstFileUrl(before, origin) ?? '—'}\n` +
+              `After:  ${firstFileUrl(after, origin) ?? '—'}\n\n` +
+              `History and settings: ${link}\n\n` +
+              `Stop these emails by pausing or deleting the watch on that page.`,
+          }),
+        )
+      : 'not_configured';
+    await saveDelivery();
   }
 
   if (watch.webhook_url) {
@@ -610,15 +638,18 @@ async function notify(
           }
         : payload;
 
-    try {
-      await fetch(watch.webhook_url, {
+    delivery.webhook = await observeDelivery(async () => {
+      const response = await fetch(watch.webhook_url!, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'user-agent': 'EasyScreenCapture-Watch/1' },
         body: JSON.stringify(body),
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
       });
-    } catch (error) {
-      console.error(`[watch] webhook failed for ${watch.id}`, error);
-    }
+      if (response.body) await response.body.cancel().catch(() => undefined);
+      return response.ok;
+    });
+    await saveDelivery();
   }
 }
 

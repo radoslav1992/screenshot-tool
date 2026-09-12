@@ -40,6 +40,19 @@ Availability depends on the configured Cloudflare services and email/billing int
 - “Monitor this page” handoff from a capture, preserving its URL.
 - Removal of unconnected OAuth buttons and unsupported team-seat/SLA claims from pricing features.
 
+## First feature release: monitor health and budget forecasting
+
+Implemented after the redesign:
+
+- Capture success rate, pending/failure counts and average successful capture duration over retained history from the last seven days.
+- Per-monitor latest result and last successful check; baseline creation, unavailable comparisons and skipped checks no longer read as unchanged pages.
+- Persisted email/webhook acceptance or failure on new changed runs, with the most recent alert still visible after later checks. Historical delivery is unknown; provider acceptance is not inbox confirmation. Automatic notification retries remain future work.
+- Aggregate 30-day and before-reset forecasts, excluding paused monitors, with affordable slower-frequency suggestions where available.
+- Schedule editing with ownership and plan checks. Paused monitors remain paused. The detail forecast shows the hypothetical resumed schedule.
+- Comparison failure keeps the last good baseline and counts toward the existing five-error auto-pause policy. If retention has deleted the old capture, a new baseline is established.
+
+No database migration is needed. Metrics are derived from retained capture/run records rather than permanent telemetry. Deleted records are excluded. Forecasts are estimates, not reservations; other captures, delayed execution and concurrent activity can change actual usage. Live provider delivery and visual browser inspection must still be verified in the deployed environment.
+
 ## Prioritized roadmap
 
 Effort is a rough estimate in focused engineering days, excluding external dependencies and pilot feedback.

@@ -1,3 +1,5 @@
+import { watchSettingsReady, watchNoise, noiseStrings } from './watch-settings';
+import { parseIgnoreRegions } from './ignore-regions';
 import { decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
 import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
@@ -193,6 +195,10 @@ export async function assertCanWatch(user: SessionUser, frequency: string): Prom
 
 export async function createWatch(user: SessionUser, input: WatchInput): Promise<WatchRow> {
   await assertCanWatch(user, input.frequency);
+  const noise = noiseStrings(input.options);
+  const noiseReady = await watchSettingsReady();
+  if ((noise.hide || noise.ignore_regions) && !noiseReady)
+    throw new HttpError(503, 'setup_required', 'Monitor noise controls are being prepared. Please try again later.');
 
   const now = new Date();
   const row: WatchRow = {
@@ -225,33 +231,37 @@ export async function createWatch(user: SessionUser, input: WatchInput): Promise
     updated_at: now.toISOString(),
   };
 
-  await env.DB.prepare(
+  const insert = env.DB.prepare(
     `INSERT INTO watches (id, user_id, label, url, host, device, width, height, scale, mode, format,
                           frequency, threshold, notify_email, webhook_url, status, next_run_at,
                           created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-  )
-    .bind(
-      row.id,
-      row.user_id,
-      row.label,
-      row.url,
-      row.host,
-      row.device,
-      row.width,
-      row.height,
-      row.scale,
-      row.mode,
-      row.format,
-      row.frequency,
-      row.threshold,
-      row.notify_email,
-      row.webhook_url,
-      row.next_run_at,
-      row.created_at,
-      row.updated_at,
-    )
-    .run();
+  ).bind(
+    row.id,
+    row.user_id,
+    row.label,
+    row.url,
+    row.host,
+    row.device,
+    row.width,
+    row.height,
+    row.scale,
+    row.mode,
+    row.format,
+    row.frequency,
+    row.threshold,
+    row.notify_email,
+    row.webhook_url,
+    row.next_run_at,
+    row.created_at,
+    row.updated_at,
+  );
+  if (noiseReady)
+    await env.DB.batch([
+      insert,
+      env.DB.prepare('INSERT INTO watch_settings VALUES(?,?,?)').bind(row.id, noise.hide, noise.ignore_regions),
+    ]);
+  else await insert.run();
 
   return row;
 }
@@ -424,8 +434,14 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
 
   let capture: CaptureRow;
   try {
-    const row = await createCaptureRow(user, optionsFor(watch), 'watch');
-    capture = await runCapture(row, optionsFor(watch));
+    const noise = await watchNoise(watch.id);
+    const options = {
+      ...optionsFor(watch),
+      hide: noise.hide.split(',').filter(Boolean),
+      ignoreRegions: parseIgnoreRegions(noise.ignore_regions),
+    };
+    const row = await createCaptureRow(user, options, 'watch');
+    capture = await runCapture(row, options);
   } catch (error) {
     return failed(watch, error instanceof Error ? error.message : String(error), now);
   }

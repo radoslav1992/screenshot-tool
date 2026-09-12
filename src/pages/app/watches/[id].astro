@@ -255,7 +255,30 @@ const changedPct = lastComparison?.change_pct ?? null;
       <div class="notice notice--error" id="watch-error" hidden></div>
     </div>
   </div>
+  <div class="app-wrap">
+    <button type="button" class="btn btn--outline" id="test-notification" data-watch={watch.id}>
+      Send test notification
+    </button>
+    <p id="test-notification-status" class="small muted" role="status"></p>
+  </div>
 </AppShell>
+<script>
+  document.querySelector<HTMLButtonElement>('#test-notification')?.addEventListener('click', async (e) => {
+    const button = e.currentTarget as HTMLButtonElement;
+    button.disabled = true;
+    const status = document.querySelector('#test-notification-status')!;
+    status.textContent = 'Sending test…';
+    try {
+      const response = await fetch(`/api/watches/${button.dataset.watch}/test`, { method: 'POST' });
+      const body = (await response.json()) as { message?: string; error?: { message?: string } };
+      status.textContent = body.message ?? body.error?.message ?? 'Test failed.';
+    } catch {
+      status.textContent = 'Delivery could not be confirmed. Check the destination before retrying.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
 
 <script is:inline define:vars={{ watchId: watch.id }}>
   const errorBox = document.getElementById('watch-error');

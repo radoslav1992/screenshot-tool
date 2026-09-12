@@ -1,6 +1,6 @@
 import type { SessionUser } from './auth';
 import { createCaptureRow, getUsage, runCapture, toDTO, type CaptureDTO } from './captures';
-import { parseCaptureOptions, type CaptureOptions } from './capture-options';
+import { assertPublicCaptureUrl, parseCaptureOptions, type CaptureOptions } from './capture-options';
 import { HttpError, badRequest } from './http';
 import { getPlan } from './plans';
 import { parseSitemap } from './sitemap';
@@ -22,16 +22,33 @@ export interface BatchResult {
   failed: Array<{ url: string; error: string }>;
 }
 
-async function fetchSitemap(url: string): Promise<string> {
-  const response = await fetch(url, {
+async function fetchSitemap(raw: string): Promise<string> {
+  const url = assertPublicCaptureUrl(raw);
+  // Reject redirects instead of allowing an unchecked destination or private child sitemap.
+  const response = await fetch(url.toString(), {
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
     headers: { 'user-agent': 'EasyScreenCapture/1 (+https://easyscreencapture.com)' },
   });
-  if (!response.ok) {
-    throw new HttpError(400, 'sitemap_unreachable', `The sitemap answered ${response.status}.`);
+  if (!response.ok) throw new HttpError(400, 'sitemap_unreachable', `The sitemap answered ${response.status}.`);
+  const reader = response.body?.getReader();
+  if (!reader) throw badRequest('The sitemap was empty.');
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 2_000_000)
+        throw badRequest('Sitemaps must be smaller than 2 MB. Use a smaller sitemap or paste page URLs.');
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    await reader.cancel().catch(() => undefined);
   }
-  const text = await response.text();
-  // A sitemap can be enormous; only the first entries are ever used.
-  return text.slice(0, 2_000_000);
 }
 
 /**
@@ -43,7 +60,7 @@ async function fetchSitemap(url: string): Promise<string> {
  */
 export async function urlsFromSitemap(sitemapUrl: string, limit: number): Promise<string[]> {
   const first = parseSitemap(await fetchSitemap(sitemapUrl));
-  if (first.pages.length) return first.pages.slice(0, limit);
+  if (first.pages.length) return [...new Set(first.pages)].slice(0, Math.min(MAX_BATCH, limit));
 
   const pages: string[] = [];
   for (const index of first.indexes.slice(0, 5)) {
@@ -54,7 +71,7 @@ export async function urlsFromSitemap(sitemapUrl: string, limit: number): Promis
       // One unreadable child sitemap should not lose the others.
     }
   }
-  return pages.slice(0, limit);
+  return [...new Set(pages)].slice(0, Math.min(MAX_BATCH, limit));
 }
 
 export async function runBatch(

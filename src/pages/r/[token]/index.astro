@@ -1,0 +1,29 @@
+---
+import Base from '../../../layouts/Base.astro';
+import ReviewReport from '../../../components/ReviewReport.astro';
+import { sharedReport, reportCaptures } from '../../../lib/projects';
+import '../../../styles/projects.css';
+let data;
+try {
+  data = await sharedReport(Astro.params.token!, true);
+} catch {
+  return new Response('This review link is unavailable, expired or revoked.', {
+    status: 404,
+    headers: { 'cache-control': 'no-store' },
+  });
+}
+const { project, report, expiresAt } = data;
+const captures = await reportCaptures(report, project.user_id);
+Astro.response.headers.set('cache-control', 'private, no-store');
+Astro.response.headers.set('referrer-policy', 'no-referrer');
+Astro.response.headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
+---
+
+<Base title="Shared website review" description="A private, time-limited website review.">
+  <div class="report-page">
+    <p class="small muted">
+      Shared review · Anyone with this link can view until {expiresAt.slice(0, 16)} UTC, unless revoked earlier.
+    </p>
+  </div>
+  <ReviewReport project={project} report={report} captures={captures} token={Astro.params.token} />
+</Base>

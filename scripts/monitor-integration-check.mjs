@@ -14,6 +14,7 @@ for (const file of [
   '0003_billing.sql',
   '0004_watches.sql',
   '0005_page_facts.sql',
+  '0008_monitor_noise.sql',
 ]) {
   db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
 }
@@ -23,6 +24,7 @@ for (const id of ['owner', 'other'])
     `INSERT INTO users (id,email,email_lower,name,plan,period_start,created_at,updated_at) VALUES (?,?,?,'Pilot','pro',?,?,?)`,
   ).run(id, `${id}@example.test`, `${id}@example.test`, timestamp, timestamp, timestamp);
 const state = {
+  lastOptions: null,
   remaining: 2000,
   comparisonFails: false,
   canCompare: true,
@@ -46,7 +48,8 @@ const fixture = {
   state,
   captures: {
     getUsage: async () => ({ remaining: state.remaining }),
-    createCaptureRow: async () => {
+    createCaptureRow: async (_user, options) => {
+      state.lastOptions = options;
       const id = `capture-${++n}`;
       db.prepare(
         `INSERT INTO captures (id,user_id,url,host,device,width,height,mode,format,status,share_token,files,created_at,duration_ms) VALUES (?,'owner','https://example.test','example.test','desktop',1440,900,'fullpage','png','done','fixture',?,?,1200)`,
@@ -109,6 +112,8 @@ try {
     scale: 1,
     mode: 'fullpage',
     format: 'png',
+    hide: ['.live-clock'],
+    ignoreRegions: [{ x: 0, y: 0, width: 100, height: 50 }],
   };
   const watch = await watches.createWatch(user, {
     options,
@@ -120,6 +125,8 @@ try {
   });
   let outcome = await watches.runWatch(watch, 'https://fixture.test');
   assert.equal(outcome.status, 'done');
+  assert.deepEqual(state.lastOptions.hide, ['.live-clock']);
+  assert.deepEqual(state.lastOptions.ignoreRegions, [{ x: 0, y: 0, width: 100, height: 50 }]);
   let current = await watches.getWatch(watch.id);
   const baseline = current.baseline_capture_id;
   state.comparisonFails = true;

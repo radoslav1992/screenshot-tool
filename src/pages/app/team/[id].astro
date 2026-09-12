@@ -1,0 +1,199 @@
+---
+import { env } from 'cloudflare:workers';
+import AppShell from '../../../layouts/AppShell.astro';
+import ProjectForms from '../../../components/ProjectForms.astro';
+import ReviewReport from '../../../components/ReviewReport.astro';
+import { collaborationReady, projectAccess } from '../../../lib/collaboration';
+import { reportCaptures, type Report } from '../../../lib/projects';
+import '../../../styles/projects.css';
+if (!(await collaborationReady()))
+  return new Response('Collaboration is being prepared. Please try again later.', { status: 503 });
+let access;
+try {
+  access = await projectAccess(Astro.locals.user!.id, Astro.params.id!);
+} catch {
+  return new Response('Project not found', { status: 404 });
+}
+const { project, role } = access;
+const reports = (
+  await env.DB.prepare('SELECT * FROM review_reports WHERE project_id=? ORDER BY created_at DESC')
+    .bind(project.id)
+    .all<Report>()
+).results;
+const selected = reports.find((r) => r.id === Astro.url.searchParams.get('report'));
+const captures = selected ? await reportCaptures(selected, project.user_id) : [];
+const members =
+  role === 'owner'
+    ? (
+        await env.DB.prepare('SELECT id,email_lower,role,user_id,expires_at FROM project_members WHERE project_id=?')
+          .bind(project.id)
+          .all<{ id: string; email_lower: string; role: string; user_id: string | null; expires_at: string }>()
+      ).results
+    : [];
+const comments = selected
+  ? (
+      await env.DB.prepare(
+        'SELECT c.body,c.created_at,u.name FROM team_comments c JOIN users u ON u.id=c.user_id WHERE report_id=? ORDER BY c.created_at',
+      )
+        .bind(selected.id)
+        .all<{ body: string; created_at: string; name: string }>()
+    ).results
+  : [];
+const digest = await env.DB.prepare('SELECT * FROM project_digests WHERE project_id=? AND user_id=?')
+  .bind(project.id, Astro.locals.user!.id)
+  .first<{ timezone: string; enabled: number }>();
+const delivery = await env.DB.prepare(
+  'SELECT status,created_at FROM digest_deliveries WHERE project_id=? AND user_id=? ORDER BY created_at DESC LIMIT 1',
+)
+  .bind(project.id, Astro.locals.user!.id)
+  .first<{ status: string; created_at: string }>();
+Astro.response.headers.set('cache-control', 'private, no-store');
+---
+
+<AppShell title={project.name + ' · Team'} tab="projects">
+  <header class="appbar" slot="appbar">
+    <a href={role === 'owner' ? `/app/projects/${project.id}` : '/app/projects'}>← Projects</a>
+    <span class="pill">{role}</span>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">PROJECT COLLABORATION</span>
+        <h1>{project.name}</h1>
+        <p>Review the evidence together.</p>
+      </div>
+    </div>
+    <div class="project-grid">
+      <section class="project-panel">
+        <h2>Shared with the team</h2>
+        <div class="project-items">
+          {reports.map((r) => (
+            <a class="project-item" href={`?report=${r.id}`}>
+              {r.title} →
+            </a>
+          ))}
+        </div>
+        <p class="small muted">
+          Project reports are visible to every member. Owner-only internal notes and account capture history remain
+          private.
+        </p>
+      </section>
+      <section class="project-panel">
+        <h2>Your weekly digest</h2>
+        <p class="small muted">
+          Every Monday after 09:00 in your timezone. Sent only to your verified account email:{' '}
+          {Astro.locals.user!.email}. Includes completed checks, changes and failures from this project.
+        </p>
+        <form data-project-form data-endpoint="/api/collaboration">
+          <input type="hidden" name="action" value="digest" />
+          <input type="hidden" name="project_id" value={project.id} />
+          <label>
+            <span>
+              <input type="checkbox" name="enabled" value="1" checked={!!digest?.enabled} /> Email me a weekly summary
+            </span>
+          </label>
+          <label>
+            Timezone
+            <input
+              class="input"
+              name="timezone"
+              required
+              value={digest?.timezone ?? 'UTC'}
+              placeholder="Europe/Sofia"
+            />
+          </label>
+          <button type="submit" class="btn btn--outline">
+            Save digest preference
+          </button>
+          <p role="status"></p>
+        </form>
+        {delivery && (
+          <p class="small muted">
+            Last digest: {delivery.status} · {delivery.created_at.slice(0, 16)} UTC. Accepted means provider acceptance,
+            not inbox delivery.
+          </p>
+        )}
+      </section>
+      {role === 'owner' && (
+        <section class="project-panel">
+          <h2>Team access · Business</h2>
+          <p class="small muted">
+            Business includes up to three collaborators per project at the existing price. Pending invites reserve a
+            seat for seven days. Viewers read reports; editors also add team comments. The owner manages captures,
+            reports, links, billing and monitors. A downgrade pauses collaborator access.
+          </p>
+          {members.map((m) => (
+            <div class="project-item">
+              <p>
+                {m.email_lower} · {m.role} · {m.user_id ? 'Joined' : `Pending until ${m.expires_at.slice(0, 10)}`}
+              </p>
+              <form data-project-form data-endpoint="/api/collaboration">
+                <input type="hidden" name="action" value="revoke_member" />
+                <input type="hidden" name="project_id" value={project.id} />
+                <input type="hidden" name="member_id" value={m.id} />
+                <button type="submit" class="btn btn--outline">
+                  Revoke access
+                </button>
+                <p role="status"></p>
+              </form>
+            </div>
+          ))}
+          <form data-project-form data-endpoint="/api/collaboration">
+            <input type="hidden" name="action" value="invite" />
+            <input type="hidden" name="project_id" value={project.id} />
+            <label>
+              Email
+              <input class="input" name="email" type="email" required maxlength="254" />
+            </label>
+            <label>
+              Role
+              <select class="input" name="role">
+                <option value="viewer">Viewer · read reports</option>
+                <option value="editor">Editor · read and comment</option>
+              </select>
+            </label>
+            <button type="submit" class="btn btn--ink">
+              Create invitation link
+            </button>
+            <p role="status"></p>
+          </form>
+          <p class="small muted">
+            Copy and send the invitation link yourself. No invitation email is sent automatically.
+          </p>
+        </section>
+      )}
+    </div>
+    {selected && (
+      <>
+        <ReviewReport project={project} report={selected} captures={captures} />
+        <section class="project-panel">
+          <h2>Team discussion</h2>
+          <p class="small muted">Visible to project members. Excluded from public review links and PDF exports.</p>
+          {comments.map((c) => (
+            <div class="project-item">
+              <p class="report-notes">{c.body}</p>
+              <small>
+                {c.name || 'Project member'} · {c.created_at.slice(0, 16)} UTC
+              </small>
+            </div>
+          ))}
+          {role !== 'viewer' && (
+            <form data-project-form data-endpoint="/api/collaboration">
+              <input type="hidden" name="action" value="comment" />
+              <input type="hidden" name="project_id" value={project.id} />
+              <input type="hidden" name="report_id" value={selected.id} />
+              <label>
+                Comment<textarea class="input" name="body" required maxlength="2000" rows="3"></textarea>
+              </label>
+              <button type="submit" class="btn btn--outline">
+                Add team comment
+              </button>
+              <p role="status"></p>
+            </form>
+          )}
+        </section>
+      </>
+    )}
+  </div>
+  <ProjectForms />
+</AppShell>

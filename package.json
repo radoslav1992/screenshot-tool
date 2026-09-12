@@ -18,6 +18,7 @@
     "diff:check": "node scripts/diff-check.mjs",
     "facts:check": "node scripts/facts-check.mjs",
     "redact:check": "node scripts/redact-check.mjs",
+    "projects:check": "node scripts/projects-check.mjs",
     "library:check": "node --experimental-strip-types scripts/library-check.mjs",
     "monitor:check": "node --experimental-strip-types scripts/monitor-check.mjs && node --experimental-strip-types scripts/monitor-integration-check.mjs"
   },

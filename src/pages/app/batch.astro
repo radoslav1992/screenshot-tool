@@ -1,0 +1,177 @@
+---
+import { env } from 'cloudflare:workers';
+import AppShell from '../../layouts/AppShell.astro';
+import { projectsReady, ownProject } from '../../lib/projects';
+import { getUsage } from '../../lib/captures';
+import '../../styles/projects.css';
+const user = Astro.locals.user!;
+const usage = await getUsage(user);
+let project;
+let settings: Record<string, string> = {};
+const projectId = Astro.url.searchParams.get('project');
+if (projectId && (await projectsReady())) {
+  try {
+    project = await ownProject(user.id, projectId);
+  } catch {
+    return new Response('Project not found', { status: 404 });
+  }
+  const preset = await env.DB.prepare('SELECT settings FROM capture_presets WHERE id=? AND project_id=?')
+    .bind(Astro.url.searchParams.get('preset') ?? '', project.id)
+    .first<{ settings: string }>();
+  if (preset) settings = JSON.parse(preset.settings);
+}
+---
+
+<AppShell title="Batch capture" tab="projects">
+  <header class="appbar" slot="appbar">
+    <a href={project ? `/app/projects/${project.id}` : '/app/projects'}>← {project?.name ?? 'Projects'}</a>
+    <span class="pill pill--quota">{usage.remaining} shots left</span>
+  </header>
+  <div
+    class="app-wrap stack gap-20"
+    id="batch-workspace"
+    data-project={project?.id ?? ''}
+    data-remaining={usage.remaining}
+  >
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">A WHOLE SITE. ONE WORKFLOW.</span>
+        <h1>Ready for a closer look?</h1>
+        <p>Preview your pages, capture each one, then review the results.</p>
+      </div>
+    </div>
+    <form id="batch-form" class="project-grid">
+      <fieldset class="project-panel" id="batch-inputs">
+        <h2>01 · Choose pages</h2>
+        <label>
+          Page URLs · one per line
+          <textarea
+            class="input"
+            name="urls"
+            rows="6"
+            placeholder="https://example.com/&#10;https://example.com/about"
+            maxlength="20000"
+          ></textarea>
+        </label>
+        <p class="small muted">Or load a sitemap. A sitemap takes priority over the list above.</p>
+        <label>
+          Sitemap URL
+          <input class="input" name="sitemap" type="url" placeholder="https://example.com/sitemap.xml" />
+        </label>
+        <p class="small muted">Up to 25 URLs; sitemap indexes preview at most 5 child sitemaps.</p>
+      </fieldset>
+      <fieldset class="project-panel" id="batch-settings">
+        <h2>02 · Capture settings</h2>
+        <label>
+          Device
+          <select class="input" name="device">
+            {['desktop', 'tablet', 'mobile'].map((d) => (
+              <option value={d} selected={settings.device === d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Capture area
+          <select class="input" name="mode">
+            <option value="visible" selected={settings.mode === 'visible'}>
+              Visible area
+            </option>
+            <option value="fullpage" selected={!settings.mode || settings.mode === 'fullpage'}>
+              Full page
+            </option>
+          </select>
+        </label>
+        <label>
+          Format
+          <select class="input" name="format">
+            <option value="png" selected={settings.format !== 'jpg'}>
+              PNG
+            </option>
+            <option value="jpg" selected={settings.format === 'jpg'}>
+              JPG
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>
+            <input type="checkbox" name="launch" value="1" checked={Astro.url.searchParams.get('launch') === '1'} />{' '}
+            Launch check: desktop + mobile
+          </span>
+        </label>
+        <p class="small muted">
+          Two screenshots per URL. Up to 12 URLs in launch mode. Choose before/after baselines later in the project
+          report builder.
+        </p>
+        <label>
+          Hide distracting elements
+          <input
+            class="input"
+            name="hide"
+            value={settings.hide ?? ''}
+            maxlength="2000"
+            placeholder=".cookie-banner, .chat-widget"
+          />
+        </label>
+        <label>
+          <span>
+            <input type="checkbox" name="redact_pii" value="1" checked={settings.redact_pii === '1'} /> Best-effort
+            personal text masking
+          </span>
+        </label>
+        <label>
+          <span>
+            <input type="checkbox" name="dark_mode" value="1" checked={settings.dark_mode === '1'} /> Request dark theme
+          </span>
+        </label>
+        <label>
+          <span>
+            <input type="checkbox" name="block_ads" value="1" checked={settings.block_ads === '1'} /> Block ads
+          </span>
+        </label>
+        <p class="small muted">Review images before sharing. Masking cannot guarantee anonymity.</p>
+      </fieldset>
+      <div class="project-panel">
+        <h2>03 · Preview &amp; run</h2>
+        <button class="btn btn--ink" type="submit" id="batch-preview">
+          Preview pages &amp; cost
+        </button>
+        <p role="status" id="batch-status" aria-live="polite"></p>
+        <p class="small muted">
+          No captures are made during preview. Keep this tab open while running. Results are held in this tab; check
+          your library if the page is closed or a request is interrupted.
+        </p>
+        {project && (
+          <>
+            <label>
+              Save these settings as
+              <input class="input" id="preset-name" maxlength="80" placeholder="Client mobile privacy check" />
+            </label>
+            <button class="btn btn--outline" type="button" id="save-preset">
+              Save settings to project
+            </button>
+          </>
+        )}
+      </div>
+    </form>
+    <section class="project-panel" id="batch-results" hidden>
+      <h2 id="batch-cost">Capture queue</h2>
+      <div class="project-links">
+        <button type="button" class="btn btn--ink" id="batch-start">
+          Start capture
+        </button>
+        <button type="button" class="btn btn--outline" id="batch-stop" disabled>
+          Stop after current page
+        </button>
+        <button type="button" class="btn btn--outline" id="batch-retry" hidden>
+          Retry failed pages only
+        </button>
+      </div>
+      <ol class="project-items" id="batch-queue"></ol>
+    </section>
+  </div>
+</AppShell>
+<script>
+  import '../../scripts/batch-ui';
+</script>

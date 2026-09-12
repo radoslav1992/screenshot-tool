@@ -274,9 +274,7 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
         // Scoped to the page being captured. A cookie without a domain would
         // otherwise be offered to every host the page happens to talk to.
         const { hostname } = new URL(options.url);
-        await page.setCookie(
-          ...options.auth.cookies.map((cookie) => ({ ...cookie, domain: hostname, path: '/' })),
-        );
+        await page.setCookie(...options.auth.cookies.map((cookie) => ({ ...cookie, domain: hostname, path: '/' })));
       }
     }
 
@@ -353,6 +351,26 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
      * replacing its text means the information was never in the file; a blur
      * applied to finished pixels can be undone by anyone patient.
      */
+    if (options.ignoreRegions?.length) {
+      await page.evaluate((regions: Array<{ x: number; y: number; width: number; height: number }>) => {
+        for (const region of regions) {
+          const mask = document.createElement('div');
+          mask.setAttribute('aria-hidden', 'true');
+          Object.assign(mask.style, {
+            position: 'absolute',
+            left: `${region.x}px`,
+            top: `${region.y}px`,
+            width: `${region.width}px`,
+            height: `${region.height}px`,
+            background: '#20251e',
+            zIndex: '2147483647',
+            pointerEvents: 'none',
+          });
+          document.documentElement.appendChild(mask);
+        }
+      }, options.ignoreRegions);
+    }
+
     if (options.hide.length || options.blur.length || options.redactPii) {
       try {
         const applied = await page.evaluate(
@@ -400,9 +418,7 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     if (options.format === 'pdf') {
       const buffer = await page.pdf({ printBackground: true, preferCSSPageSize: false });
       return {
-        files: [
-          { data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height },
-        ],
+        files: [{ data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height }],
         ...extras,
       };
     }
@@ -459,9 +475,7 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
       await sleep(SETTLE_MS);
       const buffer = await page.screenshot({ ...shotOptions, fullPage: false, captureBeyondViewport: false });
       return {
-        files: [
-          { data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height },
-        ],
+        files: [{ data: toUint8(buffer), contentType, ext, index: 1, width: options.width, height: options.height }],
         ...extras,
       };
     }
@@ -494,12 +508,7 @@ async function documentHeight(page: any): Promise<number> {
   const height = await page.evaluate(() => {
     const doc = document.documentElement;
     const body = document.body;
-    return Math.max(
-      doc?.scrollHeight ?? 0,
-      doc?.offsetHeight ?? 0,
-      body?.scrollHeight ?? 0,
-      body?.offsetHeight ?? 0,
-    );
+    return Math.max(doc?.scrollHeight ?? 0, doc?.offsetHeight ?? 0, body?.scrollHeight ?? 0, body?.offsetHeight ?? 0);
   });
   return Number.isFinite(height) && height > 0 ? Number(height) : 0;
 }

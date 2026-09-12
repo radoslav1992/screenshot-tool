@@ -51,6 +51,14 @@ const href = (mode: string, nextPage = 1) => {
         <Icon name="camera" size={16} /> New capture
       </a>
     </div>
+    <div class="project-links">
+      <a href="/app/batch" class="btn btn--outline" style="width:auto">
+        Batch capture
+      </a>{' '}
+      <a href="/app/projects" class="btn btn--outline" style="width:auto">
+        Organize in projects
+      </a>
+    </div>
     <form method="get" action="/app/library" class="library-toolbar" role="search">
       <input type="hidden" name="mode" value={filter} />
       <label class="sr-only" for="library-search">

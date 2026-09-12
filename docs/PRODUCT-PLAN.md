@@ -1,6 +1,6 @@
 # Easy Screen Capture: product and growth plan
 
-Prepared 12 September 2026. This is a prioritized proposal, not a promise of revenue. Future features below are not yet implemented. Existing prices are unchanged.
+Prepared 12 September 2026. This is a prioritized proposal, not a promise of revenue. Implementation status is tracked below and in WORKSPACE-RELEASE.md. Existing prices are unchanged.
 
 ## Positioning
 
@@ -53,6 +53,12 @@ Implemented after the redesign:
 
 No database migration is needed. Metrics are derived from retained capture/run records rather than permanent telemetry. Deleted records are excluded. Forecasts are estimates, not reservations; other captures, delayed execution and concurrent activity can change actual usage. Live provider delivery and visual browser inspection must still be verified in the deployed environment.
 
+## Client workspace release
+
+Projects, saved batch settings, before/after reports and paid PDF export, batch/desktop-mobile launch capture, revocable report links, Business team invitations and comments, opt-in weekly digests, and guided monitor setup with baseline previews and ignore regions are now implemented in code. See [WORKSPACE-RELEASE.md](WORKSPACE-RELEASE.md) for boundaries, billing rules, tests, and the three required migrations. Live deployment and provider checks are still required. This is a first implementation of each workflow, not evidence of product-market fit.
+
+The roadmap table below preserves the original priorities and acceptance goals; richer annotation, automatic delivery retries, and wider team permissions remain possible follow-ups after pilot validation.
+
 ## Prioritized roadmap
 
 Effort is a rough estimate in focused engineering days, excluding external dependencies and pilot feedback.
@@ -70,7 +76,7 @@ Effort is a rough estimate in focused engineering days, excluding external depen
 | P2       | Revocable review links                        | Share with clients without permanent exposure           | Separate report token, expiration, revoke action and clear access label; retained private originals; audit basic access events                             | 3–5 days  |
 | P3       | Team seats and comments                       | Agency collaboration                                    | Membership, roles, invitations, tenant isolation tests and billing rules before advertising seats                                                          | 7–12 days |
 
-Sequence reliability and usage clarity first; then ship projects and reports to a small pilot. Choose batch UI versus noise controls from observed customer friction. Do not attempt every P1 item in one release.
+Reliability and usage clarity shipped first. The subsequent workspace release implements the remaining workflows at a bounded initial scope. Roll it out to a small pilot and use observed customer friction to prioritize refinements.
 
 ## Packaging and unit economics
 
@@ -78,8 +84,8 @@ Keep the current $7 Plus, $19 Pro and $79 Business pricing while learning. Do no
 
 - Free: first successful capture and share; protect the render budget with existing rate limits.
 - Plus: clean exports and a small number of daily monitors.
-- Pro: freelancers using monitors, API and repeat client work. Introduce projects/reports only once implemented.
-- Business: higher volume and retention today. Add team features only after authorization and billing support exists.
+- Pro: freelancers using monitors, API and repeat client work. Projects and reports are now implemented; PDF exports follow existing paid-plan eligibility.
+- Business: higher volume and retention today. The workspace release includes three project collaborators with explicit roles and owner-paid capture usage; Stripe prices are unchanged.
 
 **Monitor slots are not a promise that every slot can run hourly all month.** A 30-day estimate is 30 screenshots for one daily monitor and 720 for one hourly monitor. Twenty-five hourly monitors would require 18,000 checks against Pro's 2,000-screenshot allowance; 100 hourly monitors would require 72,000 against Business's 15,000. Capture modes producing multiple files may use more. Explain this prominently and implement aggregate forecasting before promoting large monitor counts.
 
@@ -133,7 +139,7 @@ A generic AI chat, native desktop recorder, browser extension, white-label porta
 
 ## Release notes and verification
 
-No database migration or secret change is required for this release. New library search uses existing columns and bound SQL parameters. Existing API cursor behavior remains supported.
+The initial redesign/library release required no migration. The subsequent workspace release requires migrations 0006–0008; see WORKSPACE-RELEASE.md. No new secrets are required. Existing API cursor behavior remains supported.
 
 - Run `npm run check`, `npm run build`, and `npm run library:check` (Node 22.13+ for the SQLite check).
 - Verify capture presets, privacy settings, quota/verification gating, search and filters, signup URL handoff, and monitor URL handoff.

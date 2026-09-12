@@ -499,3 +499,8 @@ src/scripts/          progressive-enhancement modules
 src/styles/           design tokens + component CSS, @font-face
 src/middleware.ts     session loading, route guards, security headers
 ```
+
+
+## Product direction and redesign
+
+See [the product and growth plan](docs/PRODUCT-PLAN.md) for the agency positioning, shipped UX improvements, prioritized feature roadmap, validation milestones, and rollout checks. Run `npm run library:check` to verify owner-scoped search and pagination.

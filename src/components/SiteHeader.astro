@@ -16,23 +16,27 @@ const { dark = false, user = null } = Astro.props;
     <Logo variant={dark ? 'lime' : 'ink'} wordColor={dark ? 'var(--paper)' : undefined} />
 
     <nav class="siteheader__nav">
-      <a href="/#modes">How it works</a>
-      <a href="/#sizes">Sizes</a>
+      <a href="/#workflows">Use cases</a>
+      <a href="/#monitoring">Monitoring</a>
       <a href="/pricing">Pricing</a>
       <a href="/docs">API</a>
     </nav>
 
     <div class="siteheader__actions">
-      {
-        user ? (
-          <a class="btn btn--sm btn--pill-lime" href="/app">Open app</a>
-        ) : (
-          <>
-            <a class="siteheader__login" href="/login">Log in</a>
-            <a class="btn btn--sm btn--pill-lime" href="/signup">Start free</a>
-          </>
-        )
-      }
+      {user ? (
+        <a class="btn btn--sm btn--pill-lime" href="/app">
+          Open app
+        </a>
+      ) : (
+        <>
+          <a class="siteheader__login" href="/login">
+            Log in
+          </a>
+          <a class="btn btn--sm btn--pill-lime" href="/signup">
+            Start free
+          </a>
+        </>
+      )}
     </div>
 
     <button
@@ -49,11 +53,18 @@ const { dark = false, user = null } = Astro.props;
 
   <nav class="siteheader__sheet" id="menu" hidden>
     <div class="wrap stack">
-      <a href="/#modes">How it works</a>
-      <a href="/#sizes">Sizes</a>
+      <a href="/#workflows">Use cases</a>
+      <a href="/#monitoring">Monitoring</a>
       <a href="/pricing">Pricing</a>
       <a href="/docs">API docs</a>
-      {user ? <a href="/app">Open app</a> : <><a href="/login">Log in</a><a href="/signup">Create account</a></>}
+      {user ? (
+        <a href="/app">Open app</a>
+      ) : (
+        <>
+          <a href="/login">Log in</a>
+          <a href="/signup">Create account</a>
+        </>
+      )}
     </div>
   </nav>
 </header>
@@ -65,5 +76,15 @@ const { dark = false, user = null } = Astro.props;
     const open = toggle.getAttribute('aria-expanded') === 'true';
     toggle.setAttribute('aria-expanded', String(!open));
     if (menu) menu.hidden = open;
+    toggle.setAttribute('aria-label', open ? 'Open menu' : 'Close menu');
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && toggle?.getAttribute('aria-expanded') === 'true') {
+      toggle.click();
+      toggle.focus();
+    }
+  });
+  menu?.addEventListener('click', (event) => {
+    if ((event.target as HTMLElement).closest('a') && toggle?.getAttribute('aria-expanded') === 'true') toggle.click();
   });
 </script>

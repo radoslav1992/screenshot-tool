@@ -22,184 +22,305 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 <AppShell title="New capture" tab="capture">
   <header class="appbar" slot="appbar">
     <div class="logo">
-      <span class="logo__mark"><Mark size={16} /></span>
+      <span class="logo__mark">
+        <Mark size={16} />
+      </span>
       <span class="appbar__title">New capture</span>
     </div>
-    <a class="avatar" href="/app/account" aria-label="Account">{initials}</a>
+    <a class="avatar" href="/app/account" aria-label="Account">
+      {initials}
+    </a>
   </header>
 
-  <form id="capture-form" class="app-wrap app-split stack gap-20">
-    {
-      !verified && (
-        <div class="notice notice--info" id="verify-banner">
-          <strong>Confirm your email to start capturing.</strong> We sent a link to {user.email}.
-          <button type="button" id="resend-verification" style="font-weight: 600; color: var(--green); margin-left: 4px">
-            Send it again
-          </button>
-          <span id="resend-state" class="xs muted-2" />
+  <div class="app-wrap capture-intro">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">CAPTURE WORKSPACE</span>
+        <h1>Make the web stand still.</h1>
+        <p>A clean capture, ready for your next review, post, or handoff.</p>
+      </div>
+      <div class="usage-card">
+        <div class="row-between">
+          <strong>{plan.name} plan</strong>
+          <a href="/app/upgrade">View plans ↗</a>
         </div>
-      )
-    }
-
-    <div class="notice notice--error" id="capture-error" hidden></div>
-
-    <div class="app-col">
-    <div class="field">
-      <label class="field__label" for="url">Page URL</label>
-      <div class="input-affix">
-        <input
-          class="input input--mono"
-          id="url"
-          name="url"
-          type="text"
-          inputmode="url"
-          autocomplete="url"
-          spellcheck="false"
-          required
-          placeholder="stripe.com/pricing"
-          value={prefillUrl}
-        />
-        <span class="input-affix__end" id="url-state" hidden>✓ reachable</span>
+        <progress value={usage.quota - usage.remaining} max={usage.quota} aria-label="Monthly screenshots used" />
+        <p>
+          {usage.remaining.toLocaleString()} of {usage.quota.toLocaleString()} screenshots left
+        </p>
       </div>
     </div>
+    <div class="preset-row" role="group" aria-label="Quick capture presets">
+      <button type="button" data-capture-preset="review" aria-pressed="false">
+        <Icon name="desktop" size={15} /> Website review
+      </button>
+      <button type="button" data-capture-preset="mobile" aria-pressed="false">
+        <Icon name="mobile" size={15} /> Mobile check
+      </button>
+      <button type="button" data-capture-preset="social" aria-pressed="false">
+        <Icon name="frame-square" size={15} /> Social post
+      </button>
+      <button type="button" data-capture-preset="private" aria-pressed="false">
+        <Icon name="eye-off" size={15} /> Privacy check
+      </button>
+    </div>
+    <p class="xs muted" id="preset-hint" aria-live="polite" style="margin-top: 10px">
+      Start with a preset, or choose your own settings below.
+    </p>
+  </div>
 
-    <div>
-      <div class="field__label" style="margin-bottom: 8px">Device</div>
-      <div class="device-grid">
-        {
-          DEVICE_LIST.map((device, index) => (
-            <label class="device">
-              <input type="radio" name="device" value={device.id} checked={index === 0} />
-              <div class="device__icon"><Icon name={device.icon} size={20} /></div>
-              <div class="device__name">{device.label}</div>
-              <div class="device__size">{device.width}×{device.height}</div>
-            </label>
-          ))
-        }
+  <form id="capture-form" class="app-wrap app-split stack gap-20">
+    {!verified && (
+      <div class="notice notice--info" id="verify-banner">
+        <strong>Confirm your email to start capturing.</strong> We sent a link to {user.email}.
+        <button type="button" id="resend-verification" style="font-weight: 600; color: var(--green); margin-left: 4px">
+          Send it again
+        </button>
+        <span id="resend-state" class="xs muted-2" />
+      </div>
+    )}
+
+    <div class="notice notice--error" id="capture-error" role="alert" hidden></div>
+
+    <div class="app-col capture-panel">
+      <h2 class="panel-heading">
+        <span>01</span> Choose your page
+      </h2>
+      <div class="field">
+        <label class="field__label" for="url">
+          Page URL
+        </label>
+        <div class="input-affix">
+          <input
+            class="input input--mono"
+            id="url"
+            name="url"
+            type="text"
+            inputmode="url"
+            autocomplete="url"
+            spellcheck="false"
+            required
+            placeholder="stripe.com/pricing"
+            value={prefillUrl}
+          />
+          <span class="input-affix__end" id="url-state" hidden>
+            ✓ Valid format
+          </span>
+        </div>
       </div>
 
-      <div style="margin-top: 14px">
-        <div class="row-between" style="margin-bottom: 8px">
-          <div class="field__label">Or a ready-made size</div>
-          <span class="xs muted-2">exact pixels, no cropping</span>
+      <div>
+        <div class="field__label" style="margin-bottom: 8px">
+          Device
         </div>
-        <div class="frames" id="frame-chips">
-          {
-            FRAME_LIST.map((frame) => (
+        <div class="device-grid">
+          {DEVICE_LIST.map((device, index) => (
+            <label class="device">
+              <input type="radio" name="device" value={device.id} checked={index === 0} />
+              <div class="device__icon">
+                <Icon name={device.icon} size={20} />
+              </div>
+              <div class="device__name">{device.label}</div>
+              <div class="device__size">
+                {device.width}×{device.height}
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <div style="margin-top: 14px">
+          <div class="row-between" style="margin-bottom: 8px">
+            <div class="field__label">Or a ready-made size</div>
+            <span class="xs muted-2">exact pixels, no cropping</span>
+          </div>
+          <div class="frames" id="frame-chips">
+            {FRAME_LIST.map((frame) => (
               <label class="chip chip--frame">
                 <input type="radio" name="device" value={frame.id} />
                 <Icon name={frame.icon} size={13} />
                 <span>{frame.label}</span>
                 <span class="chip__size mono">{frame.output}</span>
               </label>
-            ))
-          }
+            ))}
+          </div>
         </div>
-      </div>
 
-      <p class="xs muted" style="margin-top: 10px">
-        Custom size?
-        <button type="button" id="custom-toggle" style="font-weight: 600; color: var(--green)">
-          Set width × height
-        </button>
-      </p>
+        <p class="xs muted" style="margin-top: 10px">
+          Custom size?
+          <button
+            type="button"
+            id="custom-toggle"
+            aria-expanded="false"
+            aria-controls="custom-size"
+            style="font-weight: 600; color: var(--green)"
+          >
+            Set width × height
+          </button>
+        </p>
 
-      <div id="custom-size" class="stack gap-8" hidden style="margin-top: 8px">
-        {
-          plan.customViewport ? null : (
+        <div id="custom-size" class="stack gap-8" hidden style="margin-top: 8px">
+          {plan.customViewport ? null : (
             <div class="notice notice--info">
               Custom viewports start on {sizePlan.name}, ${sizePlan.priceMonthly}/mo. <a href="/pricing">See plans</a>
             </div>
-          )
-        }
-        <div style="display: flex; gap: 8px">
-          <div class="field" style="flex: 1">
-            <label class="field__label" for="width">Width</label>
-            <input class="input input--mono" id="width" name="width" type="number" min="240" max="3840" placeholder="1280" disabled={!plan.customViewport} />
-          </div>
-          <div class="field" style="flex: 1">
-            <label class="field__label" for="height">Height</label>
-            <input class="input input--mono" id="height" name="height" type="number" min="240" max="4320" placeholder="800" disabled={!plan.customViewport} />
+          )}
+          <div style="display: flex; gap: 8px">
+            <div class="field" style="flex: 1">
+              <label class="field__label" for="width">
+                Width
+              </label>
+              <input
+                class="input input--mono"
+                id="width"
+                name="width"
+                type="number"
+                min="240"
+                max="3840"
+                placeholder="1280"
+                disabled={!plan.customViewport}
+              />
+            </div>
+            <div class="field" style="flex: 1">
+              <label class="field__label" for="height">
+                Height
+              </label>
+              <input
+                class="input input--mono"
+                id="height"
+                name="height"
+                type="number"
+                min="240"
+                max="4320"
+                placeholder="800"
+                disabled={!plan.customViewport}
+              />
+            </div>
           </div>
         </div>
       </div>
     </div>
-    </div>
 
-    <div class="app-col">
-    <div>
-      <div class="field__label" style="margin-bottom: 8px">Capture mode</div>
-      <div class="mode-list">
-        {
-          MODES.map((mode) => (
+    <div class="app-col capture-panel">
+      <h2 class="panel-heading">
+        <span>02</span> Make it yours
+      </h2>
+      <div>
+        <div class="field__label" style="margin-bottom: 8px">
+          Capture mode
+        </div>
+        <div class="mode-list">
+          {MODES.map((mode) => (
             <label class="mode">
               <input type="radio" name="mode" value={mode.id} checked={mode.id === 'fullpage'} />
               <span class="mode__dot" aria-hidden="true" />
               <span class="mode__body">
-                <span class="mode__name" style="display: block">{mode.label}</span>
+                <span class="mode__name" style="display: block">
+                  {mode.label}
+                </span>
                 <span class="mode__hint">{mode.hint}</span>
               </span>
-              <span class="mode__icon"><Icon name={mode.icon} size={20} /></span>
+              <span class="mode__icon">
+                <Icon name={mode.icon} size={20} />
+              </span>
             </label>
-          ))
-        }
+          ))}
+        </div>
       </div>
-    </div>
 
-    <details class="card card--pad" style="padding: 14px 16px">
-      <summary class="label" style="cursor: pointer">More options</summary>
-      <div class="stack gap-12" style="margin-top: 14px">
-        <div class="field">
-          <label class="field__label" for="format">Format</label>
-          <select class="input" id="format" name="format">
-            {
-              FORMATS.map((format) => (
+      <details class="card card--pad" style="padding: 14px 16px">
+        <summary class="label" style="cursor: pointer">
+          Export &amp; cleanup options
+        </summary>
+        <div class="stack gap-12" style="margin-top: 14px">
+          <div class="field">
+            <label class="field__label" for="format">
+              Format
+            </label>
+            <select class="input" id="format" name="format">
+              {FORMATS.map((format) => (
                 <option value={format} disabled={!plan.formats.includes(format)}>
                   {format.toUpperCase()}
                   {plan.formats.includes(format) ? '' : ` — ${pdfPlan.name}`}
                 </option>
-              ))
-            }
-          </select>
+              ))}
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="delay">
+              Wait before capture (ms)
+            </label>
+            <input
+              class="input input--mono"
+              id="delay"
+              name="delay"
+              type="number"
+              min="0"
+              max="15000"
+              step="250"
+              value="0"
+            />
+          </div>
+
+          <label class="row-between" style="cursor: pointer">
+            <span class="label">Block ads &amp; trackers</span>
+            <input type="checkbox" name="block_ads" value="1" checked />
+          </label>
+
+          <label class="row-between" style="cursor: pointer">
+            <span class="label">Redact common personal details</span>
+            <input type="checkbox" name="redact_pii" value="1" />
+          </label>
+          <p class="xs muted">
+            Best-effort masking of common text patterns. Review the image before sharing; images and unusual formats may
+            still contain personal data.
+          </p>
+          <div class="field">
+            <label class="field__label" for="hide">
+              Hide page elements <span class="muted-2">(optional)</span>
+            </label>
+            <input class="input input--mono" id="hide" name="hide" placeholder=".chat-widget, #promo-banner" />
+            <p class="xs muted" style="margin-top: 6px">
+              Comma-separated CSS selectors for elements to remove from the capture.
+            </p>
+          </div>
+          <label class="row-between" style="cursor: pointer">
+            <span class="label">Prefer dark mode</span>
+            <input type="checkbox" name="dark_mode" value="1" />
+          </label>
         </div>
+      </details>
 
-        <div class="field">
-          <label class="field__label" for="delay">Wait before capture (ms)</label>
-          <input class="input input--mono" id="delay" name="delay" type="number" min="0" max="15000" step="250" value="0" />
-        </div>
-
-        <label class="row-between" style="cursor: pointer">
-          <span class="label">Block ads &amp; trackers</span>
-          <input type="checkbox" name="block_ads" value="1" checked />
-        </label>
-
-        <label class="row-between" style="cursor: pointer">
-          <span class="label">Prefer dark mode</span>
-          <input type="checkbox" name="dark_mode" value="1" />
-        </label>
+      <div class="capture-summary">
+        <strong>YOUR CAPTURE</strong>
+        <span id="capture-summary" aria-live="polite">
+          Desktop · Full page · PNG
+        </span>
       </div>
-    </details>
 
-    <button type="submit" class="btn btn--ink" id="capture-submit">
-      <Icon name="camera" size={18} /> Capture screenshot
-    </button>
+      <button type="submit" class="btn btn--ink" id="capture-submit" disabled={!verified || usage.remaining <= 0}>
+        <Icon name="camera" size={18} /> Capture screenshot
+      </button>
 
-    <p class="xs center" style="color: var(--muted-2); margin-top: -10px" id="quota-line">
-      {
-        usage.remaining > 0
+      <p class="xs center" style="color: var(--muted-2); margin-top: -10px" id="quota-line">
+        {usage.remaining > 0
           ? `Uses 1 of ${usage.remaining.toLocaleString()} shots left this month`
-          : `No shots left this month — resets ${usage.renewsOn}`
-      }
-    </p>
+          : `No shots left this month — resets ${usage.renewsOn}`}
+      </p>
 
-    {
-      plan.watermark && (
+      {plan.watermark && (
         <p class="xs center" style="color: var(--muted-2); margin-top: -12px">
-          Captures carry a small easyscreencapture.com mark. <a href="/pricing">{cleanPlan.name}</a> removes it from
-          ${cleanPlan.priceMonthly}/mo.
+          Captures carry a small easyscreencapture.com mark. <a href="/pricing">{cleanPlan.name}</a> removes it from $
+          {cleanPlan.priceMonthly}/mo.
         </p>
-      )
-    }
+      )}
+      <a class="workflow-link" href="/app/watches">
+        <span>
+          <strong>Want to know when this page changes?</strong>
+          <p>Set up a monitor and get the before and after.</p>
+        </span>
+        <span aria-hidden="true">↗</span>
+      </a>
     </div>
   </form>
 </AppShell>
@@ -218,9 +339,10 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
         method: 'POST',
         headers: { accept: 'application/json' },
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { sent?: boolean; error?: { message?: string } }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        sent?: boolean;
+        error?: { message?: string };
+      } | null;
       if (state) {
         state.textContent = response.ok
           ? payload?.sent
@@ -228,6 +350,8 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
             : ' Nothing to send.'
           : ` ${payload?.error?.message ?? 'Could not send it.'}`;
       }
+    } catch {
+      if (state) state.textContent = ' Could not send. Check your connection and try again.';
     } finally {
       button.disabled = false;
     }

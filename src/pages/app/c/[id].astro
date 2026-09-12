@@ -87,6 +87,7 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
 
     <div class="stack gap-8">
       <a class="btn btn--ink" href={`/app?url=${encodeURIComponent(capture.url)}`}>Capture again</a>
+      <a class="btn btn--outline" href={`/app/watches?url=${encodeURIComponent(capture.url)}`}>Monitor this page for changes</a>
       <a class="btn btn--outline" href={capture.url} target="_blank" rel="noopener noreferrer">Open original page</a>
     </div>
   </div>

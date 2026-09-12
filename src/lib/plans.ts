@@ -121,8 +121,8 @@ export const PLANS: Record<PlanId, Plan> = {
     features: [
       { text: '15,000 screenshots / month', included: true },
       { text: 'Priority rendering queue', included: true },
-      { text: 'Team seats & shared library', included: true },
-      { text: '99.9% uptime SLA', included: true },
+      { text: '365-day capture history', included: true },
+      { text: 'API: 300 requests / minute', included: true },
       { text: '100 watched pages, hourly', included: true },
     ],
     cta: 'Choose Business',

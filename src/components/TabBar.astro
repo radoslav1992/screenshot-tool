@@ -11,7 +11,7 @@ const { current } = Astro.props;
 const tabs = [
   { id: 'capture', href: '/app', icon: 'camera', label: 'Capture' },
   { id: 'library', href: '/app/library', icon: 'library', label: 'Library' },
-  { id: 'watches', href: '/app/watches', icon: 'eye', label: 'Watches' },
+  { id: 'watches', href: '/app/watches', icon: 'eye', label: 'Monitors' },
   { id: 'api', href: '/app/api', icon: 'key', label: 'API' },
   { id: 'account', href: '/app/account', icon: 'user', label: 'Account' },
 ] as const;
@@ -19,17 +19,19 @@ const tabs = [
 
 <nav class="tabbar" aria-label="Primary">
   {/* Only shown once the tabs become a left rail, where there is a header to fill. */}
-  <div class="tabbar__brand"><Logo href="/app" /></div>
-  {
-    tabs.map((tab) => (
-      <a
-        class="tabbar__item"
-        href={tab.href}
-        aria-current={current === tab.id ? 'page' : undefined}
-      >
-        <span class="tabbar__icon"><Icon name={tab.icon} size={22} /></span>
-        <span class="tabbar__label">{tab.label}</span>
-      </a>
-    ))
-  }
+  <div class="tabbar__brand">
+    <Logo href="/app" />
+  </div>
+  {tabs.map((tab) => (
+    <a class="tabbar__item" href={tab.href} aria-current={current === tab.id ? 'page' : undefined}>
+      <span class="tabbar__icon">
+        <Icon name={tab.icon} size={22} />
+      </span>
+      <span class="tabbar__label">{tab.label}</span>
+    </a>
+  ))}
+  <div class="rail-note">
+    Make every capture count.
+    <a href="/docs">Guides &amp; API documentation ↗</a>
+  </div>
 </nav>

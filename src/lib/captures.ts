@@ -1,3 +1,4 @@
+import { captureListQuery, type CaptureListOptions } from './capture-list';
 import { env } from 'cloudflare:workers';
 import { currentPeriod, type SessionUser } from './auth';
 import { displayUrl, type CaptureOptions } from './capture-options';
@@ -318,27 +319,10 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
 
 export async function listCaptures(
   userId: string,
-  options: { mode?: string; limit?: number; cursor?: string } = {},
+  options: CaptureListOptions = {},
 ): Promise<CaptureRow[]> {
-  const limit = Math.min(Math.max(options.limit ?? 30, 1), 100);
-  const clauses = ['user_id = ?'];
-  const binds: Array<string | number> = [userId];
-
-  if (options.mode && options.mode !== 'all') {
-    clauses.push('mode = ?');
-    binds.push(options.mode);
-  }
-  if (options.cursor) {
-    clauses.push('created_at < ?');
-    binds.push(options.cursor);
-  }
-  binds.push(limit);
-
-  const { results } = await env.DB.prepare(
-    `SELECT * FROM captures WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT ?`,
-  )
-    .bind(...binds)
-    .all<CaptureRow>();
+  const { sql, binds } = captureListQuery(userId, options);
+  const { results } = await env.DB.prepare(sql).bind(...binds).all<CaptureRow>();
   return results ?? [];
 }
 

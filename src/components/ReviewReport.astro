@@ -38,7 +38,7 @@ const { project, report, captures, token } = Astro.props;
                 <br />
                 {c.width} × {c.height} CSS px · {c.scale}× scale · {c.mode}
                 <br />
-                {c.created_at} · {file.width} × {file.height} image px
+                {c.created_at}
               </p>
               <img src={src} alt={`${c.position % 2 ? 'After' : 'Before'} capture of ${c.url}`} loading="eager" />
             </>

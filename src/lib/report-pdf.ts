@@ -34,7 +34,7 @@ export async function reportPdf(project: Project, report: Report): Promise<Uint8
     let binary = '';
     for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
     parts.push(
-      `<section class="capture"><h2>${['Before · baseline', 'After · current', 'Mobile · before', 'Mobile · after'][c.position]}</h2><p>${escapeHtml(c.url)}<br>${c.width} × ${c.height} CSS px · ${c.scale}× scale · ${escapeHtml(c.mode)}<br>${escapeHtml(c.created_at)} · ${file.width} × ${file.height} image px</p><img src="data:${file.contentType};base64,${btoa(binary)}"></section>`,
+      `<section class="capture"><h2>${['Before · baseline', 'After · current', 'Mobile · before', 'Mobile · after'][c.position]}</h2><p>${escapeHtml(c.url)}<br>${c.width} × ${c.height} CSS px · ${c.scale}× scale · ${escapeHtml(c.mode)}<br>${escapeHtml(c.created_at)}</p><img src="data:${file.contentType};base64,${btoa(binary)}"></section>`,
     );
   }
   const html = `<!doctype html><meta charset="utf-8"><style>@page{size:A4;margin:16mm}body{font:14px Arial,sans-serif;color:#20251e}header{border-bottom:3px solid #b5d652;padding-bottom:20px}h1{font-size:34px}p{overflow-wrap:anywhere;white-space:pre-wrap}section.capture{break-before:page}section.capture p{font-size:11px}img{width:100%;height:220mm;object-fit:contain;object-position:top left}</style><header><p>${escapeHtml(project.brand || project.name)} · WEBSITE REVIEW</p><h1>${escapeHtml(report.title)}</h1><p>${escapeHtml(project.name)} · ${escapeHtml(report.created_at)}</p></header><h2>Review notes</h2><p>${escapeHtml(report.notes)}</p>${parts.join('')}`;

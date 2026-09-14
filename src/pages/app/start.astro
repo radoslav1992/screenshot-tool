@@ -1,0 +1,138 @@
+---
+import { env } from 'cloudflare:workers';
+import AppShell from '../../layouts/AppShell.astro';
+import { projectsReady, listProjects, ownProject } from '../../lib/projects';
+import { getUsage } from '../../lib/captures';
+import '../../styles/projects.css';
+const user = Astro.locals.user!;
+const ready = await projectsReady();
+const projects = ready ? await listProjects(user.id) : [];
+const requested = Astro.url.searchParams.get('project');
+let project = projects[0];
+if (requested) {
+  try {
+    project = await ownProject(user.id, requested);
+  } catch {
+    return new Response('Project not found', { status: 404 });
+  }
+}
+const usage = await getUsage(user);
+const counts = project
+  ? await env.DB.prepare(
+      `SELECT
+ (SELECT COUNT(*) FROM project_captures pc JOIN captures c ON c.id=pc.capture_id WHERE pc.project_id=?1 AND c.user_id=?2 AND c.status='done') captures,
+ (SELECT COUNT(*) FROM review_reports WHERE project_id=?1) reports,
+ (SELECT COUNT(*) FROM project_watches pw JOIN watches w ON w.id=pw.watch_id WHERE pw.project_id=?1 AND w.user_id=?2) monitors`,
+    )
+      .bind(project.id, user.id)
+      .first<{ captures: number; reports: number; monitors: number }>()
+  : null;
+const steps = [
+  {
+    done: !!project,
+    title: 'Give your client work a home',
+    text: 'Create a project with a client name and your report brand.',
+    href: project ? `/app/projects/${project.id}` : '/app/projects',
+    cta: project ? 'Open project' : 'Create your first project',
+  },
+  {
+    done: (counts?.captures ?? 0) > 0,
+    title: 'Capture your first page',
+    text: 'Preview a URL list and its cost. Start with one page, or choose desktop + mobile for two screenshots.',
+    href: project ? `/app/batch?project=${project.id}` : '/app/projects',
+    cta: 'Capture a page',
+  },
+  {
+    done: !!(counts?.reports || counts?.monitors),
+    title: 'Turn the capture into useful work',
+    text: 'Create a before-and-after report from two retained images, or set up a monitor and attach it to this project.',
+    href: project ? `/app/projects/${project.id}` : '/app/projects',
+    cta: 'Create a report or attach a monitor',
+  },
+];
+const completed = steps.filter((s) => s.done).length;
+---
+
+<AppShell title="Get started" tab="projects">
+  <header class="appbar" slot="appbar">
+    <a href="/app">← Capture workspace</a>
+    <span class="pill">{usage.remaining.toLocaleString()} screenshots left</span>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">YOUR FIRST CLIENT WORKFLOW</span>
+        <h1>One page. A useful result.</h1>
+        <p>Start with a project, make a capture, then use it in a report or monitor.</p>
+      </div>
+    </div>
+    <div class="project-links">
+      <a class="btn btn--outline" href="/sample-report">
+        See a sample report
+      </a>
+      <a class="btn btn--outline" href="/app">
+        Go straight to capture
+      </a>
+    </div>
+    {!ready ? (
+      <p class="project-panel">Project setup is still pending. You can capture pages and view the sample report now.</p>
+    ) : (
+      <>
+        {projects.length > 0 && (
+          <form method="get" class="project-form">
+            <label>
+              Continue a project
+              <select class="input" name="project">
+                {projects.map((p) => (
+                  <option value={p.id} selected={p.id === project?.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button class="btn btn--outline" type="submit">
+              Show project progress
+            </button>
+          </form>
+        )}
+        <p role="status">
+          {completed} of 3 steps complete{project ? ` for ${project.name}` : ''}. Progress reflects your retained
+          project work.
+        </p>
+        <div class="project-grid">
+          {steps.map((s, i) => (
+            <section class="project-panel">
+              <span class="eyebrow">{s.done ? '✓ COMPLETE' : `STEP ${i + 1}`}</span>
+              <h2>{s.title}</h2>
+              <p>{s.text}</p>
+              <a class="btn btn--ink" href={s.href}>
+                {s.cta}
+              </a>
+            </section>
+          ))}
+        </div>
+        {project && (
+          <section class="project-panel">
+            <h2>Prefer ongoing monitoring?</h2>
+            <p>
+              A baseline preview uses one screenshot. Daily checks use about 30 more per month; hourly checks use about
+              720. Set a schedule within your allowance, then attach the monitor from your project.
+            </p>
+            <a class="btn btn--outline" href="/app/watches/setup">
+              Set up a monitor
+            </a>
+          </section>
+        )}
+      </>
+    )}
+    <section class="project-panel">
+      <h2>Know what counts</h2>
+      <p>
+        Each generated image uses one screenshot. Desktop + mobile uses two; scroll series uses one per frame. Creating
+        a report from existing captures uses none. PDF report export is available on paid plans.
+      </p>
+      <p>Source images keep their existing retention period. Creating a report or sharing a link does not extend it.</p>
+      <a href="/pricing">Compare plans and retention →</a>
+    </section>
+  </div>
+</AppShell>

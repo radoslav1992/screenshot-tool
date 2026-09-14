@@ -37,6 +37,9 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
   headers.set('content-type', file.contentType || 'application/octet-stream');
   headers.set('cache-control', 'private, max-age=31536000, immutable');
   headers.set('x-content-type-options', 'nosniff');
+  // Token-bearing links also power anonymous canvas reads in the comparison browser.
+  // Session-only responses remain inaccessible to other origins.
+  if (hasToken) headers.set('access-control-allow-origin', '*');
   if (url.searchParams.get('download')) {
     const filename = `${row.host.replace(/[^a-z0-9.-]/gi, '_')}-${row.id}-${file.name}`;
     headers.set('content-disposition', `attachment; filename="${filename}"`);

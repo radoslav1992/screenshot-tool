@@ -53,7 +53,7 @@ const fields = { project_id: project.id };
         <p>{project.brand || 'From first capture to final approval.'}</p>
       </div>
     </div>
-    <div class="project-links">
+    <div class="project-links"><a class="btn btn--outline" href={`/app/start?project=${project.id}`}>Setup progress</a>
       <a class="btn btn--outline" href={`/app/team/${project.id}`}>
         Team &amp; weekly digest
       </a>

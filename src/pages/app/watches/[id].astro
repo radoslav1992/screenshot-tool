@@ -194,7 +194,9 @@ const changedPct = lastComparison?.change_pct ?? null;
               <Icon name="eye" size={30} />
             </div>
             <p class="small muted" style="margin-top: 8px">
-              The first check runs within the hour.
+              {watch.status === 'paused'
+                ? 'This monitor is paused. Resume it to run scheduled checks.'
+                : `The first scheduled check is due ${new Date(watch.next_run_at).toUTCString()}. You can also check now.`}
             </p>
           </div>
         ) : (

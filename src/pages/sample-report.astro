@@ -1,0 +1,180 @@
+---
+import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import '../styles/projects.css';
+const user = Astro.locals.user;
+---
+
+<Base
+  title="Sample client review report"
+  description="See how a before-and-after website report explains a change and gives clients clear next steps."
+>
+  <SiteHeader user={user} />
+  <main class="report-page">
+    <p class="notice">
+      Illustrative example · Fictional client and page layouts. These are not captured websites or measured results.
+    </p>
+    <header>
+      <span class="eyebrow">NORTH STUDIO · CLIENT WEBSITE REVIEW</span>
+      <h1>A clearer path to booking.</h1>
+      <p>Example client: Fieldwork Studio · Desktop homepage review</p>
+    </header>
+    <section>
+      <h2>What changed</h2>
+      <p>
+        The revised page puts the service and booking action first. The review notes explain what to check before
+        approving the update.
+      </p>
+    </section>
+    <div class="review-images">
+      <figure>
+        <h2>Before · baseline</h2>
+        <p class="report-meta">
+          Illustrative desktop layout · example.com · 1440 × 900 CSS px
+          <br />
+          Example baseline: 10 September 2026, 09:00 UTC
+        </p>
+        <div
+          class="sample-frame before"
+          role="img"
+          aria-label="Fictional baseline homepage with a vague headline and a low-contrast contact button"
+        >
+          <div class="sample-nav">
+            FIELDWORK <small>About · Work · Contact</small>
+          </div>
+          <div class="sample-body">
+            <span>WELCOME TO OUR WEBSITE</span>
+            <h3>
+              Ideas for
+              <br />
+              what comes next.
+            </h3>
+            <p>We bring creativity and experience to every project.</p>
+            <span class="sample-button">Learn more</span>
+          </div>
+        </div>
+      </figure>
+      <figure>
+        <h2>After · ready for review</h2>
+        <p class="report-meta">
+          Illustrative desktop layout · example.com · 1440 × 900 CSS px
+          <br />
+          Example update: 11 September 2026, 14:00 UTC
+        </p>
+        <div
+          class="sample-frame after"
+          role="img"
+          aria-label="Fictional updated homepage with a specific service headline and a prominent booking button"
+        >
+          <div class="sample-nav">
+            FIELDWORK <small>Services · Work · Book a call</small>
+          </div>
+          <div class="sample-body">
+            <span>WEB DESIGN FOR SMALL BUSINESSES</span>
+            <h3>
+              Your next client
+              <br />
+              starts here.
+            </h3>
+            <p>A clear website. A simple way to get in touch.</p>
+            <span class="sample-button">Book a discovery call ↗</span>
+          </div>
+        </div>
+      </figure>
+    </div>
+    <section class="project-panel" style="margin-top:24px">
+      <h2>Review notes</h2>
+      <ol>
+        <li>The headline now names the service and audience.</li>
+        <li>The booking action is visible in the first screen.</li>
+        <li>Before approval, test the booking form and check the mobile layout.</li>
+      </ol>
+      <p>
+        <strong>Review status: Needs review.</strong> Screenshots document appearance; they do not prove the form works
+        or that conversion improved.
+      </p>
+    </section>
+    <section class="project-panel" style="margin-top:24px">
+      <h2>Make this workflow yours</h2>
+      <p>
+        Create a project, capture a baseline and an updated page, then add your notes. Share a web report with an
+        expiring link or export a branded PDF on a paid plan.
+      </p>
+      <div class="project-links">
+        <a class="btn btn--ink" href={user ? '/app/start' : '/signup?next=%2Fapp%2Fstart'}>
+          Create your first report
+        </a>
+        <a class="btn btn--outline" href="/pricing">
+          Compare plans
+        </a>
+      </div>
+      <p class="small muted">
+        This example uses no screenshot quota. Real reports keep their source images’ original retention period.
+      </p>
+    </section>
+  </main>
+  <SiteFooter />
+</Base>
+<style>
+  .sample-frame {
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+    overflow: hidden;
+    min-height: 350px;
+  }
+  .sample-nav {
+    padding: 20px;
+    font-size: 15px;
+    font-weight: 800;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid #ddd;
+  }
+  .sample-nav small {
+    font-size: 10px;
+    font-weight: 400;
+  }
+  .sample-body {
+    padding: 32px 24px;
+  }
+  .sample-body > span:first-child {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .sample-body h3 {
+    font-size: clamp(26px, 3vw, 38px);
+    line-height: 1.15;
+    margin: 20px 0;
+  }
+  .sample-body p {
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+  .sample-button {
+    display: inline-block;
+    padding: 12px 15px;
+    font-size: 12px;
+    border-radius: 7px;
+  }
+  .before {
+    background: #eeeae2;
+    color: #615e56;
+  }
+  .before .sample-button {
+    border: 1px solid #8d887c;
+  }
+  .after {
+    background: #20251e;
+    color: #fff;
+  }
+  .after .sample-nav {
+    border-color: #465041;
+  }
+  .after .sample-button {
+    background: #d6ed8c;
+    color: #20251e;
+    font-weight: 700;
+  }
+</style>

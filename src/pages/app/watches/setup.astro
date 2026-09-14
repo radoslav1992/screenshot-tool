@@ -1,11 +1,13 @@
 ---
 import AppShell from '../../../layouts/AppShell.astro';
 import MonitorBudget from '../../../components/MonitorBudget.astro';
+import { canSendEmail } from '../../../lib/mailer';
 import { getUsage } from '../../../lib/captures';
 import { listWatches } from '../../../lib/watches';
 import { FREQUENCIES, allowedFrequencies } from '../../../lib/plans';
 import { watchSettingsReady } from '../../../lib/watch-settings';
 import '../../../styles/projects.css';
+const emailReady = canSendEmail();
 const user = Astro.locals.user!;
 const ready = await watchSettingsReady();
 const [usage, watches] = await Promise.all([getUsage(user), listWatches(user.id)]);
@@ -123,10 +125,19 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
           <label>
             Email alerts
             <select class="input" name="notify_email">
-              <option value="1">Send to my verified account email</option>
-              <option value="0">Email off</option>
+              <option value="1" disabled={!emailReady}>
+                Send to my verified account email
+              </option>
+              <option value="0" selected={!emailReady}>
+                Email off
+              </option>
             </select>
           </label>
+          {!emailReady && (
+            <p class="notice">
+              Email alerts are currently unavailable. You can still review changes here or use a webhook.
+            </p>
+          )}
           <label>
             Webhook URL (optional)
             <input class="input" type="url" name="webhook_url" placeholder="https://hooks.slack.com/…" />

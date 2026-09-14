@@ -16,8 +16,8 @@ const { dark = false, user = null } = Astro.props;
     <Logo variant={dark ? 'lime' : 'ink'} wordColor={dark ? 'var(--paper)' : undefined} />
 
     <nav class="siteheader__nav">
-      <a href="/#workflows">Use cases</a>
-      <a href="/#monitoring">Monitoring</a>
+      <a href="/features">Features</a>
+      <a href="/sample-report">Sample report</a>
       <a href="/pricing">Pricing</a>
       <a href="/docs">API</a>
     </nav>
@@ -53,8 +53,8 @@ const { dark = false, user = null } = Astro.props;
 
   <nav class="siteheader__sheet" id="menu" hidden>
     <div class="wrap stack">
-      <a href="/#workflows">Use cases</a>
-      <a href="/#monitoring">Monitoring</a>
+      <a href="/features">Features</a>
+      <a href="/sample-report">Sample report</a>
       <a href="/pricing">Pricing</a>
       <a href="/docs">API docs</a>
       {user ? (

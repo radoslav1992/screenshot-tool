@@ -1,0 +1,297 @@
+---
+import { env } from 'cloudflare:workers';
+import AppShell from '../../../layouts/AppShell.astro';
+import ProjectForms from '../../../components/ProjectForms.astro';
+import { projectsReady, ownProject } from '../../../lib/projects';
+import { listCaptures, type CaptureRow } from '../../../lib/captures';
+import { listWatches } from '../../../lib/watches';
+import '../../../styles/projects.css';
+const user = Astro.locals.user!;
+if (!(await projectsReady())) return Astro.redirect('/app/projects');
+let project;
+try {
+  project = await ownProject(user.id, Astro.params.id!);
+} catch {
+  return new Response('Project not found', { status: 404 });
+}
+const [attached, available, watches, monitors, presets, reports] = await Promise.all([
+  env.DB.prepare(
+    'SELECT c.*,pc.review_status FROM captures c JOIN project_captures pc ON pc.capture_id=c.id WHERE pc.project_id=? AND c.user_id=? ORDER BY c.created_at DESC LIMIT 200',
+  )
+    .bind(project.id, user.id)
+    .all<CaptureRow & { review_status: string }>(),
+  listCaptures(user.id, { limit: 100, search: (Astro.url.searchParams.get('q') ?? '').slice(0, 200) }),
+  listWatches(user.id),
+  env.DB.prepare(
+    'SELECT w.id,w.label,w.url FROM watches w JOIN project_watches pw ON pw.watch_id=w.id WHERE pw.project_id=? AND w.user_id=?',
+  )
+    .bind(project.id, user.id)
+    .all<{ id: string; label: string; url: string }>(),
+  env.DB.prepare('SELECT * FROM capture_presets WHERE project_id=? ORDER BY created_at DESC')
+    .bind(project.id)
+    .all<{ id: string; name: string; settings: string }>(),
+  env.DB.prepare('SELECT * FROM review_reports WHERE project_id=? ORDER BY created_at DESC')
+    .bind(project.id)
+    .all<{ id: string; title: string }>(),
+]);
+const eligible = attached.results.filter(
+  (c) => c.status === 'done' && ['png', 'jpg'].includes(c.format) && c.mode !== 'series',
+);
+const fields = { project_id: project.id };
+---
+
+<AppShell title={project.name} tab="projects">
+  <header class="appbar" slot="appbar">
+    <a href="/app/projects">← Projects</a>
+    <div class="appbar__title">{project.name}</div>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">CLIENT WORKSPACE</span>
+        <h1>{project.name}</h1>
+        <p>{project.brand || 'From first capture to final approval.'}</p>
+      </div>
+    </div>
+    <div class="project-links"><a class="btn btn--outline" href={`/app/start?project=${project.id}`}>Setup progress</a>
+      <a class="btn btn--outline" href={`/app/team/${project.id}`}>
+        Team &amp; weekly digest
+      </a>
+      <a class="btn btn--ink" href={`/app/batch?project=${project.id}`}>
+        Capture pages
+      </a>
+      <a class="btn btn--outline" href={`/app/batch?project=${project.id}&launch=1`}>
+        Desktop + mobile launch check
+      </a>
+      <a class="btn btn--outline" href="/app/watches">
+        New monitor
+      </a>
+    </div>
+    <div class="project-grid">
+      <section class="project-panel">
+        <h2>Add existing work</h2>
+        <form method="get">
+          <label>
+            Find older captures
+            <input class="input" name="q" placeholder="Website or URL" value={Astro.url.searchParams.get('q') ?? ''} />
+          </label>
+          <button class="btn btn--outline">Search library</button>
+        </form>
+        <p class="small muted">Up to 100 matching captures shown.</p>
+        <form data-project-form>
+          <input type="hidden" name="action" value="attach" />
+          <input type="hidden" name="project_id" value={project.id} />
+          <input type="hidden" name="kind" value="capture" />
+          <label>
+            Capture
+            <select class="input" name="asset_id" required>
+              <option value="">Choose a capture</option>
+              {available.map((c) => (
+                <option value={c.id}>
+                  {c.created_at.slice(0, 16)} · {c.device} · {c.url}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" class="btn btn--outline">
+            Add capture
+          </button>
+          <p role="status"></p>
+        </form>
+        <form data-project-form>
+          <input type="hidden" name="action" value="attach" />
+          <input type="hidden" name="project_id" value={project.id} />
+          <input type="hidden" name="kind" value="watch" />
+          <label>
+            Monitor
+            <select class="input" name="asset_id" required>
+              <option value="">Choose a monitor</option>
+              {watches.map((w) => (
+                <option value={w.id}>{w.label || w.url}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" class="btn btn--outline">
+            Add monitor
+          </button>
+          <p role="status"></p>
+        </form>
+      </section>
+      <section class="project-panel">
+        <h2>Build a review report</h2>
+        <p class="small muted">
+          Compare existing images without taking new captures. Optional second pair for mobile launch evidence.
+        </p>
+        <form data-project-form>
+          <input type="hidden" name="action" value="report" />
+          <input type="hidden" name="project_id" value={project.id} />
+          <label>
+            Report title
+            <input class="input" name="title" required maxlength="160" placeholder="Website launch review" />
+          </label>
+          {['before', 'after', 'mobile_before', 'mobile_after'].map((name, i) => (
+            <label>
+              {['Before / baseline', 'After / current', 'Mobile before (optional)', 'Mobile after (optional)'][i]}
+              <select class="input" name={name} required={i < 2}>
+                <option value="">Choose capture</option>
+                {eligible.map((c) => (
+                  <option value={c.id}>
+                    {c.created_at.slice(0, 16)} · {c.device} · {c.url}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          <label>
+            Changes and annotations
+            <textarea
+              class="input"
+              name="notes"
+              maxlength="4000"
+              rows="4"
+              placeholder="What changed, what to check, and next steps."
+            ></textarea>
+          </label>
+          <button type="submit" class="btn btn--ink" disabled={eligible.length < 2}>
+            Create report
+          </button>
+          <p role="status"></p>
+        </form>
+      </section>
+    </div>
+    <section class="project-panel">
+      <h2>
+        Review checklist · {attached.results.filter((c) => c.review_status === 'approved').length}/
+        {attached.results.length} approved
+      </h2>
+      <p class="small muted">
+        Review status records your manual assessment. Up to 200 most recent attached captures shown.
+      </p>
+      <div class="project-grid">
+        {attached.results.map((c) => (
+          <article class="project-item">
+            <a href={`/app/c/${c.id}`}>{c.url}</a>
+            <p class="small muted">
+              {c.device} · {c.created_at.slice(0, 16)} UTC · {c.status}
+            </p>
+            <form data-project-form>
+              <input type="hidden" name="action" value="review" />
+              {Object.entries(fields).map(([name, value]) => (
+                <input type="hidden" name={name} value={value} />
+              ))}
+              <input type="hidden" name="asset_id" value={c.id} />
+              <label>
+                Review status
+                <select class="input" name="review_status">
+                  {['pending', 'approved', 'changes'].map((s) => (
+                    <option selected={s === c.review_status} value={s}>
+                      {s === 'changes' ? 'Needs changes' : s === 'approved' ? 'Approved' : 'To review'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="submit" class="btn btn--outline">
+                Save status
+              </button>
+              <p role="status"></p>
+            </form>
+            <form data-project-form>
+              <input type="hidden" name="action" value="detach" />
+              <input type="hidden" name="project_id" value={project.id} />
+              <input type="hidden" name="asset_id" value={c.id} />
+              <button type="submit" class="btn btn--outline">
+                Remove from project
+              </button>
+              <p role="status"></p>
+            </form>
+          </article>
+        ))}
+      </div>
+      {!attached.results.length && <p>No captures yet. Add existing work or start a batch above.</p>}
+    </section>
+    <div class="project-grid">
+      <section class="project-panel">
+        <h2>Review reports</h2>
+        <div class="project-items">
+          {reports.results.map((r) => (
+            <a class="project-item" href={`/app/reports/${r.id}`}>
+              {r.title} →
+            </a>
+          ))}
+        </div>
+        {!reports.results.length && <p class="muted">Your first report starts with two captures.</p>}
+      </section>
+      <section class="project-panel">
+        <h2>Project monitors</h2>
+        {monitors.results.map((w) => (
+          <div class="project-item">
+            <a href={`/app/watches/${w.id}`}>{w.label || w.url}</a>
+            <form data-project-form>
+              <input type="hidden" name="action" value="detach" />
+              <input type="hidden" name="kind" value="watch" />
+              <input type="hidden" name="project_id" value={project.id} />
+              <input type="hidden" name="asset_id" value={w.id} />
+              <button type="submit" class="btn btn--outline">
+                Remove from project
+              </button>
+              <p role="status"></p>
+            </form>
+          </div>
+        ))}
+      </section>
+      <section class="project-panel">
+        <h2>Saved capture settings</h2>
+        <p class="small muted">
+          Create reusable settings in batch capture. Credentials and input actions are never saved.
+        </p>
+        {presets.results.map((p) => (
+          <div class="project-item">
+            <a href={`/app/batch?project=${project.id}&preset=${p.id}`}>{p.name} →</a>
+            <form data-project-form>
+              <input type="hidden" name="action" value="delete_preset" />
+              <input type="hidden" name="project_id" value={project.id} />
+              <input type="hidden" name="preset_id" value={p.id} />
+              <button type="submit" class="btn btn--outline">
+                Delete saved settings
+              </button>
+              <p role="status"></p>
+            </form>
+          </div>
+        ))}
+      </section>
+      <section class="project-panel">
+        <details>
+          <summary>Project settings</summary>
+          <form data-project-form>
+            <input type="hidden" name="action" value="rename" />
+            <input type="hidden" name="project_id" value={project.id} />
+            <label>
+              Name
+              <input class="input" name="name" required maxlength="100" value={project.name} />
+            </label>
+            <label>
+              Report brand
+              <input class="input" name="brand" maxlength="100" value={project.brand} />
+            </label>
+            <button type="submit" class="btn btn--outline">
+              Save project
+            </button>
+            <p role="status"></p>
+          </form>
+          <form
+            data-project-form
+            data-confirm="Delete this project, its reports, notes and review links? Original captures and monitors will be kept."
+          >
+            <input type="hidden" name="action" value="delete" />
+            <input type="hidden" name="project_id" value={project.id} />
+            <button type="submit" class="btn btn--outline">
+              Delete project
+            </button>
+            <p role="status"></p>
+          </form>
+        </details>
+      </section>
+    </div>
+  </div>
+  <ProjectForms />
+</AppShell>

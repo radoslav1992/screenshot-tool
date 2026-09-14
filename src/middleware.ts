@@ -13,9 +13,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // The public API authenticates with bearer keys, not cookies.
   const isPublicApi = path.startsWith('/v1/');
   try {
-    context.locals.user = isPublicApi
-      ? null
-      : await resolveSession(context.cookies.get(SESSION_COOKIE)?.value);
+    context.locals.user = isPublicApi ? null : await resolveSession(context.cookies.get(SESSION_COOKIE)?.value);
   } catch (error) {
     // A database that is unreachable or missing its schema should not turn every
     // page into a 500 — treat the visitor as signed out and let the route decide.
@@ -37,7 +35,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // Baseline security headers for every HTML document we serve.
   if (response.headers.get('content-type')?.includes('text/html')) {
     response.headers.set('x-content-type-options', 'nosniff');
-    response.headers.set('referrer-policy', 'strict-origin-when-cross-origin');
+    if (!response.headers.has('referrer-policy'))
+      response.headers.set('referrer-policy', 'strict-origin-when-cross-origin');
     response.headers.set('x-frame-options', 'DENY');
     response.headers.set('permissions-policy', 'geolocation=(), microphone=(), camera=()');
   }

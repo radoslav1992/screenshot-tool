@@ -1,0 +1,136 @@
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 18px;
+}
+.project-panel {
+  padding: 24px;
+  border: 1px solid var(--line, #d9d9d0);
+  border-radius: 18px;
+  background: var(--paper, #fff);
+}
+.project-panel h2 {
+  font-size: 22px;
+  margin-bottom: 14px;
+}
+.project-panel form,
+.project-form {
+  display: grid;
+  gap: 12px;
+}
+.project-panel label,
+.project-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.project-panel [role='status'],
+.project-form [role='status'] {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.project-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.project-links .btn {
+  width: auto;
+}
+.project-items {
+  display: grid;
+  gap: 12px;
+}
+.project-item {
+  padding: 16px;
+  border: 1px solid var(--line, #d9d9d0);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.project-item img {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+}
+.review-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.review-images figure {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.review-images img {
+  width: 100%;
+  height: auto;
+  border: 1px solid #ddd;
+}
+.report-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.report-page {
+  max-width: 1100px;
+  margin: auto;
+  padding: 32px 20px;
+}
+.report-page h1 {
+  font-size: clamp(30px, 5vw, 50px);
+  line-height: 1.12;
+  margin: 16px 0;
+}
+.report-page header {
+  border-bottom: 2px solid #20251e;
+  padding-bottom: 22px;
+  margin-bottom: 24px;
+}
+.report-meta {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.project-panel details summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+@media (max-width: 600px) {
+  .review-images {
+    grid-template-columns: 1fr;
+  }
+  .project-panel {
+    padding: 18px;
+  }
+}
+@media print {
+  .no-print,
+  .tabbar,
+  .appbar {
+    display: none !important;
+  }
+  .report-page {
+    padding: 0;
+    max-width: none;
+  }
+  .review-images {
+    display: block;
+  }
+  .review-images figure {
+    break-before: page;
+  }
+  .review-images img {
+    max-height: 230mm;
+    object-fit: contain;
+  }
+  .shell--app {
+    display: block !important;
+  }
+  .report-notes {
+    break-inside: avoid;
+  }
+  .report-meta {
+    color: #333;
+  }
+}

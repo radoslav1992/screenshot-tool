@@ -499,3 +499,19 @@ src/scripts/          progressive-enhancement modules
 src/styles/           design tokens + component CSS, @font-face
 src/middleware.ts     session loading, route guards, security headers
 ```
+
+
+## Product direction and redesign
+
+See [the product and growth plan](docs/PRODUCT-PLAN.md) for the agency positioning, shipped UX improvements, prioritized feature roadmap, validation milestones, and rollout checks. Run `npm run library:check` to verify owner-scoped search and pagination.
+
+
+### Monitor health and schedule budgets
+
+The Monitors page now shows capture success and average duration from retained captures in the last seven days, last successful checks, and the most recent alert status. Create/edit forms forecast aggregate scheduled usage before saving, including the remaining calendar-month allowance. Open a monitor to change its frequency; paused monitors stay paused when edited.
+
+Comparison failures preserve the previous baseline and are recorded as errors. Email/webhook status is recorded per changed run; HTTP errors are failures and timeouts are unconfirmed. “Accepted by provider” is not proof of inbox delivery. Old runs have unknown notification status, and notifications are not retried automatically.
+
+No migration is required: versioned notification metadata uses the existing `watch_runs.detail` field and is decoded by `listRuns` and the dashboard. Direct SQL consumers should recognize the `esc-run-v1:` prefix. Rollbacks to older code will display that metadata as text.
+
+Run `npm run monitor:check` with Node 22.13+ to test forecast boundaries, provider outcomes, SQLite-backed watch execution, and account isolation. Tests mock all external services and do not send email or webhooks.

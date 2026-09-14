@@ -1,0 +1,57 @@
+---
+import type { Project, Report } from '../lib/projects';
+import { safeParseFiles, type CaptureRow } from '../lib/captures';
+interface Props {
+  project: Project;
+  report: Report;
+  captures: (CaptureRow & { position: number })[];
+  token?: string;
+}
+const { project, report, captures, token } = Astro.props;
+---
+
+<article class="report-page">
+  <header>
+    <span class="eyebrow">{project.brand || project.name} · WEBSITE REVIEW</span>
+    <h1>{report.title}</h1>
+    <p>
+      {project.name} · Prepared {new Date(report.created_at).toISOString().slice(0, 10)}
+    </p>
+  </header>
+  {report.notes && (
+    <section>
+      <h2>Review notes</h2>
+      <p class="report-notes">{report.notes}</p>
+    </section>
+  )}
+  <div class="review-images">
+    {captures.map((c) => {
+      const file = c.id ? safeParseFiles(c.files)[0] : null;
+      const src = token ? `/r/${token}/${c.position}` : `/api/reports/${report.id}/image?position=${c.position}`;
+      return (
+        <figure>
+          <h2>{['Before · baseline', 'After · current', 'Mobile · before', 'Mobile · after'][c.position]}</h2>
+          {file ? (
+            <>
+              <p class="report-meta">
+                {c.url}
+                <br />
+                {c.width} × {c.height} CSS px · {c.scale}× scale · {c.mode}
+                <br />
+                {c.created_at}
+              </p>
+              <img src={src} alt={`${c.position % 2 ? 'After' : 'Before'} capture of ${c.url}`} loading="eager" />
+            </>
+          ) : (
+            <p class="project-panel">
+              Original image expired or was deleted. Ask the report owner for a current capture.
+            </p>
+          )}
+        </figure>
+      );
+    })}
+  </div>
+  <footer class="small muted">
+    Images are retained under the account’s capture retention policy. This report does not extend retention.
+  </footer>
+</article>

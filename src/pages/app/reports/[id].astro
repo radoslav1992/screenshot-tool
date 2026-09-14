@@ -1,0 +1,160 @@
+---
+import { env } from 'cloudflare:workers';
+import AppShell from '../../../layouts/AppShell.astro';
+import ProjectForms from '../../../components/ProjectForms.astro';
+import ReviewReport from '../../../components/ReviewReport.astro';
+import { projectsReady, ownReport, reportCaptures } from '../../../lib/projects';
+import { getPlan } from '../../../lib/plans';
+import '../../../styles/projects.css';
+if (!(await projectsReady())) return Astro.redirect('/app/projects');
+let data;
+try {
+  data = await ownReport(Astro.locals.user!.id, Astro.params.id!);
+} catch {
+  return new Response('Report not found', { status: 404 });
+}
+const { project, report } = data;
+const [captures, link, comments] = await Promise.all([
+  reportCaptures(report, project.user_id),
+  env.DB.prepare('SELECT expires_at,access_count,last_access_at FROM report_links WHERE report_id=?')
+    .bind(report.id)
+    .first<{ expires_at: string; access_count: number; last_access_at: string | null }>(),
+  env.DB.prepare('SELECT body,created_at FROM report_comments WHERE report_id=? ORDER BY created_at')
+    .bind(report.id)
+    .all<{ body: string; created_at: string }>(),
+]);
+Astro.response.headers.set('cache-control', 'private, no-store');
+const fields = { project_id: project.id, report_id: report.id };
+const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
+---
+
+<AppShell title={report.title} tab="projects">
+  <header class="appbar" slot="appbar">
+    <a href={`/app/projects/${project.id}`}>← {project.name}</a>
+    <div class="appbar__title">Review report</div>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="project-links no-print">
+      {pdf ? (
+        <form method="post" action={`/api/reports/${report.id}/pdf`}>
+          <button class="btn btn--ink" type="submit">
+            Download branded PDF
+          </button>
+        </form>
+      ) : (
+        <a class="btn btn--outline" href="/app/upgrade">
+          PDF export · paid plans
+        </a>
+      )}
+      <span class="small muted">
+        PDF export: no screenshot quota used; up to 6 exports/hour. Images are scaled to fit the page.
+      </span>
+    </div>
+    <ReviewReport project={project} report={report} captures={captures} />
+    <div class="project-grid no-print">
+      <section class="project-panel">
+        <h2>Client review link</h2>
+        <p class="small muted">
+          Anyone with the link can view this report and its images until expiration or revocation. Downloaded copies
+          cannot be recalled. Internal notes below stay private.
+        </p>
+        <p>
+          {link
+            ? `Link expires ${link.expires_at.slice(0, 16)} UTC · ${link.access_count} page views${link.last_access_at ? ` · Last view ${link.last_access_at.slice(0, 16)} UTC` : ''}`
+            : 'No review link created.'}
+        </p>
+        <form data-project-form>
+          <input type="hidden" name="action" value="share" />
+          {Object.entries(fields).map(([name, value]) => (
+            <input type="hidden" name={name} value={value} />
+          ))}
+          <label>
+            Expires after
+            <select class="input" name="days">
+              <option value="1">1 day</option>
+              <option value="7" selected>
+                7 days
+              </option>
+              <option value="30">30 days</option>
+            </select>
+          </label>
+          <button class="btn btn--ink" type="submit">
+            Create / replace link
+          </button>
+          <p role="status"></p>
+        </form>
+        <form data-project-form>
+          <input type="hidden" name="action" value="revoke" />
+          {Object.entries(fields).map(([name, value]) => (
+            <input type="hidden" name={name} value={value} />
+          ))}
+          <button class="btn btn--outline" type="submit">
+            Revoke review link
+          </button>
+          <p role="status"></p>
+        </form>
+      </section>
+      <section class="project-panel">
+        <h2>Internal review notes</h2>
+        <p class="small muted">Private to your account. Not included in PDF exports or shared reports.</p>
+        {comments.results.map((c) => (
+          <div class="project-item">
+            <p class="report-notes">{c.body}</p>
+            <small>{c.created_at.slice(0, 16)} UTC</small>
+          </div>
+        ))}
+        <form data-project-form>
+          <input type="hidden" name="action" value="comment" />
+          {Object.entries(fields).map(([name, value]) => (
+            <input type="hidden" name={name} value={value} />
+          ))}
+          <label>
+            New internal note<textarea class="input" name="body" required maxlength="2000" rows="3"></textarea>
+          </label>
+          <button type="submit" class="btn btn--outline">
+            Add note
+          </button>
+          <p role="status"></p>
+        </form>
+      </section>
+      <section class="project-panel">
+        <details>
+          <summary>Edit report</summary>
+          <p class="small muted">Changes also appear at active review links.</p>
+          <form data-project-form>
+            <input type="hidden" name="action" value="edit_report" />
+            {Object.entries(fields).map(([name, value]) => (
+              <input type="hidden" name={name} value={value} />
+            ))}
+            <label>
+              Title
+              <input class="input" name="title" required maxlength="160" value={report.title} />
+            </label>
+            <label>
+              Client-facing notes
+              <textarea class="input" name="notes" maxlength="4000" rows="5">{report.notes}</textarea>
+            </label>
+            <button type="submit" class="btn btn--outline">
+              Save report
+            </button>
+            <p role="status"></p>
+          </form>
+          <form
+            data-project-form
+            data-confirm="Delete this report and revoke its review link? Source captures will be kept."
+          >
+            <input type="hidden" name="action" value="delete_report" />
+            {Object.entries(fields).map(([name, value]) => (
+              <input type="hidden" name={name} value={value} />
+            ))}
+            <button type="submit" class="btn btn--outline">
+              Delete report
+            </button>
+            <p role="status"></p>
+          </form>
+        </details>
+      </section>
+    </div>
+  </div>
+  <ProjectForms />
+</AppShell>

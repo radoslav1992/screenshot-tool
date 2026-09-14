@@ -3,49 +3,106 @@ import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import ShotCard from '../../components/ShotCard.astro';
 import { getUsage, listCaptures } from '../../lib/captures';
-
+import { getPlan } from '../../lib/plans';
 const user = Astro.locals.user!;
-const filter = Astro.url.searchParams.get('mode') ?? 'all';
-const [captures, usage] = await Promise.all([listCaptures(user.id, { mode: filter, limit: 40 }), getUsage(user)]);
-
 const filters = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'All captures' },
   { id: 'fullpage', label: 'Full page' },
-  { id: 'series', label: 'Series' },
-  { id: 'visible', label: 'Visible' },
+  { id: 'series', label: 'Scroll series' },
+  { id: 'visible', label: 'Visible area' },
 ];
+const requested = Astro.url.searchParams.get('mode') ?? 'all';
+const filter = filters.some((entry) => entry.id === requested) ? requested : 'all';
+const search = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
+const pageValue = Number(Astro.url.searchParams.get('page') ?? '1');
+const page = Number.isFinite(pageValue) ? Math.min(250, Math.max(1, Math.trunc(pageValue))) : 1;
+const [results, usage] = await Promise.all([
+  listCaptures(user.id, {
+    mode: filter,
+    search,
+    limit: 41,
+    offset: (page - 1) * 40,
+  }),
+  getUsage(user),
+]);
+const captures = results.slice(0, 40);
+const href = (mode: string, nextPage = 1) => {
+  const params = new URLSearchParams();
+  if (mode !== 'all') params.set('mode', mode);
+  if (search) params.set('q', search);
+  if (nextPage > 1) params.set('page', String(nextPage));
+  return `/app/library${params.size ? `?${params}` : ''}`;
+};
 ---
 
 <AppShell title="Library" tab="library">
   <header class="appbar" slot="appbar">
-    <div class="appbar__title">Library</div>
-    <span class="pill pill--quota">{usage.remaining.toLocaleString()} / {usage.quota.toLocaleString()} left</span>
+    <div class="appbar__title">Capture library</div>
+    <span class="pill pill--quota">{usage.remaining.toLocaleString()} shots left</span>
   </header>
-
-  <div class="app-wrap stack gap-16">
-    <div class="chips">
-    {
-      filters.map((entry) => (
-        <a
-          class="chip"
-          href={entry.id === 'all' ? '/app/library' : `/app/library?mode=${entry.id}`}
-          aria-current={filter === entry.id ? 'true' : undefined}
-        >
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">YOUR VISUAL RECORD</span>
+        <h1>Good work. Worth keeping.</h1>
+        <p>Find a capture, download it, or share the details.</p>
+      </div>
+      <a class="btn btn--ink" href="/app" style="width: auto">
+        <Icon name="camera" size={16} /> New capture
+      </a>
+    </div>
+    <div class="project-links">
+      <a href="/app/batch" class="btn btn--outline" style="width:auto">
+        Batch capture
+      </a>{' '}
+      <a href="/app/projects" class="btn btn--outline" style="width:auto">
+        Organize in projects
+      </a>
+    </div>
+    <form method="get" action="/app/library" class="library-toolbar" role="search">
+      <input type="hidden" name="mode" value={filter} />
+      <label class="sr-only" for="library-search">
+        Search capture URLs
+      </label>
+      <input
+        type="search"
+        class="input"
+        id="library-search"
+        name="q"
+        value={search}
+        placeholder="Search by website or page URL…"
+        maxlength="200"
+      />
+      <button type="submit" class="btn btn--outline">
+        <Icon name="search" size={16} /> Search
+      </button>
+    </form>
+    <div class="chips" aria-label="Filter by capture mode">
+      {filters.map((entry) => (
+        <a class="chip" href={href(entry.id)} aria-current={filter === entry.id ? 'true' : undefined}>
           {entry.label}
         </a>
-      ))
-    }
-  </div>
-
-  {
-    captures.length === 0 ? (
+      ))}
+    </div>
+    <p class="library-search-meta">
+      {search ? `Results for “${search}” · ` : ''}Page {page} · Files kept for {getPlan(user.plan).historyDays} days on
+      your plan.{' '}
+      {search && <a href={filter === 'all' ? '/app/library' : `/app/library?mode=${filter}`}>Clear search</a>}
+    </p>
+    {captures.length === 0 ? (
       <div class="empty">
-        <div class="empty__icon"><Icon name="library" size={34} /></div>
-        <p class="h4" style="margin-top: 10px">Nothing here yet</p>
-        <p class="small muted" style="margin-top: 6px">
-          {filter === 'all' ? 'Your captures will show up here.' : 'No captures in this filter yet.'}
+        <div class="empty__icon">
+          <Icon name={search ? 'search' : 'library'} size={34} />
+        </div>
+        <h2 class="h4" style="margin-top: 12px">
+          {search ? 'No matching captures' : 'Your next capture starts here'}
+        </h2>
+        <p class="small muted" style="margin-top: 8px">
+          {search ? 'Try another website name, or clear the search.' : 'Capture a page to build your visual record.'}
         </p>
-        <a class="btn btn--ink" href="/app" style="max-width: 220px; margin: 18px auto 0">Take a screenshot</a>
+        <a class="btn btn--ink" href={search ? '/app/library' : '/app'} style="max-width: 220px; margin: 20px auto 0">
+          {search ? 'Show all captures' : 'Capture a page'}
+        </a>
       </div>
     ) : (
       <div class="shot-list">
@@ -53,7 +110,22 @@ const filters = [
           <ShotCard capture={capture} />
         ))}
       </div>
-    )
-  }
+    )}
+    {(page > 1 || results.length > 40) && (
+      <nav class="row-between" aria-label="Capture pages">
+        <span>
+          {page > 1 && (
+            <a class="btn btn--outline" href={href(filter, page - 1)}>
+              ← Previous
+            </a>
+          )}
+        </span>
+        {results.length > 40 && page < 250 && (
+          <a class="btn btn--outline" href={href(filter, page + 1)}>
+            Next →
+          </a>
+        )}
+      </nav>
+    )}
   </div>
 </AppShell>

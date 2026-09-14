@@ -22,29 +22,31 @@ const target = url ? `/app?url=${encodeURIComponent(url)}` : next;
         Free plan, no card needed. {PLANS.free.quota} screenshots a month on us.
       </p>
 
-      <div class="stack gap-12" style="margin-top: 28px">
-        <button type="button" class="btn btn--white" data-oauth="Google">
-          <Icon name="google" size={16} /> Continue with Google
-        </button>
-        <button type="button" class="btn btn--white" data-oauth="GitHub">
-          <Icon name="github" size={16} /> Continue with GitHub
-        </button>
-      </div>
-
-      <div class="divider"><span>or with email</span></div>
-
-      <form id="signup-form" method="post" action="/api/auth/signup" class="stack gap-12" novalidate>
+      <form
+        id="signup-form"
+        method="post"
+        action="/api/auth/signup"
+        class="stack gap-12"
+        style="margin-top: 28px"
+        novalidate
+      >
         <input type="hidden" name="next" value={target} />
 
-        <div class="notice notice--error" id="form-error" hidden={!initialError}>{initialError}</div>
+        <div class="notice notice--error" id="form-error" hidden={!initialError}>
+          {initialError}
+        </div>
 
         <div class="field">
-          <label class="field__label" for="name">Name</label>
+          <label class="field__label" for="name">
+            Name
+          </label>
           <input class="input" id="name" name="name" autocomplete="name" placeholder="Mia Torres" />
         </div>
 
         <div class="field">
-          <label class="field__label" for="email">Email</label>
+          <label class="field__label" for="email">
+            Email
+          </label>
           <input
             class="input"
             id="email"
@@ -58,7 +60,9 @@ const target = url ? `/app?url=${encodeURIComponent(url)}` : next;
         </div>
 
         <div class="field">
-          <label class="field__label" for="password">Password</label>
+          <label class="field__label" for="password">
+            Password
+          </label>
           <div class="input-affix">
             <input
               class="input"
@@ -83,20 +87,24 @@ const target = url ? `/app?url=${encodeURIComponent(url)}` : next;
           </div>
         </div>
 
-        <button type="submit" class="btn btn--ink" style="margin-top: 8px">Create account</button>
+        <button type="submit" class="btn btn--ink" style="margin-top: 8px">
+          Create account
+        </button>
       </form>
 
       <p class="small muted center" style="margin-top: 16px">
-        Already have an account? <a href="/login" style="font-weight: 600">Log in</a>
+        Already have an account?{' '}
+        <a href="/login" style="font-weight: 600">
+          Log in
+        </a>
       </p>
     </div>
   </div>
 </Base>
 
 <script>
-  import { wireAuthForm, wirePasswordToggles, wireOauthPlaceholders } from '../scripts/auth';
+  import { wireAuthForm, wirePasswordToggles } from '../scripts/auth';
 
   wireAuthForm('#signup-form', '#form-error');
   wirePasswordToggles();
-  wireOauthPlaceholders('#form-error');
 </script>

@@ -1,3 +1,4 @@
+import { parseIgnoreRegions, type IgnoreRegion } from './ignore-regions';
 import { env } from 'cloudflare:workers';
 import { parseActions, type Action } from './actions';
 import { parseRequestAuth, type RequestAuth } from './request-auth';
@@ -15,13 +16,7 @@ export type CaptureMode = 'visible' | 'fullpage' | 'series';
 export type CaptureFormat = 'png' | 'jpg' | 'pdf';
 
 export type PresetIcon =
-  | 'desktop'
-  | 'tablet'
-  | 'mobile'
-  | 'frame-portrait'
-  | 'frame-square'
-  | 'frame-story'
-  | 'frame-wide';
+  'desktop' | 'tablet' | 'mobile' | 'frame-portrait' | 'frame-square' | 'frame-story' | 'frame-wide';
 
 export interface ViewportPreset {
   id: DeviceId | FrameId;
@@ -196,6 +191,7 @@ export interface CaptureOptions {
   sizes: DeviceId[];
   /** Selectors removed before the shot. */
   hide: string[];
+  ignoreRegions?: IgnoreRegion[];
   /** Selectors blurred before the shot. */
   blur: string[];
   /** Cover email addresses, phone numbers and card-shaped digits. */
@@ -363,10 +359,7 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     // Overriding a preset's dimensions makes it a custom viewport again.
     if (width !== preset.width || height !== preset.height) device = 'custom';
   } else {
-    throw badRequest(
-      `\`device\` must be one of: ${Object.keys(PRESETS).join(', ')}, custom.`,
-      'device',
-    );
+    throw badRequest(`\`device\` must be one of: ${Object.keys(PRESETS).join(', ')}, custom.`, 'device');
   }
 
   /*
@@ -376,7 +369,10 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
    * cookie wall on first visit) behaves differently each time.
    */
   const sizes: DeviceId[] = [];
-  for (const entry of (input.sizes ?? '').split(',').map((part) => part.trim().toLowerCase()).filter(Boolean)) {
+  for (const entry of (input.sizes ?? '')
+    .split(',')
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)) {
     if (!DEVICE_LIST.some((preset) => preset.id === entry)) {
       throw badRequest(`\`sizes\` may list only: ${DEVICE_LIST.map((preset) => preset.id).join(', ')}.`, 'sizes');
     }
@@ -417,6 +413,7 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
     sizes,
     hide: selectorList(input.hide, 'hide'),
     blur: selectorList(input.blur, 'blur'),
+    ignoreRegions: parseIgnoreRegions(input.ignore_regions),
     redactPii: boolValue(input.redact_pii, false),
     actions: parseActions(input.actions),
     dismissConsent: boolValue(input.dismiss_consent, false),

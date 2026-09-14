@@ -39,9 +39,7 @@ self.addEventListener('activate', (event) => {
       .keys()
       .then((keys) =>
         Promise.all(
-          keys
-            .filter((key) => key !== SHELL_CACHE && key !== RUNTIME_CACHE)
-            .map((key) => caches.delete(key)),
+          keys.filter((key) => key !== SHELL_CACHE && key !== RUNTIME_CACHE).map((key) => caches.delete(key)),
         ),
       )
       .then(() => self.clients.claim()),
@@ -61,7 +59,8 @@ function isPrivatePath(url) {
   return (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/v1/') ||
-    url.pathname.startsWith('/f/')
+    url.pathname.startsWith('/f/') ||
+    url.pathname.startsWith('/r/')
   );
 }
 
@@ -105,10 +104,7 @@ self.addEventListener('fetch', (event) => {
           const cached = await caches.match(request);
           if (cached) return cached;
           const offline = await caches.match(OFFLINE_URL);
-          return (
-            offline ||
-            new Response('<h1>Offline</h1>', { status: 503, headers: { 'content-type': 'text/html' } })
-          );
+          return offline || new Response('<h1>Offline</h1>', { status: 503, headers: { 'content-type': 'text/html' } });
         }),
     );
   }

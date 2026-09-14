@@ -27,11 +27,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (!urls.length) throw badRequest('That sitemap listed no pages.', 'sitemap');
     } else {
       urls = (body.urls ?? '')
-        .split(/[\n,]/)
+        .split(body.url_lines === '1' ? /\r?\n/ : /[\n,]/)
         .map((entry) => entry.trim())
         .filter(Boolean);
       if (!urls.length) throw badRequest('Send `urls` or a `sitemap`.', 'urls');
     }
+
+    if (urls.length > MAX_BATCH) throw badRequest(`A batch takes at most ${MAX_BATCH} URLs.`, 'urls');
 
     // The burst limit is charged for the whole batch, not per page — otherwise
     // a batch is the way around it.

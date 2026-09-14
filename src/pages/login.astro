@@ -15,26 +15,28 @@ const initialError = Astro.url.searchParams.get('error') ?? '';
       </div>
 
       <h1 class="h2">Welcome back</h1>
-      <p class="small muted" style="margin-top: 8px">Log in to capture, browse your library and manage keys.</p>
+      <p class="small muted" style="margin-top: 8px">
+        Log in to capture, browse your library and manage keys.
+      </p>
 
-      <div class="stack gap-12" style="margin-top: 28px">
-        <button type="button" class="btn btn--white" data-oauth="Google">
-          <Icon name="google" size={16} /> Continue with Google
-        </button>
-        <button type="button" class="btn btn--white" data-oauth="GitHub">
-          <Icon name="github" size={16} /> Continue with GitHub
-        </button>
-      </div>
-
-      <div class="divider"><span>or with email</span></div>
-
-      <form id="login-form" method="post" action="/api/auth/login" class="stack gap-12" novalidate>
+      <form
+        id="login-form"
+        method="post"
+        action="/api/auth/login"
+        class="stack gap-12"
+        style="margin-top: 28px"
+        novalidate
+      >
         <input type="hidden" name="next" value={next} />
 
-        <div class="notice notice--error" id="form-error" hidden={!initialError}>{initialError}</div>
+        <div class="notice notice--error" id="form-error" hidden={!initialError}>
+          {initialError}
+        </div>
 
         <div class="field">
-          <label class="field__label" for="email">Email</label>
+          <label class="field__label" for="email">
+            Email
+          </label>
           <input
             class="input"
             id="email"
@@ -48,7 +50,9 @@ const initialError = Astro.url.searchParams.get('error') ?? '';
         </div>
 
         <div class="field">
-          <label class="field__label" for="password">Password</label>
+          <label class="field__label" for="password">
+            Password
+          </label>
           <div class="input-affix">
             <input
               class="input"
@@ -72,20 +76,24 @@ const initialError = Astro.url.searchParams.get('error') ?? '';
           </div>
         </div>
 
-        <button type="submit" class="btn btn--ink" style="margin-top: 8px">Log in</button>
+        <button type="submit" class="btn btn--ink" style="margin-top: 8px">
+          Log in
+        </button>
       </form>
 
       <p class="small muted center" style="margin-top: 16px">
-        New here? <a href="/signup" style="font-weight: 600">Create an account</a>
+        New here?{' '}
+        <a href="/signup" style="font-weight: 600">
+          Create an account
+        </a>
       </p>
     </div>
   </div>
 </Base>
 
 <script>
-  import { wireAuthForm, wirePasswordToggles, wireOauthPlaceholders } from '../scripts/auth';
+  import { wireAuthForm, wirePasswordToggles } from '../scripts/auth';
 
   wireAuthForm('#login-form', '#form-error');
   wirePasswordToggles();
-  wireOauthPlaceholders('#form-error');
 </script>

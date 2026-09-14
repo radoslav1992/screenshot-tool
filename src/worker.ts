@@ -2,6 +2,7 @@ import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
 import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
 import { runDueWatches } from './lib/watches';
+import { runProjectDigests } from './lib/digests';
 
 /**
  * Worker entrypoint.
@@ -47,6 +48,8 @@ export default {
           console.error('[watch] sweep failed', error);
         }),
     );
+
+    ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
 
     if (now.getUTCHours() !== RETENTION_HOUR) return;
 

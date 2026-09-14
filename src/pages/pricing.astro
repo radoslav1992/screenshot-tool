@@ -1,4 +1,5 @@
 ---
+import WorkspaceFeatures from '../components/WorkspaceFeatures.astro';
 import Base from '../layouts/Base.astro';
 import Icon from '../components/Icon.astro';
 import SiteHeader from '../components/SiteHeader.astro';
@@ -34,7 +35,7 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
       <div class="wrap">
         <div class="section__head section__head--center">
           <h1 class="section__title">Simple pricing</h1>
-          <p class="section__sub">Start free. Upgrade when you need more shots.</p>
+          <p class="section__sub">Start with a client project. Upgrade for clean PDF exports, monitoring, API access or collaboration.</p>
 
           <div class="switch" style="margin-top: 20px" role="group" aria-label="Billing period">
             <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
@@ -62,7 +63,7 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
           {
             plans.map((plan) => (
               <section class={plan.id === 'pro' ? 'plan plan--featured' : 'plan'}>
-                {plan.id === 'pro' && <div class="plan__badge">MOST POPULAR</div>}
+                {plan.id === 'pro' && <div class="plan__badge">FOR FREELANCERS</div>}
 
                 <div class="plan__head">
                   <div class="plan__name">{plan.name}</div>
@@ -148,6 +149,7 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
       </div>
     </section>
 
+    <WorkspaceFeatures />
     <SiteFooter />
   </div>
 </Base>

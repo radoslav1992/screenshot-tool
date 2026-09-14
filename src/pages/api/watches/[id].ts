@@ -1,7 +1,17 @@
+import { allowedFrequencies } from '../../../lib/plans';
+import { assertVerified } from '../../../lib/verification';
 import type { APIRoute } from 'astro';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
-import { deleteWatch, getWatch, listRuns, runWatch, setWatchStatus, toWatchDTO } from '../../../lib/watches';
+import {
+  deleteWatch,
+  getWatch,
+  listRuns,
+  runWatch,
+  setWatchStatus,
+  setWatchFrequency,
+  toWatchDTO,
+} from '../../../lib/watches';
 
 export const prerender = false;
 
@@ -36,8 +46,17 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
   try {
     assertSameOrigin(request);
     const watch = await owned(params.id, user.id);
-    const action = (await readBody(request)).action ?? '';
+    const body = await readBody(request);
+    const action = body.action ?? '';
+    if (['schedule', 'resume', 'run'].includes(action)) await assertVerified(user);
+    if (action === 'schedule') {
+      await setWatchFrequency(watch, user, body.frequency ?? '');
+      return json(toWatchDTO((await getWatch(watch.id))!));
+    }
 
+    if (action === 'resume' && !allowedFrequencies(user.plan).includes(watch.frequency as never)) {
+      throw new HttpError(403, 'plan_required', 'Choose a schedule included in your plan before resuming.');
+    }
     if (action === 'pause' || action === 'resume') {
       await setWatchStatus(watch.id, action === 'pause' ? 'paused' : 'active');
       const updated = await getWatch(watch.id);
@@ -52,7 +71,7 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
       return json({ ...toWatchDTO(updated!), outcome });
     }
 
-    throw badRequest('`action` must be one of: pause, resume, run.', 'action');
+    throw badRequest('`action` must be one of: pause, resume, run, schedule.', 'action');
   } catch (error) {
     return toHttpError(error, 'watches.update', 'Could not update that watch.').toResponse();
   }

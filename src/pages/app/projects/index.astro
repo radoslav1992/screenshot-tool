@@ -1,0 +1,90 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import ProjectForms from '../../../components/ProjectForms.astro';
+import { projectsReady, listProjects } from '../../../lib/projects';
+import '../../../styles/projects.css';
+import { env } from 'cloudflare:workers';
+import { collaborationReady } from '../../../lib/collaboration';
+const shared = (await collaborationReady())
+  ? (
+      await env.DB.prepare(
+        "SELECT p.id,p.name FROM projects p JOIN project_members m ON m.project_id=p.id JOIN users u ON u.id=p.user_id WHERE m.user_id=? AND u.plan='business' ORDER BY p.created_at DESC",
+      )
+        .bind(Astro.locals.user!.id)
+        .all<{ id: string; name: string }>()
+    ).results
+  : [];
+const ready = await projectsReady();
+const projects = ready ? await listProjects(Astro.locals.user!.id) : [];
+---
+
+<AppShell title="Projects" tab="projects">
+  <header class="appbar" slot="appbar">
+    <div class="appbar__title">Client workspace</div>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">CAPTURE. REVIEW. DELIVER.</span>
+        <h1>A home for every client.</h1>
+        <p>Keep captures, monitors and review reports together.</p>
+      </div>
+    </div>
+    <div class="project-links">
+      <a class="btn btn--ink" href="/app/batch">
+        Batch &amp; launch capture ↗
+      </a>
+      <a class="btn btn--outline" href="/app/library">
+        Capture library
+      </a>
+    </div>
+    {!ready ? (
+      <p class="project-panel" role="status">
+        Projects are being prepared. Captures, batch capture and monitors remain available.
+      </p>
+    ) : (
+      <>
+        <div class="project-grid">
+          {shared.map((p) => (
+            <a class="project-panel" href={`/app/team/${p.id}`}>
+              <span class="eyebrow">SHARED WITH YOU</span>
+              <h2>{p.name}</h2>
+              <p>Open team reviews →</p>
+            </a>
+          ))}
+          <section class="project-panel">
+            <span class="eyebrow">START A WORKSPACE</span>
+            <h2>New project</h2>
+            <form data-project-form>
+              <input type="hidden" name="action" value="create" />
+              <label>
+                Client or project name
+                <input class="input" name="name" required maxlength="100" placeholder="Acme website refresh" />
+              </label>
+              <label>
+                Report brand
+                <input class="input" name="brand" maxlength="100" placeholder="Your agency name" />
+              </label>
+              <button class="btn btn--ink" type="submit">
+                Create project
+              </button>
+              <p role="status" aria-live="polite"></p>
+            </form>
+          </section>
+          {projects.map((p) => (
+            <a class="project-panel" href={`/app/projects/${p.id}`}>
+              <span class="eyebrow">CLIENT PROJECT</span>
+              <h2>{p.name}</h2>
+              <p>{p.brand || 'Captures, monitors and reports'}</p>
+              <p class="small muted">Open workspace →</p>
+            </a>
+          ))}
+        </div>
+        <p class="small muted">
+          Projects are private to your account. Share individual reports using expiring review links.
+        </p>
+      </>
+    )}
+  </div>
+  <ProjectForms />
+</AppShell>

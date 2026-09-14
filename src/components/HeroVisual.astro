@@ -1,49 +1,78 @@
 ---
-/**
- * The product, shown rather than described: one page captured at two sizes.
- *
- * Drawn in CSS rather than shipped as an image — it stays crisp at any density,
- * costs no bytes, and never goes stale against the real UI.
- */
+import Icon from './Icon.astro';
 ---
 
-<div class="heroviz" aria-hidden="true">
-  <div class="heroviz__desktop">
-    <div class="heroviz__chrome">
-      <span></span><span></span><span></span>
-      <div class="heroviz__url">yoursite.com</div>
-    </div>
-    <div class="heroviz__page">
-      <div class="heroviz__nav">
-        <div class="heroviz__logo"></div>
-        <div class="heroviz__links"><i></i><i></i><i></i></div>
-      </div>
-      <div class="heroviz__hero">
-        <div class="heroviz__h1"></div>
-        <div class="heroviz__h1 heroviz__h1--short"></div>
-        <div class="heroviz__p"></div>
-        <div class="heroviz__p heroviz__p--short"></div>
-        <div class="heroviz__cta"></div>
-      </div>
-      <div class="heroviz__cards"><b></b><b></b><b></b></div>
-    </div>
-    <div class="heroviz__tag heroviz__tag--desktop">1440×900</div>
+<figure class="product-demo" aria-label="Illustrated example of a website change comparison">
+  <div class="demo-toolbar">
+    <span class="demo-dots">
+      <i></i>
+      <i></i>
+      <i></i>
+    </span>
+    <span>
+      <Icon name="eye" size={14} /> Website monitor
+    </span>
+    <span class="demo-example">Example</span>
   </div>
-
-  <div class="heroviz__phone">
-    <div class="heroviz__page heroviz__page--sm">
-      <div class="heroviz__nav">
-        <div class="heroviz__logo"></div>
-        <div class="heroviz__burger"></div>
+  <div class="demo-content">
+    <div class="demo-heading">
+      <div>
+        <span class="eyebrow">PRICING PAGE</span>
+        <h3>
+          A small change.
+          <br />A useful heads-up.
+        </h3>
       </div>
-      <div class="heroviz__hero">
-        <div class="heroviz__h1"></div>
-        <div class="heroviz__h1 heroviz__h1--short"></div>
-        <div class="heroviz__p"></div>
-        <div class="heroviz__cta"></div>
-      </div>
-      <div class="heroviz__cards heroviz__cards--stack"><b></b><b></b></div>
+      <span class="demo-status">Change detected</span>
     </div>
-    <div class="heroviz__tag heroviz__tag--phone">1080×1920</div>
+    <div class="demo-comparison">
+      <div class="demo-snapshot">
+        <div class="demo-caption">
+          BEFORE <span>Previous capture</span>
+        </div>
+        <div class="demo-site">
+          <span class="demo-site-brand">
+            acme<span>®</span>
+          </span>
+          <p>Room to do more.</p>
+          <div class="demo-price">
+            <small>PRO PLAN</small>
+            <strong>
+              $29<span>/mo</span>
+            </strong>
+            <span>For growing businesses</span>
+            <div class="demo-site-cta">Get started</div>
+          </div>
+        </div>
+      </div>
+      <div class="demo-snapshot">
+        <div class="demo-caption">
+          AFTER <span>Latest capture</span>
+        </div>
+        <div class="demo-site">
+          <span class="demo-site-brand">
+            acme<span>®</span>
+          </span>
+          <p>Room to do more.</p>
+          <div class="demo-price demo-price--changed">
+            <small>PRO PLAN</small>
+            <strong>
+              $39<span>/mo</span>
+            </strong>
+            <span>For growing businesses</span>
+            <div class="demo-site-cta">Get started</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="demo-note">
+      <span class="demo-note-icon">
+        <Icon name="check" size={18} />
+      </span>
+      <div>
+        <strong>See what changed, with the evidence.</strong>
+        <p>Scheduled checks · Before &amp; after · Email alerts</p>
+      </div>
+    </div>
   </div>
-</div>
+</figure>

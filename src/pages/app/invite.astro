@@ -1,0 +1,25 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import ProjectForms from '../../components/ProjectForms.astro';
+import '../../styles/projects.css';
+Astro.response.headers.set('cache-control', 'private, no-store');
+Astro.response.headers.set('referrer-policy', 'no-referrer');
+---
+
+<AppShell title="Accept invitation" tab="projects">
+  <div class="app-wrap">
+    <section class="project-panel">
+      <h1>Join a client project</h1>
+      <p>Signed in as {Astro.locals.user!.email}. Your verified email must match the invitation.</p>
+      <form data-project-form data-endpoint="/api/collaboration">
+        <input type="hidden" name="action" value="accept" />
+        <input type="hidden" name="token" value={Astro.url.searchParams.get('token') ?? ''} />
+        <button type="submit" class="btn btn--ink">
+          Accept invitation
+        </button>
+        <p role="status"></p>
+      </form>
+    </section>
+  </div>
+  <ProjectForms />
+</AppShell>

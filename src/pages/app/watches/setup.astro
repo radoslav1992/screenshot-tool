@@ -1,0 +1,235 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import MonitorBudget from '../../../components/MonitorBudget.astro';
+import { canSendEmail } from '../../../lib/mailer';
+import { getUsage } from '../../../lib/captures';
+import { listWatches } from '../../../lib/watches';
+import { FREQUENCIES, allowedFrequencies } from '../../../lib/plans';
+import { watchSettingsReady } from '../../../lib/watch-settings';
+import '../../../styles/projects.css';
+const emailReady = canSendEmail();
+const user = Astro.locals.user!;
+const ready = await watchSettingsReady();
+const [usage, watches] = await Promise.all([getUsage(user), listWatches(user.id)]);
+const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).includes(f.id));
+---
+
+<AppShell title="Set up a monitor" tab="watches">
+  <header class="appbar" slot="appbar">
+    <a href="/app/watches">← Monitors</a>
+    <span class="pill">{usage.remaining} shots left</span>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">PREVIEW BEFORE YOU MONITOR</span>
+        <h1>Keep the changes that matter.</h1>
+        <p>Choose your page, quiet the distractions, then set your schedule.</p>
+      </div>
+    </div>
+    {!ready ? (
+      <p class="project-panel">Monitor setup is being prepared. Existing monitors remain available.</p>
+    ) : !frequencies.length ? (
+      <a class="btn btn--ink" href="/app/upgrade">
+        Upgrade to start monitoring
+      </a>
+    ) : (
+      <form id="monitor-setup" class="stack gap-20">
+        <section class="project-panel">
+          <h2>01 · Page &amp; capture area</h2>
+          <div class="project-grid">
+            <label>
+              Page URL
+              <input
+                class="input"
+                name="url"
+                required
+                value={Astro.url.searchParams.get('url') ?? ''}
+                placeholder="https://example.com/pricing"
+              />
+            </label>
+            <label>
+              Monitor name
+              <input class="input" name="label" maxlength="80" placeholder="Client pricing page" />
+            </label>
+            <label>
+              Device
+              <select class="input" name="device">
+                <option value="desktop">Desktop</option>
+                <option value="tablet">Tablet</option>
+                <option value="mobile">Mobile</option>
+              </select>
+            </label>
+            <label>
+              Capture area
+              <select class="input" name="mode">
+                <option value="fullpage">Full page</option>
+                <option value="visible">First screen</option>
+              </select>
+            </label>
+          </div>
+        </section>
+        <section class="project-panel">
+          <h2>02 · Ignore noise &amp; preview</h2>
+          <label>
+            Hide elements by CSS selector
+            <input class="input" name="hide" placeholder=".cookie-banner, .live-clock" maxlength="2000" />
+          </label>
+          <label>
+            Ignore rectangular regions
+            <input class="input" name="ignore_regions" placeholder="0,0,300,100; 1000,200,200,200" maxlength="600" />
+          </label>
+          <p class="small muted">
+            Each rectangle is x, y, width, height in CSS pixels from the page’s top-left corner. Separate up to ten
+            rectangles with semicolons. Regions are covered in the saved image. Ignore regions affect visual comparison
+            only; underlying page text may still be collected. Mobile coordinates differ from desktop. Ads and consent
+            dismissal are enabled.
+          </p>
+          <button type="button" class="btn btn--outline" id="monitor-preview">
+            Preview baseline · 1 screenshot
+          </button>
+          <p role="status" id="monitor-preview-status" aria-live="polite"></p>
+          <img
+            id="monitor-baseline"
+            hidden
+            alt="Monitor baseline preview"
+            style="max-width:100%;max-height:500px;object-fit:contain"
+          />
+          <input type="hidden" name="preview_token" id="preview-token" />
+          <input type="hidden" name="format" value="png" />
+        </section>
+        <section class="project-panel">
+          <h2>03 · Sensitivity, schedule &amp; destination</h2>
+          <label>
+            Alert threshold
+            <select class="input" name="threshold">
+              <option value="0.5">0.5% · Very sensitive</option>
+              <option value="1" selected>
+                1% · Small changes
+              </option>
+              <option value="5">5% · Larger changes</option>
+              <option value="20">20% · Major changes</option>
+            </select>
+          </label>
+          <label>
+            Frequency
+            <select class="input" name="frequency" id="frequency">
+              {frequencies.map((f) => (
+                <option value={f.id} selected={f.id === 'daily'}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <MonitorBudget schedules={watches} budget={usage} allowed={frequencies.map((f) => f.id)} />
+          <label>
+            Email alerts
+            <select class="input" name="notify_email">
+              <option value="1" disabled={!emailReady}>
+                Send to my verified account email
+              </option>
+              <option value="0" selected={!emailReady}>
+                Email off
+              </option>
+            </select>
+          </label>
+          {!emailReady && (
+            <p class="notice">
+              Email alerts are currently unavailable. You can still review changes here or use a webhook.
+            </p>
+          )}
+          <label>
+            Webhook URL (optional)
+            <input class="input" type="url" name="webhook_url" placeholder="https://hooks.slack.com/…" />
+          </label>
+          <p class="small muted">
+            The accepted preview becomes the baseline; the first scheduled comparison runs after the selected interval.
+            Preview approval expires after 15 minutes. You can test notifications on the monitor’s detail page.
+          </p>
+          <button type="submit" class="btn btn--ink" id="monitor-save" disabled>
+            Use baseline &amp; start monitor
+          </button>
+          <p role="status" id="monitor-save-status" aria-live="polite"></p>
+        </section>
+      </form>
+    )}
+  </div>
+</AppShell>
+<script>
+  const form = document.querySelector<HTMLFormElement>('#monitor-setup');
+  if (form) {
+    const preview = document.querySelector<HTMLButtonElement>('#monitor-preview')!;
+    const save = document.querySelector<HTMLButtonElement>('#monitor-save')!;
+    const token = document.querySelector<HTMLInputElement>('#preview-token')!;
+    let busy = false;
+    const invalidate = () => {
+      token.value = '';
+      save.disabled = true;
+      document.querySelector('#monitor-preview-status')!.textContent =
+        'Capture settings changed. Preview again before starting.';
+    };
+    for (const name of ['url', 'device', 'mode', 'hide', 'ignore_regions'])
+      form.querySelector(`[name="${name}"]`)?.addEventListener('input', invalidate);
+    async function submit(url: string) {
+      const response = await fetch(url, { method: 'POST', body: new FormData(form!) });
+      const result = (await response.json()) as {
+        error?: { message: string };
+        preview_token?: string;
+        capture?: { images: string[] };
+        id?: string;
+      };
+      if (!response.ok) throw new Error(result.error?.message ?? 'Request failed.');
+      return result;
+    }
+    preview.onclick = async () => {
+      if (busy || !form.reportValidity()) return;
+      busy = true;
+      preview.disabled = true;
+      save.disabled = true;
+      token.value = '';
+      const state = document.querySelector('#monitor-preview-status')!;
+      state.textContent = 'Capturing baseline…';
+      const controls = Array.from(form.querySelectorAll('input,select')) as unknown as Array<
+        HTMLInputElement | HTMLSelectElement
+      >;
+      // Serialize before disabling controls so the request includes their values.
+      const pending = submit('/api/watch-preview');
+      controls.forEach((c) => (c.disabled = true));
+      try {
+        const result = await pending;
+        token.value = result.preview_token!;
+        const img = document.querySelector<HTMLImageElement>('#monitor-baseline')!;
+        img.src = result.capture!.images[0];
+        img.hidden = false;
+        state.textContent = 'Baseline ready. One screenshot used. Review masks, then choose your schedule.';
+      } catch (e) {
+        state.textContent =
+          (e instanceof Error ? e.message : 'Preview failed.') +
+          ' Check the library before retrying an interrupted request.';
+      } finally {
+        controls.forEach((c) => (c.disabled = false));
+        busy = false;
+        preview.disabled = false;
+        save.disabled = !token.value;
+      }
+    };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (busy || !token.value) return;
+      busy = true;
+      save.disabled = true;
+      preview.disabled = true;
+      const state = document.querySelector('#monitor-save-status')!;
+      state.textContent = 'Creating monitor…';
+      try {
+        const result = await submit('/api/watches');
+        location.assign(`/app/watches/${result.id}`);
+      } catch (e) {
+        state.textContent = e instanceof Error ? e.message : 'Could not create monitor.';
+        busy = false;
+        save.disabled = false;
+        preview.disabled = false;
+      }
+    };
+  }
+</script>

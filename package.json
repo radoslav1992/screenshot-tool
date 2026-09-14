@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Easy Screen Capture \u2014 screenshots as a service. Astro PWA on Cloudflare Workers.",
+  "description": "Easy Screen Capture — screenshots as a service. Astro PWA on Cloudflare Workers.",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -15,11 +15,15 @@
     "stripe:setup": "node scripts/stripe-setup.mjs",
     "icons": "node scripts/build-icons.mjs",
     "api:smoke": "node scripts/api-smoke.mjs",
-    "consent:check": "node scripts/consent-check.mjs",
     "diff:check": "node scripts/diff-check.mjs",
     "facts:check": "node scripts/facts-check.mjs",
-    "fullpage:check": "node scripts/fullpage-check.mjs",
-    "redact:check": "node scripts/redact-check.mjs"
+    "redact:check": "node scripts/redact-check.mjs",
+    "projects:check": "node scripts/projects-check.mjs",
+    "library:check": "node --experimental-strip-types scripts/library-check.mjs",
+    "monitor:check": "node --experimental-strip-types scripts/monitor-check.mjs && node --experimental-strip-types scripts/monitor-integration-check.mjs",
+    "files:check": "node --experimental-strip-types scripts/file-access-check.mjs",
+    "consent:check": "node scripts/consent-check.mjs",
+    "fullpage:check": "node scripts/fullpage-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

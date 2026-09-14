@@ -1,0 +1,96 @@
+---
+import { forecast, type Schedule, type Budget } from '../lib/monitor-health';
+interface Props {
+  schedules: Schedule[];
+  budget: Budget;
+  allowed: string[];
+  candidateId?: string;
+  frequency?: string;
+  paused?: boolean;
+}
+const { schedules, budget, allowed, candidateId = 'new-monitor', frequency = 'daily', paused = false } = Astro.props;
+const safeSchedules = schedules.map(({ id, frequency, status, next_run_at }) => ({
+  id,
+  frequency,
+  status,
+  next_run_at,
+}));
+const current = forecast(
+  [
+    ...safeSchedules.filter((item) => item.id !== candidateId),
+    { id: candidateId, frequency, status: paused ? 'paused' : 'active', next_run_at: new Date().toISOString() },
+  ],
+  budget,
+);
+---
+
+<section
+  class="monitor-budget stack gap-8"
+  data-monitor-budget
+  data-schedules={JSON.stringify(safeSchedules)}
+  data-budget={JSON.stringify(budget)}
+  data-allowed={JSON.stringify(allowed)}
+  data-candidate-id={candidateId}
+  data-frequency={frequency}
+  data-paused={String(paused)}
+>
+  <h3 class="label">Schedule budget</h3>
+  <p class="small" data-budget-summary>
+    {current.monthly.toLocaleString()} screenshots / 30 days across active monitors.
+  </p>
+  <p class="xs muted" data-budget-remaining>
+    {current.untilReset.toLocaleString()} scheduled before {budget.renewsOn} UTC · {budget.remaining.toLocaleString()}{' '}
+    screenshots left.
+  </p>
+  <p class="notice notice--info" data-budget-warning hidden={!current.shortfall && !current.monthlyOver} role="status">
+    This schedule may exceed your allowance. Lower the frequency or review your plan.
+  </p>
+  <button type="button" class="btn btn--outline btn--sm" data-budget-suggestion hidden></button>
+  <p class="xs muted">
+    Estimate includes this schedule. One check uses one screenshot. Manual captures, retries and other account activity
+    can use more. Other paused monitors are excluded.
+  </p>
+</section>
+<script>
+  import { forecast, suggestFrequency, type Schedule, type Budget } from '../lib/monitor-health';
+  for (const panel of document.querySelectorAll<HTMLElement>('[data-monitor-budget]')) {
+    const form = panel.closest('form');
+    const frequency = form?.querySelector('[name="frequency"]') as HTMLSelectElement | null;
+    if (!frequency) continue;
+    const schedules = JSON.parse(panel.dataset.schedules!) as Schedule[];
+    const budget = JSON.parse(panel.dataset.budget!) as Budget;
+    const allowed = JSON.parse(panel.dataset.allowed!) as string[];
+    const suggestion = panel.querySelector<HTMLButtonElement>('[data-budget-suggestion]')!;
+    let suggested: string | null = null;
+    const update = () => {
+      const candidate: Schedule = {
+        id: panel.dataset.candidateId!,
+        frequency: frequency.value,
+        status: panel.dataset.paused === 'true' ? 'paused' : 'active',
+        next_run_at: new Date().toISOString(),
+      };
+      const next = [...schedules.filter((item) => item.id !== candidate.id), candidate];
+      const result = forecast(next, budget);
+      panel.querySelector('[data-budget-summary]')!.textContent =
+        `${result.monthly.toLocaleString()} screenshots / 30 days across ${result.active} active monitors.`;
+      panel.querySelector('[data-budget-remaining]')!.textContent =
+        `${result.untilReset.toLocaleString()} scheduled before ${budget.renewsOn} UTC · ${budget.remaining.toLocaleString()} screenshots left.`;
+      const warning = panel.querySelector<HTMLElement>('[data-budget-warning]')!;
+      warning.hidden = !result.shortfall && !result.monthlyOver;
+      warning.textContent = result.shortfall
+        ? `This schedule could exceed your remaining allowance by ${result.shortfall.toLocaleString()} screenshots before reset. Checks are skipped when quota runs out.`
+        : `The 30-day estimate exceeds your ${budget.quota.toLocaleString()}-screenshot plan. Lower the frequency or pause other monitors.`;
+      suggested = suggestFrequency(schedules, candidate, budget, allowed);
+      suggestion.hidden = !suggested || warning.hidden;
+      suggestion.textContent = suggested ? `Switch to ${suggested} checks` : '';
+    };
+    frequency.addEventListener('change', update);
+    suggestion.addEventListener('click', () => {
+      if (suggested) {
+        frequency.value = suggested;
+        frequency.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    update();
+  }
+</script>

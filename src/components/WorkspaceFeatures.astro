@@ -1,0 +1,157 @@
+---
+import { PLANS, PLAN_ORDER, watchLimit } from '../lib/plans';
+---
+
+<section class="workspace-features wrap" aria-label="Workspace features and usage">
+  <h2>From a capture to a client deliverable</h2>
+  <p>
+    Every plan includes private projects, saved batch settings, URL-list and sitemap capture, manual launch review
+    status, and before-and-after web reports with expiring links.
+  </p>
+  <div class="feature-table" tabindex="0" role="region" aria-label="Scroll to compare plan features">
+    <table>
+      <caption>What each plan includes</caption>
+      <thead>
+        <tr>
+          <th scope="col">Feature</th>
+          {PLAN_ORDER.map((id) => (
+            <th scope="col">{PLANS[id].name}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Screenshots / calendar month</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{PLANS[id].quota.toLocaleString()}</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">Source image retention</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{PLANS[id].historyDays} days</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">Projects, batches &amp; web reports</th>
+          {PLAN_ORDER.map(() => (
+            <td>Included</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">Branded PDF reports</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{PLANS[id].formats.includes('pdf') ? 'Included' : '—'}</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">Monitor slots</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{watchLimit(id) || '—'}</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">API access</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{PLANS[id].api ? 'Included' : '—'}</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">Project collaborators</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{id === 'business' ? '3 per project' : 'Owner only'}</td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="feature-grid">
+    <article>
+      <h3>What uses a screenshot?</h3>
+      <p>
+        One generated image counts as one screenshot. Desktop + mobile counts as two. Scroll series counts per frame.
+        Manual captures, batches, API calls and monitor checks share the same monthly allowance, resetting on the first
+        day of each UTC calendar month—even on annual billing.
+      </p>
+    </article>
+    <article>
+      <h3>Monitor slots are not extra quota</h3>
+      <p>
+        One daily monitor needs about 30 screenshots per 30 days; one hourly monitor needs about 720. For example, 25
+        hourly monitors would need about 18,000 screenshots, exceeding Pro’s 2,000 allowance. The app forecasts usage
+        before you save a schedule.
+      </p>
+    </article>
+    <article>
+      <h3>Reports and sharing</h3>
+      <p>
+        Web reports reuse existing captures without using screenshot quota. Paid PDF report exports allow six
+        exports/hour and up to 16 MB of source images. Review links expire after 1, 7 or 30 days and can be revoked.
+        Downloaded copies cannot be recalled.
+      </p>
+    </article>
+    <article>
+      <h3>Retention and teams</h3>
+      <p>
+        Reports do not extend source image retention. Missing images become unavailable. Business includes three
+        collaborators per project, including pending invitations: viewers read reports and editors can comment. Only the
+        owner manages captures, monitors and billing.
+      </p>
+    </article>
+  </div>
+  <p>
+    Workspace limits: 100 projects/account, 30 saved settings and 100 reports/project. Batch queues support 25
+    screenshots; desktop/mobile launch checks support 12 URLs. Weekly digests are opt-in and sent to each recipient’s
+    verified account email.
+  </p>
+  <p>
+    <a href="/sample-report">See an illustrative client report →</a>
+  </p>
+</section>
+<style>
+  .workspace-features {
+    padding-block: 32px 64px;
+  }
+  .workspace-features h2 {
+    font-size: clamp(26px, 4vw, 38px);
+    margin-bottom: 16px;
+  }
+  .workspace-features p {
+    line-height: 1.7;
+    margin: 12px 0;
+    color: var(--muted);
+  }
+  .feature-table {
+    overflow: auto;
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+    margin: 24px 0;
+  }
+  .feature-table table {
+    width: 100%;
+    min-width: 650px;
+    border-collapse: collapse;
+    text-align: left;
+  }
+  .feature-table th,
+  .feature-table td {
+    padding: 14px;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .feature-table caption {
+    text-align: left;
+    padding: 14px;
+    font-weight: 700;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 24px;
+  }
+  .feature-grid article {
+    padding: 22px;
+    background: var(--paper);
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+  }
+</style>

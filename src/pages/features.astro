@@ -1,0 +1,33 @@
+---
+import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import WorkspaceFeatures from '../components/WorkspaceFeatures.astro';
+---
+
+<Base
+  title="Website capture, monitoring and client reports"
+  description="Capture pages in batches, monitor visual changes, and deliver branded client reports. Compare features, usage limits, sharing and retention."
+>
+  <SiteHeader user={Astro.locals.user} />
+  <main>
+    <section class="section">
+      <div class="wrap">
+        <span class="eyebrow">BUILT FOR CLIENT WEBSITE WORK</span>
+        <h1 class="section__title">Capture. Check. Explain the change.</h1>
+        <p class="section__sub">
+          Keep client evidence in one project—from desktop and mobile launch checks to the next scheduled comparison.
+        </p>
+        <a
+          class="btn btn--ink"
+          style="width:fit-content"
+          href={Astro.locals.user ? '/app/start' : '/signup?next=%2Fapp%2Fstart'}
+        >
+          Build your first workflow
+        </a>
+      </div>
+    </section>
+    <WorkspaceFeatures />
+  </main>
+  <SiteFooter />
+</Base>

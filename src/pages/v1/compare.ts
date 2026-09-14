@@ -52,7 +52,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     locals.cfContext?.waitUntil(touchApiKey(guard.auth.keyId));
 
-    const result = await compareCaptures(guard.auth.user, before, after, new URL(request.url).origin);
+    const result = await compareCaptures(
+      guard.auth.user,
+      before,
+      after,
+      new URL(request.url).origin,
+      'api',
+    );
     return json(result, { status: 201, headers });
   } catch (error) {
     return apiErrorResponse(error, headers);

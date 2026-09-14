@@ -108,15 +108,19 @@ export function wireCaptureForm(): void {
     const height = form!.querySelector<HTMLInputElement>('#height')?.value;
     const custom = !customSize?.hidden && width && height ? `Custom ${width} × ${height}` : deviceName;
     const redact = form!.querySelector<HTMLInputElement>('[name="redact_pii"]')?.checked;
+    const extraSizes = Array.from(form!.querySelectorAll<HTMLInputElement>('input[name="sizes"]:checked')).filter(input => input.value !== device?.value);
+    const shotCount = 1 + extraSizes.length;
     const quotaLine = form!.querySelector<HTMLElement>('#quota-line');
     if (quotaLine) {
       quotaLine.dataset.original ??= quotaLine.textContent ?? '';
       quotaLine.textContent = mode?.value === 'series'
         ? 'Uses one screenshot per frame in the scroll series.'
-        : quotaLine.dataset.original;
+        : shotCount > 1
+          ? `Uses ${shotCount} screenshots across the selected sizes.`
+          : quotaLine.dataset.original;
     }
     if (summary)
-      summary.textContent = [custom, modeName, format, redact ? 'Personal detail masking' : '']
+      summary.textContent = [custom, ...extraSizes.map(input => input.closest('label')?.querySelector('span')?.textContent ?? input.value), modeName, format, redact ? 'Personal detail masking' : '']
         .filter(Boolean)
         .join(' · ');
   }
@@ -168,8 +172,16 @@ export function wireCaptureForm(): void {
       if (text) payload[key] = text;
     }
     payload.url = url;
+
+    // FormData yields one entry per checked box, and the loop above keeps only
+    // the last. The API wants them as one comma-separated value.
+    const sizes = data.getAll('sizes').map(String).filter(Boolean);
+    if (sizes.length) payload.sizes = sizes.join(',');
+    else delete payload.sizes;
     if (!data.get('block_ads')) payload.block_ads = '0';
     if (!data.get('dark_mode')) payload.dark_mode = '0';
+    if (!data.get('dismiss_consent')) payload.dismiss_consent = '0';
+    if (!data.get('redact_pii')) payload.redact_pii = '0';
     // The width/height inputs only count when the custom panel is open.
     if (customSize?.hidden) {
       delete payload.width;

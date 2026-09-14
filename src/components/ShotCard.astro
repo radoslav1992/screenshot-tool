@@ -70,6 +70,9 @@ const overflow = files.length - strip.length;
         {
           capture.status === 'error' ? (
             <span style="color: var(--danger)">Failed · {capture.error?.slice(0, 60)}</span>
+          ) : capture.status === 'pending' ? (
+            /* Otherwise a capture that never finished is an unexplained blank card. */
+            <span class="muted">Still working…</span>
           ) : (
             <span style="display: inline-flex; align-items: center; gap: 5px">
               <Icon name={deviceIcon(capture.device)} size={14} />

@@ -1,4 +1,5 @@
 ---
+import PlanEstimator from '../components/PlanEstimator.astro';
 import WorkspaceFeatures from '../components/WorkspaceFeatures.astro';
 import Base from '../layouts/Base.astro';
 import Icon from '../components/Icon.astro';
@@ -39,7 +40,7 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
 
           <div class="switch" style="margin-top: 20px" role="group" aria-label="Billing period">
             <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
-            <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly −20%</button>
+            <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly · save about 20%</button>
           </div>
         </div>
 
@@ -62,7 +63,7 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
         <div class="plan-grid">
           {
             plans.map((plan) => (
-              <section class={plan.id === 'pro' ? 'plan plan--featured' : 'plan'}>
+              <section id={`plan-${plan.id}`} class={plan.id === 'pro' ? 'plan plan--featured' : 'plan'}>
                 {plan.id === 'pro' && <div class="plan__badge">FOR FREELANCERS</div>}
 
                 <div class="plan__head">
@@ -79,6 +80,10 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
                   {plan.tagline}
                 </p>
 
+                <p class="xs" data-annual-note data-annual={plan.priceYearly} data-month={plan.priceMonthly}
+                  style="margin-top: 10px" hidden={!startYearly || plan.id === 'free'}>
+                  Billed ${plan.priceYearly} once per year · save ${plan.priceMonthly * 12 - plan.priceYearly}/year.
+                </p>
                 <ul class="plan__features">
                   {plan.features.map((feature) => (
                     <li data-included={String(feature.included)} style="display: flex; gap: 8px; align-items: flex-start">
@@ -140,15 +145,14 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
         {
           !checkout && (
             <div class="notice notice--info" style="max-width: 640px; margin: 22px auto 0">
-              Checkout is not connected in this deployment — plans are switched manually. Set the
-              {' '}<span class="mono" style="font-size: 12px">STRIPE_SECRET_KEY</span>{' '}and
-              {' '}<span class="mono" style="font-size: 12px">STRIPE_PRICE_*</span>{' '}secrets to turn it on.
+              Paid checkout is not available yet. You can start with Free and keep using your workspace.
             </div>
           )
         }
       </div>
     </section>
 
+    <PlanEstimator />
     <WorkspaceFeatures />
     <SiteFooter />
   </div>
@@ -169,6 +173,9 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
         const monthly = Number(price.dataset.monthly ?? 0);
         const annual = Number(price.dataset.yearly ?? 0);
         price.textContent = yearly ? `$${annual}` : `$${monthly}`;
+      }
+      for (const note of document.querySelectorAll<HTMLElement>('[data-annual-note]')) {
+        note.hidden = !yearly || Number(note.dataset.annual) === 0;
       }
       for (const per of pers) per.textContent = yearly ? '/yr' : '/mo';
       // Checkout has to buy the price the visitor is looking at.

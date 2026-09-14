@@ -53,8 +53,8 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
     <div>
       <h1 class="h3">Change your plan</h1>
       <p class="small muted" style="margin-top: 4px">
-        You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Stripe credits
-        the part of it you have not used against whatever you move to.
+        You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Review any credits, charges and
+        the effective date in Stripe before confirming a change.
       </p>
     </div>
 
@@ -76,7 +76,7 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
                     {plan.name}, billed yearly
                     <span class="upgrade__tag">SAVE ${yearlySaving(plan)}</span>
                   </div>
-                  <div class="xs muted" style="margin-top: 2px">Same plan, two months cheaper over a year</div>
+                  <div class="xs muted" style="margin-top: 2px">Same allowance each month, billed once per year</div>
                 </div>
                 <div class="upgrade__price">
                   ${plan.priceYearly}<span class="upgrade__per">/yr</span>
@@ -130,8 +130,8 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
     }
 
     <p class="xs muted-2">
-      The next step shows exactly what you will be charged today, after the credit for your current plan, and asks you
-      to confirm. Nothing is charged before that.
+      Stripe shows the payment details before you confirm. Credits and the timing of plan changes depend on the
+      billing settings. Screenshot quota still resets on the first day of each UTC calendar month.
     </p>
 
     <a class="btn btn--outline" href="/app/account">Back to account</a>

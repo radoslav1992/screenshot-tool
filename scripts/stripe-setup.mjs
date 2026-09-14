@@ -14,6 +14,7 @@
  * apart. Nothing here reads or writes your Cloudflare config; it only prints.
  */
 
+import { validateStripePrice } from '../src/lib/stripe-price-check.mjs';
 import { PLANS, PAID_PLANS } from '../src/lib/plans.ts';
 
 const KEY = process.env.STRIPE_SECRET_KEY;
@@ -32,7 +33,15 @@ if (!KEY) {
   process.exit(1);
 }
 
-const MODE = KEY.startsWith('sk_live') ? 'LIVE' : 'test';
+if (!/^(sk|rk)_(live|test)_/.test(KEY)) {
+  console.error('Use a Stripe secret or restricted API key.');
+  process.exit(1);
+}
+if (CURRENCY !== 'usd') {
+  console.error('The storefront currently displays USD. Update the storefront currency before creating other-currency prices.');
+  process.exit(1);
+}
+const MODE = /^(sk|rk)_live_/.test(KEY) ? 'LIVE' : 'test';
 
 /* -------------------------------------------------------------------------- */
 
@@ -134,7 +143,14 @@ async function ensureProduct(plan) {
 async function ensurePrice(plan, product, existing, entry) {
   const key = lookupKey(plan.id, entry.key);
   const found = existing.get(key);
-  if (found) return { price: found, created: false };
+  if (found) {
+    const issues = validateStripePrice(found, {
+      currency: CURRENCY, amount: entry.amountOf(plan) * 100,
+      interval: entry.interval, live: MODE === 'LIVE',
+    });
+    if (issues.length) throw new Error(key + ': ' + issues.join('; ') + '. Review this price in Stripe; it was not changed.');
+    return { price: found, created: false };
+  }
 
   const price = await stripe('POST', '/prices', {
     product: product.id,
@@ -142,7 +158,7 @@ async function ensurePrice(plan, product, existing, entry) {
     unit_amount: entry.amountOf(plan) * 100,
     recurring: { interval: entry.interval },
     lookup_key: key,
-    // Lets a re-run with changed pricing take the key over rather than failing.
+    // Existing lookup keys are validated above; mismatches require operator review.
     transfer_lookup_key: true,
     nickname: `${plan.name} ${entry.key}`,
     metadata: { esc_plan: plan.id, esc_interval: entry.key },
@@ -201,5 +217,5 @@ for (const [name, id] of secrets) console.log(`    echo -n "${id}" | npx wrangle
 console.log(`\n  Still to do by hand, because they are account settings rather than objects:`);
 console.log(`    · webhook endpoint → https://easyscreencapture.com/api/billing/webhook`);
 console.log(`    · customer portal  → Settings → Billing → Customer portal`);
-if (!TAX_CODE) console.log(`    · Stripe Tax       → Settings → Tax, then set STRIPE_AUTOMATIC_TAX=1`);
+if (!TAX_CODE) console.log(`    · Stripe Tax       → configure only if required for your business; enable the flag after setup`);
 console.log('');

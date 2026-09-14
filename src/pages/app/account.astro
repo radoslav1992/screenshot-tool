@@ -46,8 +46,9 @@ const billingError = Astro.url.searchParams.get('billing_error');
     {
       justUpgraded && (
         <div class="notice notice--info">
-          Payment received — your plan updates within a few seconds of Stripe confirming it. Reload if this still says
-          {' '}{plan.name}.
+          You returned from Stripe. Your currently recorded plan is <strong>{plan.name}</strong>.
+          Changes appear after Stripe confirms them; returning here alone does not confirm payment.
+          <a href="/app/account">Refresh billing status</a>.
         </div>
       )
     }

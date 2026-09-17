@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Easy Screen Capture — screenshots as a service. Astro PWA on Cloudflare Workers.",
+  "description": "Easy Screen Capture \u2014 screenshots as a service. Astro PWA on Cloudflare Workers.",
   "scripts": {
     "dev": "astro dev",
     "build": "npm run commerce:check && astro build",
@@ -26,7 +26,8 @@
     "consent:check": "node scripts/consent-check.mjs",
     "fullpage:check": "node scripts/fullpage-check.mjs",
     "stripe:check": "node --experimental-strip-types scripts/stripe-check.mjs",
-    "commerce:check": "node --experimental-strip-types scripts/commerce-check.mjs"
+    "commerce:check": "node --experimental-strip-types scripts/commerce-check.mjs",
+    "push:check": "node --experimental-strip-types scripts/push-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

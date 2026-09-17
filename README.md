@@ -534,3 +534,8 @@ A successful Workers Build may only upload a version: manually promote the versi
 The AI summary integration remains optional and configuration-dependent; this release does not enable an AI binding or change Stripe prices.
 
 Validation: `npm run check`, `npm run workflows:check`, `npm run monitor:check`, `npm run library:check`, `npm run projects:check`, `npm run build`. Automated checks use SQLite and mocked external services; they do not send real alerts.
+
+
+### iOS push notifications
+
+Native push support uses APNs and authenticated per-session device registrations. Apply `migrations/0010_mobile_push.sql` and configure `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID` as Worker secrets. Setup and separate console SQL blocks: https://github.com/radoslav1992/screenshot-tool-ios/blob/main/PUSH_SETUP.md . Run `npm run push:check` for mocked-delivery and SQLite integration checks. No secrets means push stays dormant; email continues independently.

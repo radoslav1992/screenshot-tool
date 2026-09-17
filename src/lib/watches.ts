@@ -1,3 +1,4 @@
+import { queuePush } from './push';
 import { getMonitorRule, workflowsReady } from './monitor-rule-store';
 import { evaluateRule, type MonitorRule } from './monitor-rules';
 import { watchSettingsReady, watchNoise, noiseStrings } from './watch-settings';
@@ -525,6 +526,9 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   });
 
   if (changed && baseline) {
+    // A push outage must not mark a successful comparison failed or block email.
+    try { await queuePush(runId, watch.user_id); }
+    catch { console.error('[push] enqueue or delivery failed'); }
     const queued = await workflowsReady();
     if (queued) await env.DB.prepare("INSERT INTO alert_retries VALUES(?,1,?,'sending',?)").bind(runId, new Date(Date.now()+3600000).toISOString(), now.toISOString()).run();
     await notify(watch, user, baseline, capture, changePct ?? 0, origin, delivery, async () => {

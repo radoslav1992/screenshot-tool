@@ -8,6 +8,10 @@ declare namespace Cloudflare {
     RATE: KVNamespace;
     BROWSER: Fetcher;
 
+    APNS_KEY_ID?: string;
+    APNS_TEAM_ID?: string;
+    APNS_PRIVATE_KEY?: string;
+    APNS_BUNDLE_ID?: string;
     PUBLIC_SITE_URL: string;
     CAPTURE_HOST_DENYLIST?: string;
 

@@ -1,3 +1,4 @@
+import { drainPush } from './lib/push';
 import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
 import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
@@ -48,6 +49,8 @@ export default {
           console.error('[watch] sweep failed', error);
         }),
     );
+
+    ctx.waitUntil(drainPush().catch(() => console.error('[push] retry sweep failed')));
 
     ctx.waitUntil(retryAlerts(siteOrigin()).catch(error => console.error('[alerts] retry sweep failed', error)));
 

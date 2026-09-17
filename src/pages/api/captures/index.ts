@@ -15,6 +15,11 @@ export const GET: APIRoute = async ({ request, locals, url }) => {
 
   const rows = await listCaptures(user.id, {
     mode: url.searchParams.get('mode') ?? undefined,
+    collection: url.searchParams.get('collection') === 'regular' ? 'regular'
+      : url.searchParams.get('collection') === 'monitors' ? 'monitors' : undefined,
+    watchId: url.searchParams.get('watch_id') ?? undefined,
+    changedOnly: url.searchParams.get('changed') === '1',
+    offset: Number.parseInt(url.searchParams.get('offset') ?? '0', 10),
     limit: Number.parseInt(url.searchParams.get('limit') ?? '30', 10),
     cursor: url.searchParams.get('cursor') ?? undefined,
   });

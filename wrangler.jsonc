@@ -63,18 +63,13 @@
   //   "binding": "AI"
   // },
 
-  // Cloudflare Email Sending (public beta) — confirmation emails with no API
-  // key. Uncomment once easyscreencapture.com is onboarded under Email Service
-  // in the dashboard and noreply@ is a verified sender; deploying the binding
-  // before that can be rejected. Until then the code falls back to Resend, or
-  // logs the verification link if neither is configured.
-  //
-  // "send_email": [
-  //   {
-  //     "name": "EMAIL",
-  //     "allowed_sender_addresses": ["noreply@easyscreencapture.com"]
-  //   }
-  // ],
+  // Outbound email for the onboarded easyscreencapture.com domain.
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["noreply@easyscreencapture.com"]
+    }
+  ],
 
   "vars": {
     "PUBLIC_SITE_URL": "https://easyscreencapture.com",

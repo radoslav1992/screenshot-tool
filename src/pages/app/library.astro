@@ -1,40 +1,49 @@
 ---
+import { env } from 'cloudflare:workers';
 import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import ShotCard from '../../components/ShotCard.astro';
 import { getUsage, listCaptures } from '../../lib/captures';
+import { monitorFoldersQuery } from '../../lib/capture-list';
 import { getPlan } from '../../lib/plans';
+import { getWatch } from '../../lib/watches';
 const user = Astro.locals.user!;
+const collection = Astro.url.searchParams.get('collection') === 'monitors' ? 'monitors' : 'regular';
+const selected = collection === 'monitors' ? Astro.url.searchParams.get('watch') ?? '' : '';
+const unassigned = selected === 'unassigned';
+const watch = selected && !unassigned ? await getWatch(selected) : null;
+if (selected && !unassigned && (!watch || watch.user_id !== user.id)) return new Response('Monitor not found', { status: 404 });
+const foldersView = collection === 'monitors' && !selected;
 const filters = [
-  { id: 'all', label: 'All captures' },
-  { id: 'fullpage', label: 'Full page' },
-  { id: 'series', label: 'Scroll series' },
-  { id: 'visible', label: 'Visible area' },
+  { id: 'all', label: 'All modes' }, { id: 'fullpage', label: 'Full page' },
+  { id: 'series', label: 'Scroll series' }, { id: 'visible', label: 'Visible area' },
 ];
 const requested = Astro.url.searchParams.get('mode') ?? 'all';
-const filter = filters.some((entry) => entry.id === requested) ? requested : 'all';
+const filter = filters.some(entry => entry.id === requested) ? requested : 'all';
 const search = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 const pageValue = Number(Astro.url.searchParams.get('page') ?? '1');
 const page = Number.isFinite(pageValue) ? Math.min(250, Math.max(1, Math.trunc(pageValue))) : 1;
 const [results, usage] = await Promise.all([
-  listCaptures(user.id, {
-    mode: filter,
-    search,
-    limit: 41,
-    offset: (page - 1) * 40,
-  }),
-  getUsage(user),
+  foldersView ? Promise.resolve([]) : listCaptures(user.id, {
+    collection, watchId: watch?.id, unassigned, mode: filter, search, limit: 41, offset: (page - 1) * 40,
+  }), getUsage(user),
 ]);
+const query = monitorFoldersQuery(user.id, search);
+const folders = foldersView ? (await env.DB.prepare(query.sql).bind(...query.binds).all<{
+  id: string; label: string; url: string; status: string; capture_count: number;
+}>()).results ?? [] : [];
 const captures = results.slice(0, 40);
-const href = (mode: string, nextPage = 1) => {
+const href = (mode = filter, nextPage = 1, term = search) => {
   const params = new URLSearchParams();
-  if (mode !== 'all') params.set('mode', mode);
-  if (search) params.set('q', search);
+  if (collection === 'monitors') params.set('collection', 'monitors');
+  if (selected) params.set('watch', selected);
+  if (mode !== 'all' && !foldersView) params.set('mode', mode);
+  if (term) params.set('q', term);
   if (nextPage > 1) params.set('page', String(nextPage));
   return `/app/library${params.size ? `?${params}` : ''}`;
 };
+const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ? 'Screenshots by monitor' : unassigned ? 'Unassigned monitor screenshots' : watch!.label || watch!.url;
 ---
-
 <AppShell title="Library" tab="library">
   <header class="appbar" slot="appbar">
     <div class="appbar__title">Capture library</div>
@@ -42,90 +51,66 @@ const href = (mode: string, nextPage = 1) => {
   </header>
   <div class="app-wrap stack gap-20">
     <div class="workspace-intro">
-      <div>
-        <span class="eyebrow">YOUR VISUAL RECORD</span>
-        <h1>Good work. Worth keeping.</h1>
-        <p>Find a capture, download it, or share the details.</p>
+      <div><span class="eyebrow">YOUR VISUAL RECORD</span><h1>{heading}</h1>
+        <p>{collection === 'regular' ? 'Your manual, batch and API captures, without recurring monitor checks.' : foldersView ? 'Open a monitoring job to browse its retained screenshots.' : unassigned ? 'Unused previews and captures whose monitoring job was deleted. Older previews without a recorded job may remain in Regular screenshots.' : 'Baseline and check screenshots for this monitoring job.'}</p>
       </div>
-      <a class="btn btn--ink" href="/app" style="width: auto">
-        <Icon name="camera" size={16} /> New capture
+      <a class="btn btn--ink" href={collection === 'regular' ? '/app' : '/app/watches'} style="width:auto">
+        {collection === 'regular' ? 'New capture' : 'Manage monitors'}
       </a>
     </div>
-    <div class="project-links">
-      <a href="/app/batch" class="btn btn--outline" style="width:auto">
-        Batch capture
-      </a>{' '}
-      <a href="/app/projects" class="btn btn--outline" style="width:auto">
-        Organize in projects
-      </a>
-    </div>
+    <nav class="chips" aria-label="Library collections">
+      <a class="chip" href="/app/library" aria-current={collection === 'regular' ? 'true' : undefined}>Regular screenshots</a>
+      <a class="chip" href="/app/library?collection=monitors" aria-current={collection === 'monitors' ? 'true' : undefined}>Monitor screenshots</a>
+    </nav>
+    {selected && <div class="project-links">
+      <a href="/app/library?collection=monitors">← All monitoring jobs</a>
+      {watch && <a href={`/app/watches/${watch.id}`}>Job settings &amp; comparisons →</a>}
+    </div>}
+    {collection === 'regular' && <div class="project-links">
+      <a href="/app/batch" class="btn btn--outline" style="width:auto">Batch capture</a>
+      <a href="/app/projects" class="btn btn--outline" style="width:auto">Organize in projects</a>
+    </div>}
     <form method="get" action="/app/library" class="library-toolbar" role="search">
-      <input type="hidden" name="mode" value={filter} />
-      <label class="sr-only" for="library-search">
-        Search capture URLs
-      </label>
-      <input
-        type="search"
-        class="input"
-        id="library-search"
-        name="q"
-        value={search}
-        placeholder="Search by website or page URL…"
-        maxlength="200"
-      />
-      <button type="submit" class="btn btn--outline">
-        <Icon name="search" size={16} /> Search
-      </button>
+      <input type="hidden" name="collection" value={collection} />
+      {selected && <input type="hidden" name="watch" value={selected} />}
+      {!foldersView && <input type="hidden" name="mode" value={filter} />}
+      <label class="sr-only" for="library-search">{foldersView ? 'Search monitoring jobs' : 'Search capture URLs'}</label>
+      <input type="search" class="input" id="library-search" name="q" value={search} placeholder={foldersView ? 'Search job names or website URLs…' : 'Search by website or page URL…'} maxlength="200" />
+      <button type="submit" class="btn btn--outline"><Icon name="search" size={16} /> Search</button>
     </form>
-    <div class="chips" aria-label="Filter by capture mode">
-      {filters.map((entry) => (
-        <a class="chip" href={href(entry.id)} aria-current={filter === entry.id ? 'true' : undefined}>
-          {entry.label}
-        </a>
-      ))}
-    </div>
+    {!foldersView && <div class="chips" aria-label="Filter by capture mode">
+      {filters.map(entry => <a class="chip" href={href(entry.id)} aria-current={filter === entry.id ? 'true' : undefined}>{entry.label}</a>)}
+    </div>}
     <p class="library-search-meta">
-      {search ? `Results for “${search}” · ` : ''}Page {page} · Files kept for {getPlan(user.plan).historyDays} days on
-      your plan.{' '}
-      {search && <a href={filter === 'all' ? '/app/library' : `/app/library?mode=${filter}`}>Clear search</a>}
+      {search ? `Results for “${search}” · ` : ''}{!foldersView && `Page ${page} · `}Files kept for {getPlan(user.plan).historyDays} days on your plan.
+      {search && <a href={href(filter, 1, '')}>Clear search</a>}
     </p>
-    {captures.length === 0 ? (
-      <div class="empty">
-        <div class="empty__icon">
-          <Icon name={search ? 'search' : 'library'} size={34} />
-        </div>
-        <h2 class="h4" style="margin-top: 12px">
-          {search ? 'No matching captures' : 'Your next capture starts here'}
-        </h2>
-        <p class="small muted" style="margin-top: 8px">
-          {search ? 'Try another website name, or clear the search.' : 'Capture a page to build your visual record.'}
-        </p>
-        <a class="btn btn--ink" href={search ? '/app/library' : '/app'} style="max-width: 220px; margin: 20px auto 0">
-          {search ? 'Show all captures' : 'Capture a page'}
-        </a>
+    {foldersView ? <>
+      <div class="monitor-folders">
+        {folders.map(folder => <a class="monitor-folder" href={`/app/library?collection=monitors&watch=${encodeURIComponent(folder.id)}`}>
+          <span class="eyebrow">{folder.status === 'active' ? 'ACTIVE MONITOR' : 'PAUSED MONITOR'}</span>
+          <h2>{folder.label || folder.url}</h2><p>{folder.url}</p>
+          <strong>{folder.capture_count} retained screenshots →</strong>
+        </a>)}
       </div>
-    ) : (
-      <div class="shot-list">
-        {captures.map((capture) => (
-          <ShotCard capture={capture} />
-        ))}
-      </div>
-    )}
-    {(page > 1 || results.length > 40) && (
-      <nav class="row-between" aria-label="Capture pages">
-        <span>
-          {page > 1 && (
-            <a class="btn btn--outline" href={href(filter, page - 1)}>
-              ← Previous
-            </a>
-          )}
-        </span>
-        {results.length > 40 && page < 250 && (
-          <a class="btn btn--outline" href={href(filter, page + 1)}>
-            Next →
-          </a>
-        )}
-      </nav>
-    )}
+      {folders.length === 0 && <p class="notice">{search ? 'No matching monitoring jobs. Try another name or URL.' : 'No monitoring jobs yet. Create one from Monitors to start a separate screenshot history.'}</p>}
+      <a class="btn btn--outline" href="/app/library?collection=monitors&watch=unassigned">Unassigned previews &amp; deleted jobs →</a>
+    </> : captures.length === 0 ? <div class="empty">
+      <h2 class="h4">{search ? 'No matching screenshots' : 'No screenshots here yet'}</h2>
+      <p class="small muted">{search ? 'Try another URL or clear your search.' : collection === 'regular' ? 'Capture a page to start your library.' : 'Screenshots appear here after a check. Expired files are removed according to your plan.'}</p>
+      {search && <a href={href(filter, 1, '')}>Clear search</a>}
+    </div> : <div class="shot-list">{captures.map(capture => <ShotCard capture={capture} />)}</div>}
+    {!foldersView && (page > 1 || results.length > 40) && <nav class="row-between" aria-label="Capture pages">
+      <span>{page > 1 && <a class="btn btn--outline" href={href(filter, page - 1)}>← Previous</a>}</span>
+      {results.length > 40 && page < 250 && <a class="btn btn--outline" href={href(filter, page + 1)}>Next →</a>}
+    </nav>}
   </div>
 </AppShell>
+<style>
+  .project-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .monitor-folders { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+  .monitor-folder { display: grid; gap: 12px; padding: 24px; border: 1px solid var(--line-2); border-radius: 16px; background: white; color: var(--ink); overflow-wrap: anywhere; }
+  .monitor-folder:hover { border-color: var(--green); background: var(--lime-tint); }
+  .monitor-folder h2 { font-size: 19px; }
+  .monitor-folder p { color: var(--muted); font-size: 13px; }
+</style>

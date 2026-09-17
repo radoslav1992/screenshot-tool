@@ -225,6 +225,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
       </form>
       <section class="stack gap-8">
         <h2 class="h4">History &amp; alert status</h2>
+        <a class="btn btn--outline" href={`/app/library?collection=monitors&watch=${encodeURIComponent(watch.id)}`}>View this monitor’s screenshots →</a>
         <p class="xs muted">
           Accepted means the provider accepted the request, not confirmed inbox delivery. Older runs show “Not
           confirmed.” Failed alerts are not automatically retried.

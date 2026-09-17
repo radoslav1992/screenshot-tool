@@ -4,6 +4,7 @@ export interface CaptureListOptions {
   collection?: 'regular' | 'monitors';
   watchId?: string;
   unassigned?: boolean;
+  changedOnly?: boolean;
   limit?: number;
   cursor?: string;
   search?: string;
@@ -20,6 +21,7 @@ export function captureListQuery(userId: string, options: CaptureListOptions = {
     if (options.watchId) {
       clauses.push(`EXISTS (SELECT 1 FROM watches w WHERE w.id = ? AND ${monitorMatch})`);
       binds.push(options.watchId);
+      if (options.changedOnly) { clauses.push('EXISTS (SELECT 1 FROM watch_runs r WHERE r.watch_id=? AND r.user_id=captures.user_id AND r.capture_id=captures.id AND r.changed=1)'); binds.push(options.watchId); }
     } else if (options.unassigned) {
       clauses.push("captures.source = 'watch'", `NOT (${monitorMembership})`);
     } else {
@@ -58,6 +60,7 @@ const monitorMembership = `EXISTS (SELECT 1 FROM watches w WHERE ${monitorMatch}
 export function monitorFoldersQuery(userId: string, search = '') {
   return {
     sql: `SELECT w.id, w.label, w.url, w.status,
+      (SELECT captures.id FROM captures WHERE ${monitorMatch} AND captures.status='done' ORDER BY captures.created_at DESC,captures.id DESC LIMIT 1) AS cover_id,
       (SELECT COUNT(*) FROM captures WHERE ${monitorMatch}) AS capture_count
       FROM watches w WHERE w.user_id = ?
       AND (instr(lower(w.label), lower(?)) > 0 OR instr(lower(w.url), lower(?)) > 0)

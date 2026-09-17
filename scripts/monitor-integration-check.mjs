@@ -15,6 +15,7 @@ for (const file of [
   '0004_watches.sql',
   '0005_page_facts.sql',
   '0008_monitor_noise.sql',
+  '0009_monitor_workflows.sql',
 ]) {
   db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
 }
@@ -30,6 +31,7 @@ const state = {
   canCompare: true,
   emailConfigured: true,
   emailAccepted: true,
+  emails: 0,
   changedPct: 20,
 };
 const calls = [];
@@ -37,7 +39,7 @@ const bind = (sql, args = []) => ({
   bind: (...next) => bind(sql, next),
   first: async () => db.prepare(sql).get(...args) ?? null,
   all: async () => ({ results: db.prepare(sql).all(...args) }),
-  run: async () => db.prepare(sql).run(...args),
+  run: async () => ({meta:db.prepare(sql).run(...args)}),
 });
 const files = JSON.stringify([{ name: 'image.png', key: 'image.png', width: 1440, height: 900, bytes: 100 }]);
 let n = 0;
@@ -79,7 +81,7 @@ const plugin = {
     }));
     b.onLoad({ filter: /\/lib\/mailer\.ts$/ }, () => ({
       contents:
-        'export function canSendEmail(){return globalThis.__monitorFixture.state.emailConfigured} export async function sendMail(){return globalThis.__monitorFixture.state.emailAccepted}',
+        'export function canSendEmail(){return globalThis.__monitorFixture.state.emailConfigured} export async function sendMail(){globalThis.__monitorFixture.state.emails++;return globalThis.__monitorFixture.state.emailAccepted}',
     }));
     b.onLoad({ filter: /\/lib\/summarise\.ts$/ }, () => ({
       contents: 'export async function summariseChange(){return {sentence:"Test change",detail:"",source:"plain"}}',
@@ -148,6 +150,19 @@ try {
     { email: 'accepted', webhook: 'failed' },
     'non-2xx webhook is a failed alert',
   );
+  const pendingJob = db.prepare("SELECT * FROM alert_retries WHERE status='pending' LIMIT 1").get();
+  assert.ok(pendingJob, 'explicit webhook failure queues a durable retry');
+  db.prepare("UPDATE alert_retries SET next_attempt_at='2000-01-01'").run();
+  const callsBeforeRetry = calls.length;
+  const emailsBeforeRetry = state.emails;
+  await watches.retryAlerts('https://fixture.test');
+  assert.equal(calls.length,callsBeforeRetry+1,'failed webhook retried');
+  assert.equal(state.emails,emailsBeforeRetry,'accepted email is never resent with webhook retry');
+  assert.equal(db.prepare('SELECT attempts FROM alert_retries WHERE run_id=?').get(pendingJob.run_id).attempts,2);
+  db.prepare("UPDATE alert_retries SET next_attempt_at='2000-01-01' WHERE status='pending'").run();
+  await watches.retryAlerts('https://fixture.test');
+  assert.equal(db.prepare('SELECT status FROM alert_retries WHERE run_id=?').get(pendingJob.run_id).status,'done','retry budget is bounded');
+
   assert.equal(calls[0].options.redirect, 'error');
   assert.ok(calls[0].options.signal);
   state.remaining = 0;

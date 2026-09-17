@@ -184,6 +184,7 @@ export interface CaptureOptions {
   maxFrames: number;
   /** Collect what the page says about itself alongside the picture. */
   facts: boolean;
+  monitorSelector?: string;
   /**
    * Extra viewports to shoot in the same visit, on top of the main one. One
    * page load, several sizes — the browser is already there and warm.

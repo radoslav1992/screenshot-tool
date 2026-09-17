@@ -1,7 +1,7 @@
 import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
 import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
-import { runDueWatches } from './lib/watches';
+import { runDueWatches, retryAlerts } from './lib/watches';
 import { runProjectDigests } from './lib/digests';
 
 /**
@@ -48,6 +48,8 @@ export default {
           console.error('[watch] sweep failed', error);
         }),
     );
+
+    ctx.waitUntil(retryAlerts(siteOrigin()).catch(error => console.error('[alerts] retry sweep failed', error)));
 
     ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
 

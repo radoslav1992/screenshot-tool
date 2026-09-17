@@ -18,7 +18,7 @@ import { CHANNEL_TOLERANCE, MAX_COMPARE_PIXELS, compareInPage, type DiffResult }
 
 export type { DiffResult };
 
-export async function compareImages(beforeUrl: string, afterUrl: string): Promise<DiffResult> {
+export async function compareImages(beforeUrl: string, afterUrl: string, region?: { x: number; y: number; width: number; height: number }): Promise<DiffResult> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
   const lease = await acquireBrowser(puppeteer);
   let succeeded = false;
@@ -34,6 +34,7 @@ export async function compareImages(beforeUrl: string, afterUrl: string): Promis
       afterUrl,
       CHANNEL_TOLERANCE,
       MAX_COMPARE_PIXELS,
+      region,
     )) as DiffResult;
 
     succeeded = true;

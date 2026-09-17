@@ -11,6 +11,7 @@
 export type IconName =
   | 'camera'
   | 'library'
+  | 'folder'
   | 'key'
   | 'user'
   | 'mode-visible'
@@ -52,6 +53,7 @@ const { name, size = 20, label, class: className, strokeWidth = 1.75 } = Astro.p
 const STROKE: Record<string, string> = {
   camera: `<path d="M3 8.6A2 2 0 0 1 5 6.6h2.3l1.2-2h7l1.2 2H19a2 2 0 0 1 2 2v8.8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3.4"/>`,
 
+  folder: `<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`,
   library: `<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>`,
 
   key: `<circle cx="8" cy="15.4" r="3.6"/><path d="M10.6 12.8 20.2 3.2M16.8 6.6l2.6 2.6M14.2 9.2l2.2 2.2"/>`,

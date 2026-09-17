@@ -1,3 +1,5 @@
+import { getMonitorRule, workflowsReady } from './monitor-rule-store';
+import { evaluateRule, type MonitorRule } from './monitor-rules';
 import { watchSettingsReady, watchNoise, noiseStrings } from './watch-settings';
 import { parseIgnoreRegions } from './ignore-regions';
 import { decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
@@ -155,6 +157,7 @@ export async function countWatches(userId: string): Promise<number> {
 
 export interface WatchInput {
   options: CaptureOptions;
+  rule?: MonitorRule;
   label: string;
   frequency: string;
   threshold: number;
@@ -256,12 +259,10 @@ export async function createWatch(user: SessionUser, input: WatchInput): Promise
     row.created_at,
     row.updated_at,
   );
-  if (noiseReady)
-    await env.DB.batch([
-      insert,
-      env.DB.prepare('INSERT INTO watch_settings VALUES(?,?,?)').bind(row.id, noise.hide, noise.ignore_regions),
-    ]);
-  else await insert.run();
+  const statements = [insert];
+  if (noiseReady) statements.push(env.DB.prepare('INSERT INTO watch_settings VALUES(?,?,?)').bind(row.id, noise.hide, noise.ignore_regions));
+  if (input.rule && await workflowsReady()) statements.push(env.DB.prepare('INSERT INTO monitor_rules VALUES(?,?,?,?,?)').bind(row.id,input.rule.kind,input.rule.phrase,input.rule.selector,input.rule.region));
+  await env.DB.batch(statements);
 
   return row;
 }
@@ -432,11 +433,13 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     return { status: 'skipped', changed: false, detail: 'monthly quota used up' };
   }
 
+  const rule = await getMonitorRule(watch.id);
   let capture: CaptureRow;
   try {
     const noise = await watchNoise(watch.id);
     const options = {
       ...optionsFor(watch),
+      monitorSelector: rule.selector || undefined,
       hide: noise.hide.split(',').filter(Boolean),
       ignoreRegions: parseIgnoreRegions(noise.ignore_regions),
     };
@@ -459,6 +462,13 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
 
   if (!baseline) {
     detail = 'first check — saved as the baseline';
+  } else if (rule.kind !== 'visual') {
+    try {
+      const result = evaluateRule(rule, safeParseFacts(baseline.facts), safeParseFacts(capture.facts));
+      changed = result.changed; detail = result.detail;
+    } catch (error) {
+      return failed(watch, error instanceof Error ? error.message : 'Rule comparison failed.', now, capture.id);
+    }
   } else if (!diffAvailable()) {
     return failed(watch, 'Comparison unavailable: rendering service is not configured.', now, capture.id);
   } else {
@@ -468,7 +478,9 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
       if (!before || !after) {
         return failed(watch, 'Comparison unavailable: a capture has no comparable image.', now, capture.id);
       } else {
-        const diff = await compareImages(before, after);
+        const region = parseIgnoreRegions(rule.region)[0];
+        const scaled = region ? { x: region.x * watch.scale, y: region.y * watch.scale, width: region.width * watch.scale, height: region.height * watch.scale } : undefined;
+        const diff = await compareImages(before, after, scaled);
         changePct = diff.changedPct;
         changed = diff.resized || diff.changedPct >= watch.threshold;
         detail = diff.resized ? `page height changed, ${diff.changedPct}% of the shared area differs` : null;
@@ -513,11 +525,14 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   });
 
   if (changed && baseline) {
+    const queued = await workflowsReady();
+    if (queued) await env.DB.prepare("INSERT INTO alert_retries VALUES(?,1,?,'sending',?)").bind(runId, new Date(Date.now()+3600000).toISOString(), now.toISOString()).run();
     await notify(watch, user, baseline, capture, changePct ?? 0, origin, delivery, async () => {
       await env.DB.prepare('UPDATE watch_runs SET detail = ? WHERE id = ? AND user_id = ?')
         .bind(encodeRunDetail(detail, delivery), runId, watch.user_id)
         .run();
     });
+    if (queued) await finishRetry(runId, delivery, 1);
   }
 
   return { status: 'done', changed, changePct: changePct ?? undefined, detail: detail ?? undefined };
@@ -602,7 +617,7 @@ async function notify(
   const change = diffText(safeParseFacts(before.facts)?.text ?? '', safeParseFacts(after.facts)?.text ?? '');
   const summary = await summariseChange(change, name).catch(() => ({ sentence: '', detail: '' }));
 
-  if (watch.notify_email) {
+  if (watch.notify_email && ['pending','failed','not_configured'].includes(delivery.email)) {
     const headline = summary.sentence ? `${summary.sentence}\n\n` : '';
     const body = summary.detail ? `${summary.detail}\n\n` : '';
     delivery.email = canSendEmail()
@@ -611,10 +626,10 @@ async function notify(
             to: user.email,
             subject: summary.sentence ? `${name}: ${summary.sentence.slice(0, 80)}` : `${name} changed`,
             text:
-              `${name} looks different from the last check.\n\n` +
+              `${name}: a monitored change was detected.\n\n` +
               headline +
               body +
-              `${changePct}% of the picture changed.\n\n` +
+              (changePct > 0 ? `${changePct}% of the picture changed.\n\n` : '') +
               `Before: ${firstFileUrl(before, origin) ?? '—'}\n` +
               `After:  ${firstFileUrl(after, origin) ?? '—'}\n\n` +
               `History and settings: ${link}\n\n` +
@@ -625,7 +640,7 @@ async function notify(
     await saveDelivery();
   }
 
-  if (watch.webhook_url) {
+  if (watch.webhook_url && ['pending','failed'].includes(delivery.webhook)) {
     /*
      * Slack and Discord render whatever shape they are handed, so a raw JSON
      * post lands there as noise. Recognising those two hosts turns "paste your
@@ -700,4 +715,39 @@ export async function runDueWatches(origin: string, now = new Date()): Promise<W
   }
 
   return result;
+}
+
+
+async function finishRetry(runId: string, delivery: Delivery, attempts: number) {
+  const retry = Object.values(delivery).some(state => state === 'failed' || state === 'not_configured');
+  await env.DB.prepare('UPDATE alert_retries SET status=?,next_attempt_at=?,updated_at=? WHERE run_id=?')
+    .bind(retry && attempts < 3 ? 'pending' : 'done', new Date(Date.now()+attempts*3600000).toISOString(),new Date().toISOString(),runId).run();
+}
+/** Retry only explicit failures, never an accepted or ambiguous send. Three total attempts. */
+export async function retryAlerts(origin: string) {
+  if (!await workflowsReady()) return;
+  const now = new Date().toISOString();
+  // A process lost during sending has an ambiguous outcome. Do not send it twice.
+  await env.DB.prepare("UPDATE alert_retries SET status='unknown' WHERE status='sending' AND updated_at < ?")
+    .bind(new Date(Date.now()-3600000).toISOString()).run();
+  const { results } = await env.DB.prepare("SELECT * FROM alert_retries WHERE status='pending' AND next_attempt_at<=? AND attempts<3 ORDER BY next_attempt_at LIMIT 20").bind(now).all<{run_id:string;attempts:number}>();
+  for (const job of results || []) {
+    const claim = await env.DB.prepare("UPDATE alert_retries SET status='sending',attempts=attempts+1,updated_at=? WHERE run_id=? AND status='pending'").bind(now,job.run_id).run();
+    if (!claim.meta.changes) continue;
+    try {
+      const run = await env.DB.prepare('SELECT * FROM watch_runs WHERE id=?').bind(job.run_id).first<WatchRunRow>();
+      const watch = run ? await getWatch(run.watch_id) : null;
+      const owner = watch ? await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(watch.user_id).first<UserRow>() : null;
+      const before = run?.baseline_capture_id ? await captureById(run.baseline_capture_id) : null;
+      const after = run?.capture_id ? await captureById(run.capture_id) : null;
+      if (!run || !watch || !owner || !before || !after || watch.status !== 'active' || watchLimit(owner.plan) === 0 || run.user_id !== watch.user_id || before.user_id !== watch.user_id || after.user_id !== watch.user_id || Date.parse(run.created_at) < Date.now()-86400000) {
+        await env.DB.prepare("UPDATE alert_retries SET status='done' WHERE run_id=?").bind(job.run_id).run(); continue;
+      }
+      const decoded = decodeRunDetail(run.detail);
+      await notify(watch,toSessionUser(owner),before,after,run.change_pct || 0,origin,decoded.delivery,async()=>{
+        await env.DB.prepare('UPDATE watch_runs SET detail=? WHERE id=?').bind(encodeRunDetail(decoded.detail,decoded.delivery),run.id).run();
+      });
+      await finishRetry(run.id,decoded.delivery,job.attempts+1);
+    } catch (error) { console.error('[alerts] retry interrupted',error); }
+  }
 }

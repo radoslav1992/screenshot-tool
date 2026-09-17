@@ -1,9 +1,10 @@
 ---
 import { env } from 'cloudflare:workers';
+import MonitorTimeline from '../../components/MonitorTimeline.astro';
 import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import ShotCard from '../../components/ShotCard.astro';
-import { getUsage, listCaptures } from '../../lib/captures';
+import { getUsage, listCaptures, safeParseFiles, fileUrl, type CaptureRow } from '../../lib/captures';
 import { monitorFoldersQuery } from '../../lib/capture-list';
 import { getPlan } from '../../lib/plans';
 import { getWatch } from '../../lib/watches';
@@ -13,6 +14,8 @@ const selected = collection === 'monitors' ? Astro.url.searchParams.get('watch')
 const unassigned = selected === 'unassigned';
 const watch = selected && !unassigned ? await getWatch(selected) : null;
 if (selected && !unassigned && (!watch || watch.user_id !== user.id)) return new Response('Monitor not found', { status: 404 });
+const timeline = !!watch && Astro.url.searchParams.get('view') !== 'gallery';
+const changedOnly = !!watch && Astro.url.searchParams.get('changed') === '1';
 const foldersView = collection === 'monitors' && !selected;
 const filters = [
   { id: 'all', label: 'All modes' }, { id: 'fullpage', label: 'Full page' },
@@ -24,19 +27,24 @@ const search = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 const pageValue = Number(Astro.url.searchParams.get('page') ?? '1');
 const page = Number.isFinite(pageValue) ? Math.min(250, Math.max(1, Math.trunc(pageValue))) : 1;
 const [results, usage] = await Promise.all([
-  foldersView ? Promise.resolve([]) : listCaptures(user.id, {
-    collection, watchId: watch?.id, unassigned, mode: filter, search, limit: 41, offset: (page - 1) * 40,
+  (foldersView || timeline) ? Promise.resolve([]) : listCaptures(user.id, {
+    collection, changedOnly, watchId: watch?.id, unassigned, mode: filter, search, limit: 41, offset: (page - 1) * 40,
   }), getUsage(user),
 ]);
 const query = monitorFoldersQuery(user.id, search);
 const folders = foldersView ? (await env.DB.prepare(query.sql).bind(...query.binds).all<{
-  id: string; label: string; url: string; status: string; capture_count: number;
+  id: string; label: string; url: string; status: string; capture_count: number; cover_id: string | null;
 }>()).results ?? [] : [];
+const coverIds = folders.map(f=>f.cover_id).filter(Boolean) as string[];
+const covers = coverIds.length ? (await env.DB.prepare(`SELECT * FROM captures WHERE user_id=? AND id IN (${coverIds.map(()=>'?').join(',')})`).bind(user.id,...coverIds).all<CaptureRow>()).results || [] : [];
+const coverUrl = (id: string | null) => { const row=covers.find(c=>c.id===id);const file=row?safeParseFiles(row.files)[0]:null;return row&&file?fileUrl(row,file,Astro.url.origin):null; };
 const captures = results.slice(0, 40);
 const href = (mode = filter, nextPage = 1, term = search) => {
   const params = new URLSearchParams();
   if (collection === 'monitors') params.set('collection', 'monitors');
   if (selected) params.set('watch', selected);
+  if (watch) params.set('view', timeline ? 'timeline' : 'gallery');
+  if (changedOnly) params.set('changed', '1');
   if (mode !== 'all' && !foldersView) params.set('mode', mode);
   if (term) params.set('q', term);
   if (nextPage > 1) params.set('page', String(nextPage));
@@ -70,24 +78,32 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
       <a href="/app/batch" class="btn btn--outline" style="width:auto">Batch capture</a>
       <a href="/app/projects" class="btn btn--outline" style="width:auto">Organize in projects</a>
     </div>}
-    <form method="get" action="/app/library" class="library-toolbar" role="search">
+    {watch && <nav class="chips" aria-label="Monitor album view">
+      <a class="chip" aria-current={timeline?'true':undefined} href={`/app/library?collection=monitors&watch=${watch.id}`}>Change timeline</a>
+      <a class="chip" aria-current={!timeline?'true':undefined} href={`/app/library?collection=monitors&watch=${watch.id}&view=gallery`}>All screenshots</a>
+      <a class="chip" aria-current={changedOnly?'true':undefined} href={`/app/library?collection=monitors&watch=${watch.id}&view=${timeline?'timeline':'gallery'}${changedOnly?'':'&changed=1'}`}>{changedOnly?'Show all checks':'Changed only'}</a>
+    </nav>}
+    {!timeline && <form method="get" action="/app/library" class="library-toolbar" role="search">
       <input type="hidden" name="collection" value={collection} />
       {selected && <input type="hidden" name="watch" value={selected} />}
+      {watch && <input type="hidden" name="view" value="gallery" />}
+      {changedOnly && <input type="hidden" name="changed" value="1" />}
       {!foldersView && <input type="hidden" name="mode" value={filter} />}
       <label class="sr-only" for="library-search">{foldersView ? 'Search monitoring jobs' : 'Search capture URLs'}</label>
       <input type="search" class="input" id="library-search" name="q" value={search} placeholder={foldersView ? 'Search job names or website URLs…' : 'Search by website or page URL…'} maxlength="200" />
       <button type="submit" class="btn btn--outline"><Icon name="search" size={16} /> Search</button>
-    </form>
-    {!foldersView && <div class="chips" aria-label="Filter by capture mode">
+    </form>}
+    {!foldersView && !timeline && <div class="chips" aria-label="Filter by capture mode">
       {filters.map(entry => <a class="chip" href={href(entry.id)} aria-current={filter === entry.id ? 'true' : undefined}>{entry.label}</a>)}
     </div>}
     <p class="library-search-meta">
       {search ? `Results for “${search}” · ` : ''}{!foldersView && `Page ${page} · `}Files kept for {getPlan(user.plan).historyDays} days on your plan.
       {search && <a href={href(filter, 1, '')}>Clear search</a>}
     </p>
-    {foldersView ? <>
+    {timeline ? <MonitorTimeline watchId={watch!.id} userId={user.id} page={page} changedOnly={changedOnly} /> : foldersView ? <>
       <div class="monitor-folders">
         {folders.map(folder => <a class="monitor-folder" href={`/app/library?collection=monitors&watch=${encodeURIComponent(folder.id)}`}>
+          {coverUrl(folder.cover_id) ? <img class="album-cover" src={coverUrl(folder.cover_id)!} alt={`Latest screenshot for ${folder.label || folder.url}`} loading="lazy" /> : <div class="album-placeholder"><Icon name="folder" size={48} /><span>Waiting for first capture</span></div>}
           <span class="eyebrow">{folder.status === 'active' ? 'ACTIVE MONITOR' : 'PAUSED MONITOR'}</span>
           <h2>{folder.label || folder.url}</h2><p>{folder.url}</p>
           <strong>{folder.capture_count} retained screenshots →</strong>
@@ -100,13 +116,15 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
       <p class="small muted">{search ? 'Try another URL or clear your search.' : collection === 'regular' ? 'Capture a page to start your library.' : 'Screenshots appear here after a check. Expired files are removed according to your plan.'}</p>
       {search && <a href={href(filter, 1, '')}>Clear search</a>}
     </div> : <div class="shot-list">{captures.map(capture => <ShotCard capture={capture} />)}</div>}
-    {!foldersView && (page > 1 || results.length > 40) && <nav class="row-between" aria-label="Capture pages">
+    {!foldersView && !timeline && (page > 1 || results.length > 40) && <nav class="row-between" aria-label="Capture pages">
       <span>{page > 1 && <a class="btn btn--outline" href={href(filter, page - 1)}>← Previous</a>}</span>
       {results.length > 40 && page < 250 && <a class="btn btn--outline" href={href(filter, page + 1)}>Next →</a>}
     </nav>}
   </div>
 </AppShell>
 <style>
+  .album-cover { width:100%;height:180px;object-fit:cover;object-position:top;border-radius:8px;border:1px solid var(--line-2); }
+  .album-placeholder { height:180px;display:grid;place-content:center;gap:12px;text-align:center;background:var(--lime-tint);border-radius:8px; }
   .project-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .monitor-folders { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
   .monitor-folder { display: grid; gap: 12px; padding: 24px; border: 1px solid var(--line-2); border-radius: 16px; background: white; color: var(--ink); overflow-wrap: anywhere; }

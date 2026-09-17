@@ -46,6 +46,9 @@ assert.deepEqual(list({ collection: 'monitors', watchId: 'missing' }), []);
 assert.deepEqual(list({ collection: 'monitors', unassigned: true }), ['g']);
 assert.deepEqual(list({ collection: 'monitors', watchId: 'job1', limit: 1, offset: 1, search: 'PRICES', mode: 'fullpage' }), ['a']);
 assert.deepEqual(list({}), ['h', 'g', 'f', 'e', 'b', 'a', 'd'], 'API default remains compatible');
+db.exec("ALTER TABLE captures ADD COLUMN status TEXT DEFAULT 'done'");
+db.exec("ALTER TABLE watch_runs ADD COLUMN changed INTEGER DEFAULT 1");
+assert.deepEqual(list({collection:'monitors',watchId:'job1',changedOnly:true}),['f']);
 const folders = (search = '') => {
   const { sql, binds } = monitorFoldersQuery('owner', search);
   return db.prepare(sql).all(...binds).map(({ id, capture_count }) => [id, capture_count]);

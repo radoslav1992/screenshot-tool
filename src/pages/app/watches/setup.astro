@@ -1,4 +1,5 @@
 ---
+import MonitorRuleFields from '../../../components/MonitorRuleFields.astro';
 import AppShell from '../../../layouts/AppShell.astro';
 import MonitorBudget from '../../../components/MonitorBudget.astro';
 import { canSendEmail } from '../../../lib/mailer';
@@ -89,17 +90,22 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
             Preview baseline · 1 screenshot
           </button>
           <p role="status" id="monitor-preview-status" aria-live="polite"></p>
+          <label>Draw on preview<select class="input" id="region-tool"><option value="watch_region">Watch this area only</option><option value="ignore_regions">Ignore this area</option></select></label>
+          <p class="small muted">Drag across the preview to select a rectangle. You can also enter coordinates in the fields. Ignored areas require a new preview before saving.</p>
+          <div id="region-canvas" style="position:relative;width:fit-content;max-width:100%;touch-action:none">
           <img
             id="monitor-baseline"
             hidden
             alt="Monitor baseline preview"
-            style="max-width:100%;max-height:500px;object-fit:contain"
+            style="display:block;max-width:100%;height:auto" draggable="false"
           />
+          <div id="region-outline" hidden style="position:absolute;border:2px solid #467452;background:rgba(180,224,90,.25);pointer-events:none"></div></div>
           <input type="hidden" name="preview_token" id="preview-token" />
           <input type="hidden" name="format" value="png" />
         </section>
         <section class="project-panel">
-          <h2>03 · Sensitivity, schedule &amp; destination</h2>
+          <h2>03 · Rules, schedule &amp; destination</h2>
+          <MonitorRuleFields />
           <label>
             Alert threshold
             <select class="input" name="threshold">
@@ -162,6 +168,25 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
     const save = document.querySelector<HTMLButtonElement>('#monitor-save')!;
     const token = document.querySelector<HTMLInputElement>('#preview-token')!;
     let busy = false;
+    const canvas = document.querySelector<HTMLElement>('#region-canvas')!;
+    const img = document.querySelector<HTMLImageElement>('#monitor-baseline')!;
+    const outline = document.querySelector<HTMLElement>('#region-outline')!;
+    let start: {x:number;y:number} | null = null;
+    const point = (event: PointerEvent) => { const rect = img.getBoundingClientRect(); return {x:Math.max(0,Math.min(rect.width,event.clientX-rect.left)),y:Math.max(0,Math.min(rect.height,event.clientY-rect.top))}; };
+    canvas.onpointerdown = e => { if(busy || img.hidden || !img.complete) return; start=point(e); canvas.setPointerCapture(e.pointerId); outline.hidden=false; outline.style.width='0'; outline.style.height='0'; };
+    canvas.onpointermove = e => { if(!start) return; const end=point(e); Object.assign(outline.style,{left:Math.min(start.x,end.x)+'px',top:Math.min(start.y,end.y)+'px',width:Math.abs(end.x-start.x)+'px',height:Math.abs(end.y-start.y)+'px'}); };
+    canvas.onpointerup = e => {
+      if(!start) return; const end=point(e), rect=img.getBoundingClientRect();
+      const factor=img.naturalWidth/rect.width/Number(img.dataset.scale || 2);
+      const values=[Math.floor(Math.min(start.x,end.x)*factor),Math.floor(Math.min(start.y,end.y)*factor),Math.floor(Math.abs(end.x-start.x)*factor),Math.floor(Math.abs(end.y-start.y)*factor)];
+      start=null; if(values[2]<1 || values[3]<1) return;
+      const target = (document.querySelector('#region-tool') as unknown as HTMLSelectElement).value;
+      const input = form.querySelector<HTMLInputElement>(`[name="${target}"]`)!;
+      if(target==='ignore_regions' && input.value.split(';').filter(Boolean).length>=10) { document.querySelector('#monitor-preview-status')!.textContent='Maximum ten ignored regions.'; return; }
+      input.value=target==='ignore_regions' && input.value.trim()?input.value+';'+values.join(','):values.join(',');
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+    };
+    canvas.onpointercancel=()=>{start=null;outline.hidden=true;};
     const invalidate = () => {
       token.value = '';
       save.disabled = true;
@@ -175,7 +200,7 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
       const result = (await response.json()) as {
         error?: { message: string };
         preview_token?: string;
-        capture?: { images: string[] };
+        capture?: { images: string[]; viewport: { scale: number } };
         id?: string;
       };
       if (!response.ok) throw new Error(result.error?.message ?? 'Request failed.');
@@ -200,6 +225,7 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
         token.value = result.preview_token!;
         const img = document.querySelector<HTMLImageElement>('#monitor-baseline')!;
         img.src = result.capture!.images[0];
+        img.dataset.scale = String(result.capture!.viewport.scale);
         img.hidden = false;
         state.textContent = 'Baseline ready. One screenshot used. Review masks, then choose your schedule.';
       } catch (e) {

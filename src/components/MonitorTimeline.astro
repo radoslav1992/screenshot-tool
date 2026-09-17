@@ -1,0 +1,54 @@
+---
+import { env } from 'cloudflare:workers';
+import { fileUrl, safeParseFiles, type CaptureRow } from '../lib/captures';
+import { decodeRunDetail, deliveryLabel, runLabel } from '../lib/monitor-health';
+import { listProjects } from '../lib/projects';
+import type { WatchRunRow } from '../lib/watches';
+interface Props { watchId: string; userId: string; page: number; changedOnly: boolean }
+const { watchId,userId,page,changedOnly } = Astro.props;
+const { results } = await env.DB.prepare(`SELECT * FROM watch_runs WHERE watch_id=? AND user_id=? ${changedOnly?'AND changed=1':''} ORDER BY created_at DESC,id DESC LIMIT 41 OFFSET ?`).bind(watchId,userId,(page-1)*40).all<WatchRunRow>();
+const runs = (results || []).slice(0,40);
+const ids = [...new Set(runs.flatMap(r=>[r.capture_id,r.baseline_capture_id]).filter(Boolean))] as string[];
+const rows = ids.length ? (await env.DB.prepare(`SELECT * FROM captures WHERE user_id=? AND id IN (${ids.map(()=>'?').join(',')})`).bind(userId,...ids).all<CaptureRow>()).results || [] : [];
+const shots = new Map(rows.map(row=>[row.id,row]));
+const url = (id: string | null) => { const row=id?shots.get(id):null; const file=row?safeParseFiles(row.files)[0]:null; return row && file ? fileUrl(row,file,Astro.url.origin):null; };
+const projects = await listProjects(userId);
+const link = (n:number) => `/app/library?collection=monitors&watch=${encodeURIComponent(watchId)}&view=timeline${changedOnly?'&changed=1':''}&page=${n}`;
+---
+<form id="timeline-report" data-watch={watchId} class="stack gap-20">
+<div class="card card--pad stack gap-12">
+<h2 class="h4">Turn changes into a client report</h2>
+<p>Select one or two completed comparisons below. The report stays private until you create a sharing link.</p>
+<label>Client project<select class="input" name="project_id" required><option value="">Choose project</option>{projects.map(p=><option value={p.id}>{p.name}</option>)}</select></label>
+<label>Report title<input class="input" name="title" required maxlength="160" value="Website change review" /></label>
+<button type="submit" class="btn btn--ink" disabled={!projects.length}>Create report from selected changes</button>
+{!projects.length && <a href="/app/projects">Create a project first →</a>}
+<p role="status" id="report-status"></p>
+</div>
+{runs.length===0 && <p class="notice">No {changedOnly?'changed ':''}checks on this page yet.</p>}
+{runs.map(run=>{
+ const before=url(run.baseline_capture_id), after=url(run.capture_id); const decoded=decodeRunDetail(run.detail);
+ return <article class="card card--pad stack gap-12">
+ <div><strong>{runLabel(run)}</strong> · <time datetime={run.created_at}>{new Date(run.created_at).toUTCString()}</time></div>
+ <p class="small muted">{decoded.detail || (run.change_pct!==null?`${run.change_pct}% visually different`:'')}</p>
+ <div class="comparison-pair">
+ <div><span class="eyebrow">Before</span>{before?<a href={before} target="_blank" rel="noopener"><img src={before} loading="lazy" alt="Screenshot before this check" /></a>:<p>Baseline unavailable or expired.</p>}</div>
+ <div><span class="eyebrow">After</span>{after?<a href={after} target="_blank" rel="noopener"><img src={after} loading="lazy" alt="Screenshot after this check" /></a>:<p>Screenshot unavailable or expired.</p>}</div>
+ </div>
+ {run.changed===1 && <p class="small">Email: {deliveryLabel[decoded.delivery.email]} · Webhook: {deliveryLabel[decoded.delivery.webhook]}</p>}
+ {before && after && run.status==='done' && <label><input type="checkbox" name="run" value={run.id} /> Include this comparison in report</label>}
+ </article>;
+})}
+</form>
+<nav class="row-between" aria-label="Timeline pages"><span>{page>1&&<a href={link(page-1)}>← Previous</a>}</span>{results && results.length>40&&page<250&&<a href={link(page+1)}>Next →</a>}</nav>
+<style>.comparison-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.comparison-pair img{width:100%;height:240px;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:12px}@media(max-width:600px){.comparison-pair{grid-template-columns:1fr}}</style>
+<script>
+const form=document.querySelector<HTMLFormElement>('#timeline-report');
+form?.addEventListener('submit',async e=>{
+ e.preventDefault();const state=document.querySelector('#report-status')!;const data=new FormData(form);
+ const selected=data.getAll('run');if(!selected.length||selected.length>2){state.textContent='Select one or two comparisons.';return;}
+ data.set('runs',selected.join(','));const button=form.querySelector<HTMLButtonElement>('button[type="submit"]')!;button.disabled=true;
+ try{const response=await fetch(`/api/watches/${form.dataset.watch}/report`,{method:'POST',body:data});const result=await response.json() as {error?:{message:string};redirect:string};if(!response.ok)throw Error(result.error?.message||'Could not create report.');location.assign(result.redirect);}
+ catch(error){state.textContent=error instanceof Error?error.message:'Could not create report.';button.disabled=false;}
+});
+</script>

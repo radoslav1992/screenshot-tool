@@ -510,8 +510,27 @@ See [the product and growth plan](docs/PRODUCT-PLAN.md) for the agency positioni
 
 The Monitors page now shows capture success and average duration from retained captures in the last seven days, last successful checks, and the most recent alert status. Create/edit forms forecast aggregate scheduled usage before saving, including the remaining calendar-month allowance. Open a monitor to change its frequency; paused monitors stay paused when edited.
 
-Comparison failures preserve the previous baseline and are recorded as errors. Email/webhook status is recorded per changed run; HTTP errors are failures and timeouts are unconfirmed. “Accepted by provider” is not proof of inbox delivery. Old runs have unknown notification status, and notifications are not retried automatically.
+Comparison failures preserve the previous baseline and are recorded as errors. Email/webhook status is recorded per changed run; HTTP errors are failures and timeouts are unconfirmed. “Accepted by provider” is not proof of inbox delivery. Old runs have unknown notification status, and unconfirmed sends are not retried automatically. With migration 0009 applied, explicit failures receive up to two retries on later hourly scheduler runs.
 
 No migration is required: versioned notification metadata uses the existing `watch_runs.detail` field and is decoded by `listRuns` and the dashboard. Direct SQL consumers should recognize the `esc-run-v1:` prefix. Rollbacks to older code will display that metadata as text.
 
 Run `npm run monitor:check` with Node 22.13+ to test forecast boundaries, provider outcomes, SQLite-backed watch execution, and account isolation. Tests mock all external services and do not send email or webhooks.
+
+
+### Monitor workflow update (0009)
+
+Apply `migrations/0009_monitor_workflows.sql` before promoting this release in Cloudflare.
+The three statements are additive and may be run separately in the D1 console. Existing capture data stays intact.
+A successful Workers Build may only upload a version: manually promote the version associated with this commit to production.
+
+- Library → Monitor screenshots: album covers, chronological comparisons, changed-only filtering and a screenshot gallery.
+- In an album, select one or two comparisons and a project to create a private client report. Sharing remains an explicit action.
+- Monitor setup: drag over the preview to watch one rectangle or ignore up to ten. Ignored areas require recapturing the preview, consuming another screenshot. Coordinates remain editable for keyboard use.
+- Alert rules: visual threshold, page text changes, phrase appearance/disappearance, price numbers or selected-element text. Text rules require the Browser Rendering binding; CSS selection is edited as text. A newly selected element establishes its baseline on the next check. A missing element is an error, not a false change alert. Rectangles affect only visual comparison.
+- Monitors → Import: up to 20 URLs or the first 20 same-origin URLs from a page sitemap. Sitemap indexes, redirects, DTDs and files above 512 KB are rejected. Existing URL/device pairs are skipped. Daily is the default. Imports respect monitor slots and the projected remaining/monthly screenshot budget; failures are listed separately. First baselines are captured on the next hourly scheduler tick.
+- Explicit alert failures receive at most three total attempts, on the original run and later hourly ticks. Retries stop for paused/deleted monitors, expired captures, exhausted attempts, or runs older than 24 hours. Accepted and unknown outcomes are never resent. A process lost while sending is marked unknown to avoid duplicate delivery. No provider response bodies or webhook credentials are copied into the retry table.
+- Use the existing Send test notification button on a monitor to verify configuration. Provider acceptance is not confirmation of inbox delivery.
+
+The AI summary integration remains optional and configuration-dependent; this release does not enable an AI binding or change Stripe prices.
+
+Validation: `npm run check`, `npm run workflows:check`, `npm run monitor:check`, `npm run library:check`, `npm run projects:check`, `npm run build`. Automated checks use SQLite and mocked external services; they do not send real alerts.

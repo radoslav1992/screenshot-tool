@@ -1,0 +1,15 @@
+---
+import { defaultRule, type MonitorRule } from '../lib/monitor-rules';
+interface Props { rule?: MonitorRule }
+const { rule = defaultRule } = Astro.props;
+---
+<div class="stack gap-12">
+<label>Alert when
+<select class="input" name="rule_kind">
+{[['visual','Visual changes exceed the threshold'],['text','Page text changes'],['appeared','A phrase appears'],['disappeared','A phrase disappears'],['price','Numbers in a price element change'],['element','Text in a selected element changes']].map(([value,label]) => <option value={value} selected={rule.kind===value}>{label}</option>)}
+</select></label>
+<label>Phrase to watch<input class="input" name="rule_phrase" value={rule.phrase} maxlength="200" placeholder="Out of stock" /></label>
+<label>Element CSS selector (required for price and element rules)<input class="input" name="rule_selector" value={rule.selector} maxlength="200" placeholder=".product-price" /></label>
+<p class="small muted">Phrase matching ignores case. Price rules compare numbers in the selected element; select a price-only element. Text rules use collected page text and do not use the visual threshold or rectangular masks.</p>
+<label>Watched rectangle for visual comparisons (optional)<input class="input" name="watch_region" value={rule.region} placeholder="x,y,width,height" maxlength="100" /></label>
+</div>

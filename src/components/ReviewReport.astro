@@ -30,7 +30,7 @@ const { project, report, captures, token } = Astro.props;
       const src = token ? `/r/${token}/${c.position}` : `/api/reports/${report.id}/image?position=${c.position}`;
       return (
         <figure>
-          <h2>{['Before · baseline', 'After · current', 'Mobile · before', 'Mobile · after'][c.position]}</h2>
+          <h2>{['Before · baseline', 'After · current', 'Comparison 2 · before', 'Comparison 2 · after'][c.position]}</h2>
           {file ? (
             <>
               <p class="report-meta">

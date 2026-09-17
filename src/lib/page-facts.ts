@@ -17,6 +17,7 @@ import type { RawPageFacts } from './page-facts-fn';
  */
 
 export interface PageFacts {
+  monitored_element?: { selector: string; found: boolean; text: string };
   /** Where the capture ended up, after redirects. */
   final_url: string;
   status: number | null;

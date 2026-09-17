@@ -20,6 +20,7 @@
     "redact:check": "node scripts/redact-check.mjs",
     "projects:check": "node scripts/projects-check.mjs",
     "library:check": "node --experimental-strip-types scripts/library-check.mjs",
+    "workflows:check": "node --experimental-strip-types scripts/monitor-workflows-check.mjs",
     "monitor:check": "node --experimental-strip-types scripts/monitor-check.mjs && node --experimental-strip-types scripts/monitor-integration-check.mjs",
     "files:check": "node --experimental-strip-types scripts/file-access-check.mjs",
     "consent:check": "node scripts/consent-check.mjs",

@@ -428,6 +428,14 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
       try {
         const raw = await page.evaluate(readFactsInPage);
         facts = buildFacts({ raw, finalUrl, status, redirects });
+        if (options.monitorSelector) {
+          facts.monitored_element = await page.evaluate((selector: string) => {
+            try {
+              const el = document.querySelector(selector);
+              return { selector, found: !!el, text: (el?.textContent || '').slice(0, 2000) };
+            } catch { return { selector, found: false, text: '' }; }
+          }, options.monitorSelector);
+        }
       } catch (error) {
         // Facts are an extra. A page that will not be read is still a page that
         // can be photographed.

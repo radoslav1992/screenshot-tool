@@ -1,0 +1,57 @@
+---
+import Base from '../layouts/Base.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { COMPANY } from '../lib/company';
+const user = Astro.locals.user;
+---
+<Base title="Support — Easy Screen Capture">
+  <div class="page">
+    <SiteHeader user={user} />
+    <main class="wrap prose-wrap stack gap-20" style="padding-block: 48px 64px">
+      <header class="stack gap-8">
+        <p class="small muted">Easy Screen Capture · Web and iOS help</p>
+        <h1 class="h2">How can we help?</h1>
+        <p>Get help with your account, captures, monitor history or notifications.</p>
+      </header>
+      <section class="stack gap-8">
+        <h2 class="h4">Contact support</h2>
+        <p>Email <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>. Include the device and app or browser version,
+          what you were trying to do, and any error message. Please do not send passwords, API keys or private screenshots.</p>
+      </section>
+      <section class="stack gap-8">
+        <h2 class="h4">Signing in and verifying your email</h2>
+        <p>Use the same Easy Screen Capture email and password on the web and in the iOS app.
+          Check your inbox and spam folder for the verification message. In the iOS account screen,
+          choose Resend verification email if needed. Contact us if you cannot access your account.</p>
+      </section>
+      <section class="stack gap-8">
+        <h2 class="h4">Finding a capture</h2>
+        <p>Regular captures are separate from monitor albums. Open the album for the relevant monitor to see its checks.
+          Files are kept for your plan's retention period. Deleted or expired captures are no longer available.</p>
+      </section>
+      <section class="stack gap-8">
+        <h2 class="h4">Not receiving change alerts?</h2>
+        <p>The first monitor check establishes a baseline. A later check must detect a change above the configured
+          threshold before a change alert is sent. Confirm that the monitor is active and your account has capture allowance.</p>
+        <p>For iOS push, open You → Push notifications → Enable change alerts and allow notifications.
+          Check notification permissions and Focus settings on your device. Email alerts are a separate monitor preference;
+          check your account email address and spam folder.</p>
+      </section>
+      <section class="stack gap-8">
+        <h2 class="h4">Sharing a page from Safari</h2>
+        <p>Open Safari's share sheet, choose Easy Capture and save the URL. Then open the Easy Capture app
+          to review the capture settings and start the capture.</p>
+      </section>
+      <section class="stack gap-8" id="delete-account">
+        <h2 class="h4">Deleting your account and data</h2>
+        <p>In the iOS app, open You → Delete my account, enter your password and confirm.
+          You can also delete your account from the website's account screen. This permanently deletes the account
+          and its captures and cancels an active subscription. Use individual capture deletion if you only want to remove one image.</p>
+        <p>If you cannot sign in, email support for help. Read the <a href="/privacy">privacy policy</a>
+          for retention details and data requests.</p>
+      </section>
+    </main>
+    <SiteFooter />
+  </div>
+</Base>

@@ -1,3 +1,5 @@
+import { refreshAppleUser } from '../../../lib/apple-billing';
+import { toSessionUser, type UserRow } from '../../../lib/auth';
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getUsage } from '../../../lib/captures';
@@ -12,7 +14,11 @@ export const prerender = false;
 export const GET: APIRoute = async ({ locals }) => {
   if (!locals.user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
   try {
-    const user = locals.user;
+    try { await refreshAppleUser(locals.user.id); }
+    catch { console.error('[apple] profile refresh failed; using recorded expiry'); }
+    const current = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(locals.user.id).first<UserRow>();
+    if (!current) throw new HttpError(401, 'unauthorized', 'Sign in first.');
+    const user = toSessionUser(current);
     const row = await env.DB.prepare('SELECT email_verified_at FROM users WHERE id = ?')
       .bind(user.id).first<{ email_verified_at: string | null }>();
     return json({

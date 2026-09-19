@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const db=new DatabaseSync(':memory:');
-db.exec(`CREATE TABLE users(id TEXT,plan TEXT); CREATE TABLE captures(id TEXT PRIMARY KEY,user_id TEXT,created_at TEXT,files TEXT,bytes INTEGER); CREATE TABLE watches(baseline_capture_id TEXT); CREATE TABLE email_verifications(expires_at TEXT,used_at TEXT); CREATE TABLE sessions(expires_at TEXT); INSERT INTO users VALUES('free','free'),('paid','business');`);
+db.exec(`CREATE TABLE users(id TEXT,plan TEXT,apple_expires_at TEXT); CREATE TABLE captures(id TEXT PRIMARY KEY,user_id TEXT,created_at TEXT,files TEXT,bytes INTEGER); CREATE TABLE watches(baseline_capture_id TEXT); CREATE TABLE email_verifications(expires_at TEXT,used_at TEXT); CREATE TABLE sessions(expires_at TEXT); INSERT INTO users VALUES('free','free',NULL),('paid','business',NULL);`);
 const add=(id,user='free',date='2025-01-01',files=JSON.stringify([{key:id}]))=>db.prepare('INSERT INTO captures VALUES(?,?,?,?,?)').run(id,user,date,files,100);
 for(let i=0;i<120;i++)add(`old-${i}`);
 add('baseline');db.exec("INSERT INTO watches VALUES('baseline')");add('recent','free','2026-09-18');add('paid-recent','paid','2026-01-01');add('paid-old','paid');add('fail','free','2024-01-01');add('corrupt','free','2024-01-01','invalid');

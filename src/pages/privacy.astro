@@ -41,7 +41,7 @@ const updated = '18 September 2026';
           <li>· <b>Captures:</b> the URL and host you captured, the device, viewport, mode and format, status, duration, byte size, and the rendered image or PDF files.</li>
           <li>· <b>Usage:</b> a monthly counter of captures made through the app and through the API, and short-lived per-minute rate-limit counters.</li>
           <li>· <b>Mobile notifications:</b> if enabled, your APNs device token, notification environment, account/session association, registration time, and delivery status for monitor alerts.</li>
-          <li>· <b>Billing:</b> if you subscribe, your Stripe customer and subscription identifiers, plan, status, billing interval and paid-through date. Card details go to Stripe directly and never reach our servers.</li>
+          <li>· <b>Billing:</b> if you subscribe, your Stripe customer and subscription identifiers, plan, status, billing interval and paid-through date. For Apple purchases, we store a random account-linking token, transaction-chain identifier, product, environment and expiry to verify access, renewals and refunds. Payment details go directly to Stripe or Apple and never reach our servers.</li>
         </ul>
         <p class="small muted">
           We do not run analytics, advertising or third-party trackers, and we do not build profiles or make automated
@@ -159,7 +159,7 @@ const updated = '18 September 2026';
           the EU–US Data Privacy Framework. We do not sell your data or share it for anyone else's marketing. We
           disclose data to authorities only where the law requires it.
         </p>
-        <p class="small muted">Apple delivers optional iOS alerts through Apple Push Notification service, using the device token and notification payload described below.</p>
+        <p class="small muted">Apple processes iOS subscription purchases and provides transaction status used to verify your plan. Apple also delivers optional iOS alerts through Apple Push Notification service, using the device token and notification payload described below.</p>
       </section>
 
       <section class="stack gap-8">

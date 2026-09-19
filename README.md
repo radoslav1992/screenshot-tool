@@ -181,7 +181,7 @@ Full reference: `/docs`.
 
 ## Abuse and cost controls
 
-The free tier is generous (200 screenshots/month, about $0.06 of infrastructure), so the limits that
+The free tier is generous (20 screenshots/month for new accounts; existing free accounts retain 200), so the limits that
 matter are the ones protecting the render pool and storage rather than the monthly count.
 
 - **Retention.** A cron trigger (`0 3 * * *`) sweeps captures past their plan's `historyDays`

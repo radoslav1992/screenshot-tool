@@ -235,6 +235,8 @@ export async function createCheckoutSession(input: {
   interval: BillingInterval;
   origin: string;
 }): Promise<string> {
+  const apple = await env.DB.prepare('SELECT apple_expires_at FROM users WHERE id=?').bind(input.user.id).first<{apple_expires_at: string | null}>();
+  if ((apple?.apple_expires_at ?? '') > new Date().toISOString()) throw new HttpError(409, 'already_subscribed', 'Manage your Apple subscription before starting a different subscription.');
   const price = priceIdFor(input.plan, input.interval);
   if (!price) {
     throw new HttpError(

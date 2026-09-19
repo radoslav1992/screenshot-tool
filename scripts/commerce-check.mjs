@@ -8,9 +8,9 @@ const plans = PLAN_ORDER.map(id => ({
   pdf: PLANS[id].formats.includes('pdf'), api: PLANS[id].api, team: id === 'business',
 }));
 const choose = input => estimatePlan({ pages: 100, sizes: 1, monitors: 0, ...input }, plans);
-assert.equal(choose({}).plan.id, 'free');
-assert.equal(choose({pages: 200}).plan.id, 'free');
-assert.equal(choose({pages: 201}).plan.id, 'plus');
+assert.equal(choose({}).plan.id, 'lite');
+assert.equal(choose({pages: 20}).plan.id, 'free');
+assert.equal(choose({pages: 21}).plan.id, 'lite');
 assert.equal(choose({pdf: true}).plan.id, 'plus');
 assert.equal(choose({api: true}).plan.id, 'pro');
 assert.equal(choose({team: true}).plan.id, 'business');

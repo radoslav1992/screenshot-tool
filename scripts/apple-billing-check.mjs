@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { build } from 'esbuild';
+import { readFileSync,mkdtempSync,rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const db=new DatabaseSync(':memory:');db.exec(`PRAGMA foreign_keys=ON;CREATE TABLE users(id TEXT PRIMARY KEY,plan TEXT);
+INSERT INTO users VALUES('old','free'),('paid','plus');`);
+db.exec(readFileSync('migrations/0011_apple_lite.sql','utf8'));
+db.exec("INSERT INTO users(id,plan) VALUES('new','free'),('other','free')");
+assert.equal(db.prepare("SELECT free_quota FROM users WHERE id='old'").get().free_quota,200);
+assert.equal(db.prepare("SELECT free_quota FROM users WHERE id='new'").get().free_quota,20);
+const statement=(sql,args=[])=>({bind:(...v)=>statement(sql,v),first:async()=>db.prepare(sql).get(...args)??null,all:async()=>({results:db.prepare(sql).all(...args)}),run:async()=>({meta:db.prepare(sql).run(...args)})});
+const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+const pk=Buffer.from(await crypto.subtle.exportKey('pkcs8',keys.privateKey)).toString('base64');
+globalThis.__appleEnv={APPLE_IAP_KEY_ID:'test',APPLE_IAP_ISSUER_ID:'issuer',APPLE_IAP_PRIVATE_KEY:`-----BEGIN PRIVATE KEY-----\n${pk}\n-----END PRIVATE KEY-----`,DB:{prepare:sql=>statement(sql),batch:async stmts=>{db.exec('BEGIN');try{const out=[];for(const s of stmts)out.push(await s.run());db.exec('COMMIT');return out;}catch(e){db.exec('ROLLBACK');throw e;}}}};
+const dir=mkdtempSync(join(tmpdir(),'apple-check-'));const originalFetch=globalThis.fetch;
+const jws=o=>`e30.${Buffer.from(JSON.stringify(o)).toString('base64url')}.signature`;
+try{
+await build({entryPoints:['src/lib/apple-billing.ts','src/lib/auth.ts'],outdir:dir,bundle:true,platform:'node',format:'esm',outExtension:{'.js':'.mjs'},plugins:[{name:'env',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const env=globalThis.__appleEnv;',loader:'js'}));}}]});
+const apple=await import(pathToFileURL(join(dir,'apple-billing.mjs')));const {toSessionUser}=await import(pathToFileURL(join(dir,'auth.mjs')));
+const token=await apple.appleAccountToken('new');assert.equal(await apple.appleAccountToken('new'),token);
+let t={transactionId:'123',originalTransactionId:'100',bundleId:apple.APPLE_BUNDLE,productId:apple.APPLE_PRODUCTS[0],appAccountToken:token,environment:'Production',inAppOwnershipType:'PURCHASED',expiresDate:Date.now()+86400000};let status=1;let outage=false;
+globalThis.fetch=async(url,opts)=>{
+assert.match(url,/^https:\/\/api.storekit.itunes.apple.com\/inApps\/v1\//);assert.equal(opts.redirect,'error');
+const [h,c,s]=opts.headers.Authorization.slice(7).split('.');
+assert(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,Buffer.from(s,'base64url'),new TextEncoder().encode(`${h}.${c}`)));
+assert.equal(JSON.parse(Buffer.from(c,'base64url')).aud,'appstoreconnect-v1');
+if(outage)return new Response(null,{status:503});
+return Response.json(url.includes('/transactions/')?{signedTransactionInfo:jws(t)}:{bundleId:apple.APPLE_BUNDLE,environment:'Production',data:[{lastTransactions:[{originalTransactionId:'100',status,signedTransactionInfo:jws(t)}]}]});};
+await assert.rejects(apple.verifyApplePurchase('new','123','Sandbox'));
+await assert.rejects(apple.verifyApplePurchase('other','123','Production'));
+assert.equal((await apple.verifyApplePurchase('new','123','Production')).active,true);
+const current=()=>toSessionUser(db.prepare("SELECT * FROM users WHERE id='new'").get());assert.equal(current().plan,'lite');
+await apple.verifyApplePurchase('new','123','Production');assert.equal(db.prepare('SELECT count(*) n FROM apple_subscriptions').get().n,1);
+t.productId='unapproved';await assert.rejects(apple.verifyApplePurchase('new','123','Production'));t.productId=apple.APPLE_PRODUCTS[0];
+status=5;t.revocationDate=Date.now();assert.equal((await apple.verifyApplePurchase('new','123','Production')).active,false);assert.equal(current().plan,'free');
+status=1;delete t.revocationDate;t.expiresDate=Date.now()-1000;await apple.verifyApplePurchase('new','123','Production');assert.equal(current().plan,'free');
+t.expiresDate=Date.now()+86400000;await apple.verifyApplePurchase('new','123','Production');db.exec("UPDATE users SET plan='plus' WHERE id='new'");assert.equal(current().plan,'plus');
+outage=true;await assert.rejects(apple.verifyApplePurchase('new','123','Production'));assert.equal(current().plan,'plus');
+console.log('Apple checks passed: grandfathering, JWT signature, account binding, product allowlist, sandbox isolation, idempotency, refunds, expiry, Stripe precedence, provider outage.');
+}finally{globalThis.fetch=originalFetch;delete globalThis.__appleEnv;db.close();rmSync(dir,{recursive:true,force:true});}

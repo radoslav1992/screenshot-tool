@@ -1,3 +1,4 @@
+import { refreshAppleSubscriptions } from './lib/apple-billing';
 import { drainPush } from './lib/push';
 import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
@@ -42,6 +43,8 @@ export default {
           console.error('[watch] sweep failed', error);
         }),
     );
+
+    ctx.waitUntil(refreshAppleSubscriptions().catch(() => console.error('[apple] refresh failed')));
 
     ctx.waitUntil(drainPush().catch(() => console.error('[push] retry sweep failed')));
 

@@ -53,12 +53,12 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     const { results } = await env.DB.prepare(
       `SELECT c.* FROM captures c
        JOIN users u ON u.id = c.user_id
-       WHERE u.plan = ? AND c.created_at < ?
+       WHERE (CASE WHEN u.plan = 'free' AND u.apple_expires_at > ? THEN 'lite' ELSE u.plan END) = ? AND c.created_at < ?
          AND c.id NOT IN (SELECT baseline_capture_id FROM watches WHERE baseline_capture_id IS NOT NULL)
        ORDER BY c.created_at ASC
        LIMIT ?`,
     )
-      .bind(planId, cutoff, MAX_PER_PLAN)
+      .bind(new Date(now).toISOString(), planId, cutoff, MAX_PER_PLAN)
       .all<CaptureRow>();
 
     const expired = results ?? [];

@@ -1,4 +1,4 @@
-export type PlanId = 'free' | 'plus' | 'pro' | 'business';
+export type PlanId = 'free' | 'lite' | 'plus' | 'pro' | 'business';
 
 export interface Plan {
   id: PlanId;
@@ -38,21 +38,37 @@ export const PLANS: Record<PlanId, Plan> = {
     priceYearly: 0,
     tagline: 'Your first client capture and web report',
     description:
-      '200 screenshots a month. Every device, capture mode and ready-made size. Files carry a small easyscreencapture.com mark.',
-    quota: 200,
+      '20 screenshots a month. Every device, capture mode and ready-made size. Files carry a small easyscreencapture.com mark.',
+    quota: 20,
     api: false,
     formats: ['png', 'jpg'],
     customViewport: false,
     historyDays: 7,
     watermark: true,
     features: [
-      { text: '200 screenshots / month', included: true },
+      { text: '20 screenshots / month', included: true },
       { text: 'Private projects & batch captures', included: true },
       { text: 'PNG/JPG & shareable web reports', included: true },
       { text: 'Without the watermark', included: false },
       { text: 'Watched pages', included: false },
     ],
     cta: 'Start free',
+  },
+
+  lite: {
+    id: 'lite', name: 'Lite', priceMonthly: 2.99, priceYearly: 24.99,
+    tagline: 'Everyday screenshots, saved and shared',
+    description: '500 screenshots per calendar month, no watermark, and 30 days of cloud history. Save and share full-page screenshots across your devices.',
+    quota: 500, api: false, formats: ['png', 'jpg'], customViewport: false,
+    historyDays: 30, watermark: false,
+    priceEnv: { monthly: 'STRIPE_PRICE_LITE_MONTHLY', yearly: 'STRIPE_PRICE_LITE_YEARLY' },
+    features: [
+      { text: '500 screenshots / month', included: true },
+      { text: 'No watermark', included: true },
+      { text: 'Full-page PNG/JPG screenshots', included: true },
+      { text: '30-day cloud history', included: true },
+      { text: 'Scheduled monitors', included: false },
+    ], cta: 'Get Lite',
   },
 
   plus: {
@@ -129,10 +145,10 @@ export const PLANS: Record<PlanId, Plan> = {
   },
 };
 
-export const PLAN_ORDER: PlanId[] = ['free', 'plus', 'pro', 'business'];
+export const PLAN_ORDER: PlanId[] = ['free', 'lite', 'plus', 'pro', 'business'];
 
 /** Plans that can be bought. Free is the default, not a purchase. */
-export const PAID_PLANS: PlanId[] = ['plus', 'pro', 'business'];
+export const PAID_PLANS: PlanId[] = ['lite', 'plus', 'pro', 'business'];
 
 export function getPlan(id: string | null | undefined): Plan {
   return PLANS[(id as PlanId) ?? 'free'] ?? PLANS.free;
@@ -150,6 +166,7 @@ export function cheapestPlanWith(includes: (plan: Plan) => boolean): Plan {
 /** Requests per minute allowed on the public API, by plan. */
 export const API_RATE_LIMIT: Record<PlanId, number> = {
   free: 0,
+  lite: 0,
   plus: 0,
   pro: 60,
   business: 300,
@@ -164,6 +181,7 @@ export const API_RATE_LIMIT: Record<PlanId, number> = {
  */
 export const APP_RATE_LIMIT: Record<PlanId, number> = {
   free: 10,
+  lite: 30,
   plus: 60,
   pro: 120,
   business: 600,
@@ -203,6 +221,7 @@ export function frequencyLabel(frequency: string): string {
  */
 export const WATCH_LIMIT: Record<PlanId, number> = {
   free: 0,
+  lite: 0,
   plus: 5,
   pro: 25,
   business: 100,
@@ -214,6 +233,7 @@ export const WATCH_LIMIT: Record<PlanId, number> = {
  */
 export const WATCH_FREQUENCIES: Record<PlanId, WatchFrequency[]> = {
   free: [],
+  lite: [],
   plus: ['daily', 'weekly'],
   pro: ['hourly', 'daily', 'weekly'],
   business: ['hourly', 'daily', 'weekly'],

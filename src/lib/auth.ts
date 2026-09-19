@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import type { PlanId } from './plans';
+import { getPlan, type PlanId } from './plans';
 import { prefixedId, randomId, randomToken, sha256Hex, timingSafeEqual, toHex } from './ids';
 import { HttpError } from './http';
 
@@ -28,6 +28,7 @@ export interface SessionUser {
   plan: PlanId;
   periodStart: string;
   createdAt: string;
+  freeQuota?: number;
 }
 
 export interface UserRow {
@@ -40,6 +41,8 @@ export interface UserRow {
   period_start: string;
   created_at: string;
   updated_at: string;
+  free_quota?: number;
+  apple_expires_at?: string | null;
 }
 
 export function toSessionUser(row: UserRow): SessionUser {
@@ -47,7 +50,8 @@ export function toSessionUser(row: UserRow): SessionUser {
     id: row.id,
     email: row.email,
     name: row.name,
-    plan: (row.plan as PlanId) ?? 'free',
+    plan: getPlan(row.plan).id === 'free' && (row.apple_expires_at ?? '') > new Date().toISOString() ? 'lite' : getPlan(row.plan).id,
+    freeQuota: row.free_quota ?? 20,
     periodStart: row.period_start,
     createdAt: row.created_at,
   };

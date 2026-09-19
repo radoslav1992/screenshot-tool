@@ -132,7 +132,7 @@ export async function getUsage(user: SessionUser): Promise<UsageSnapshot> {
     .bind(user.id, period)
     .first<{ used: number; via_app: number; via_api: number; via_watch: number }>();
 
-  const quota = getPlan(user.plan).quota;
+  const quota = user.plan === 'free' ? (user.freeQuota ?? getPlan('free').quota) : getPlan(user.plan).quota;
   const used = row?.used ?? 0;
   const now = new Date();
   const renews = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));

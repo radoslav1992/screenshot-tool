@@ -8,6 +8,13 @@ declare namespace Cloudflare {
     RATE: KVNamespace;
     BROWSER: Fetcher;
 
+    APPLE_IAP_KEY_ID?: string;
+    APPLE_IAP_ISSUER_ID?: string;
+    APPLE_IAP_PRIVATE_KEY?: string;
+    APPLE_IAP_WEBHOOK_SECRET?: string;
+    APPLE_SANDBOX_USER_IDS?: string;
+    STRIPE_PRICE_LITE_MONTHLY?: string;
+    STRIPE_PRICE_LITE_YEARLY?: string;
     APNS_KEY_ID?: string;
     APNS_TEAM_ID?: string;
     APNS_PRIVATE_KEY?: string;

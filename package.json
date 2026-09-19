@@ -27,7 +27,9 @@
     "fullpage:check": "node scripts/fullpage-check.mjs",
     "stripe:check": "node --experimental-strip-types scripts/stripe-check.mjs",
     "commerce:check": "node --experimental-strip-types scripts/commerce-check.mjs",
-    "push:check": "node --experimental-strip-types scripts/push-check.mjs"
+    "push:check": "node --experimental-strip-types scripts/push-check.mjs",
+    "apple:check": "node scripts/apple-billing-check.mjs",
+    "retention:check": "node scripts/retention-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.7",

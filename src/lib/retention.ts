@@ -9,15 +9,15 @@ export interface SweepResult {
   bytesFreed: number;
   tokensPurged: number;
   truncated: boolean;
+  failed: number;
 }
 
 
 /**
- * A single sweep deletes at most this many captures. Cron invocations have a
- * CPU budget, and R2 deletes are one subrequest each — better to trim a bounded
- * slice every run than to risk being cut off halfway through.
+ * Each plan gets a bounded batch every hour so one busy plan cannot consume
+ * the entire sweep. Keep DELETE statements below D1’s parameter limit.
  */
-const MAX_PER_SWEEP = 500;
+const MAX_PER_PLAN = 50;
 
 function cutoffFor(days: number, now: number): string {
   return new Date(now - days * 86_400_000).toISOString();
@@ -38,16 +38,10 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     bytesFreed: 0,
     tokensPurged: 0,
     truncated: false,
+    failed: 0,
   };
 
-  let budget = MAX_PER_SWEEP;
-
   for (const planId of PLAN_ORDER) {
-    if (budget <= 0) {
-      result.truncated = true;
-      break;
-    }
-
     const plan = getPlan(planId);
     const cutoff = cutoffFor(plan.historyDays, now);
 
@@ -64,36 +58,39 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
        ORDER BY c.created_at ASC
        LIMIT ?`,
     )
-      .bind(planId, cutoff, budget)
+      .bind(planId, cutoff, MAX_PER_PLAN)
       .all<CaptureRow>();
 
     const expired = results ?? [];
     result.scanned += expired.length;
     if (!expired.length) continue;
-    if (expired.length === budget) result.truncated = true;
-    budget -= expired.length;
-
+    if (expired.length === MAX_PER_PLAN) result.truncated = true;
+    const ids: string[] = [];
     for (const row of expired) {
-      const files = safeParseFiles(row.files);
-      await Promise.all(
-        files.map((file) =>
-          env.SHOTS.delete(file.key).catch((error) => {
-            // A missing object is fine; anything else should not stop the sweep.
-            console.error(`[retention] failed to delete ${file.key}`, error);
-          }),
-        ),
-      );
-      result.filesDeleted += files.length;
-      result.bytesFreed += row.bytes;
+      try {
+        // Preserve the manifest for retries if any object deletion fails.
+        const manifest = JSON.parse(row.files);
+        if (!Array.isArray(manifest) || manifest.some(file => !file || typeof file.key !== 'string' || !file.key)) {
+          throw new Error('Invalid capture file manifest');
+        }
+        const files = safeParseFiles(row.files);
+        if (!files.length && row.bytes > 0) throw new Error('Missing capture file manifest');
+        if (files.length) await env.SHOTS.delete(files.map(file => file.key));
+        ids.push(row.id);
+        result.filesDeleted += files.length;
+        result.bytesFreed += row.bytes;
+      } catch (error) {
+        result.failed++;
+        console.error(`[retention] capture ${row.id} retained for retry`, error);
+      }
     }
-
-    // Delete the rows in one statement per plan rather than one per capture.
-    const ids = expired.map((row) => row.id);
-    const placeholders = ids.map(() => '?').join(',');
-    const deleted = await env.DB.prepare(`DELETE FROM captures WHERE id IN (${placeholders})`)
-      .bind(...ids)
-      .run();
-    result.deleted += deleted.meta.changes ?? ids.length;
+    // At most 50 binds, within D1's statement parameter limit.
+    if (ids.length) {
+      const placeholders = ids.map(() => '?').join(',');
+      const deleted = await env.DB.prepare(`DELETE FROM captures WHERE id IN (${placeholders})`)
+        .bind(...ids).run();
+      result.deleted += deleted.meta.changes ?? 0;
+    }
   }
 
   // Expired or spent verification tokens are worthless; keep the table small.

@@ -13,18 +13,11 @@ import { runProjectDigests } from './lib/digests';
  * `main` here instead of at the adapter.
  */
 
-/** The hour (UTC) the nightly retention sweep runs on. */
-const RETENTION_HOUR = 3;
 
 export default {
   fetch: astro.fetch,
 
-  /*
-   * The trigger fires hourly because watches can be checked hourly. Retention is
-   * still a once-a-day job, so it is gated on the hour rather than given a
-   * second cron expression — one schedule is easier to reason about than two,
-   * and `scheduled` has no way to tell which expression woke it.
-   */
+  /** Watches and bounded retention batches share the hourly trigger. */
   async scheduled(event: ScheduledController, _env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(event.scheduledTime);
 
@@ -56,14 +49,12 @@ export default {
 
     ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
 
-    if (now.getUTCHours() !== RETENTION_HOUR) return;
-
     ctx.waitUntil(
-      sweepExpiredCaptures()
+      sweepExpiredCaptures(now.getTime())
         .then((result) => {
           console.log(
             `[retention] scanned=${result.scanned} deleted=${result.deleted} files=${result.filesDeleted} ` +
-              `bytes=${result.bytesFreed} tokens=${result.tokensPurged} truncated=${result.truncated}`,
+              `bytes=${result.bytesFreed} tokens=${result.tokensPurged} failed=${result.failed} truncated=${result.truncated}`,
           );
         })
         .catch((error) => {

@@ -18,6 +18,7 @@ export const GET: APIRoute = async ({ locals }) => {
     return json({
       user: { id: user.id, email: user.email, name: user.name },
       plan: getPlan(user.plan).name,
+      retentionDays: getPlan(user.plan).historyDays,
       verified: !verificationEnabled() || Boolean(row?.email_verified_at),
       usage: await getUsage(user),
       frequencies: allowedFrequencies(user.plan),

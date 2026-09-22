@@ -26,7 +26,8 @@ async function apiToken() {
 async function appleGet(path: string, environment: Environment): Promise<any> {
   if(!appleConfigured()) throw new HttpError(503,'billing_unavailable','Apple purchases are not available yet.');
   const host=environment==='Production'?'api.storekit.itunes.apple.com':'api.storekit-sandbox.itunes.apple.com';
-  const response=await fetch(`https://${host}/inApps/v1/${path}`,{headers:{Authorization:`Bearer ${await apiToken()}`},redirect:'error',signal:AbortSignal.timeout(15000)});
+  // Workers supports manual redirects; the non-2xx check below rejects redirects without forwarding credentials.
+  const response=await fetch(`https://${host}/inApps/v1/${path}`,{headers:{Authorization:`Bearer ${await apiToken()}`},redirect:'manual',signal:AbortSignal.timeout(15000)});
   if(!response.ok) throw new HttpError(502,'apple_unavailable','Apple could not verify this purchase. Try Restore purchases shortly.');
   return response.json();
 }

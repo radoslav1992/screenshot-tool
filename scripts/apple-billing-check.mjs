@@ -23,7 +23,7 @@ const apple=await import(pathToFileURL(join(dir,'apple-billing.mjs')));const {to
 const token=await apple.appleAccountToken('new');assert.equal(await apple.appleAccountToken('new'),token);
 let t={transactionId:'123',originalTransactionId:'100',bundleId:apple.APPLE_BUNDLE,productId:apple.APPLE_PRODUCTS[0],appAccountToken:token,environment:'Production',inAppOwnershipType:'PURCHASED',expiresDate:Date.now()+86400000};let status=1;let outage=false;
 globalThis.fetch=async(url,opts)=>{
-assert.match(url,/^https:\/\/api.storekit.itunes.apple.com\/inApps\/v1\//);assert.equal(opts.redirect,'error');
+assert.match(url,/^https:\/\/api.storekit.itunes.apple.com\/inApps\/v1\//);assert.equal(opts.redirect,'manual');
 const [h,c,s]=opts.headers.Authorization.slice(7).split('.');
 assert(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,Buffer.from(s,'base64url'),new TextEncoder().encode(`${h}.${c}`)));
 assert.equal(JSON.parse(Buffer.from(c,'base64url')).aud,'appstoreconnect-v1');

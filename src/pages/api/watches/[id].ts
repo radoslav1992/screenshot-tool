@@ -10,6 +10,7 @@ import {
   runWatch,
   setWatchStatus,
   setWatchFrequency,
+  setWatchThreshold,
   toWatchDTO,
 } from '../../../lib/watches';
 
@@ -48,7 +49,11 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     const watch = await owned(params.id, user.id);
     const body = await readBody(request);
     const action = body.action ?? '';
-    if (['schedule', 'resume', 'run'].includes(action)) await assertVerified(user);
+    if (['schedule', 'threshold', 'resume', 'run'].includes(action)) await assertVerified(user);
+    if (action === 'threshold') {
+      await setWatchThreshold(watch, user, body.threshold ?? '');
+      return json(toWatchDTO((await getWatch(watch.id))!));
+    }
     if (action === 'schedule') {
       await setWatchFrequency(watch, user, body.frequency ?? '');
       return json(toWatchDTO((await getWatch(watch.id))!));
@@ -71,7 +76,7 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
       return json({ ...toWatchDTO(updated!), outcome });
     }
 
-    throw badRequest('`action` must be one of: pause, resume, run, schedule.', 'action');
+    throw badRequest('`action` must be one of: pause, resume, run, schedule, threshold.', 'action');
   } catch (error) {
     return toHttpError(error, 'watches.update', 'Could not update that watch.').toResponse();
   }

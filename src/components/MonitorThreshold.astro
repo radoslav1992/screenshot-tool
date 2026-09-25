@@ -1,0 +1,34 @@
+---
+interface Props { value?: number }
+const { value = 1 } = Astro.props;
+const presets = [[0.1, 'Sensitive'], [1, 'Balanced'], [5, 'Major changes']] as const;
+const custom = !presets.some(([number]) => number === value);
+---
+<div class="stack gap-8" data-monitor-threshold>
+  <label>Visual alert threshold
+    <select class="input" data-threshold-preset>
+      {presets.map(([number, label]) => <option value={number} selected={value === number}>{label} · {number}%</option>)}
+      <option value="custom" selected={custom}>Custom</option>
+    </select>
+  </label>
+  <label data-threshold-custom hidden={!custom}>Custom percentage
+    <input class="input" name="threshold" type="number" min="0.1" max="100" step="any" required value={value} />
+  </label>
+  <p class="small muted">Percentage of the compared image that must change before we notify you. Choose 0.1%–100%. Lower values can produce more alerts. Applies only to visual rules; page dimension changes also trigger an alert. Changes apply to future checks.</p>
+</div>
+<script>
+  document.querySelectorAll<HTMLElement>('[data-monitor-threshold]').forEach(root => {
+    const preset = root.querySelector('[data-threshold-preset]') as unknown as HTMLSelectElement;
+    const custom = root.querySelector<HTMLElement>('[data-threshold-custom]')!;
+    const input = root.querySelector<HTMLInputElement>('[name="threshold"]')!;
+    preset.addEventListener('change', () => {
+      custom.hidden = preset.value !== 'custom';
+      if (preset.value !== 'custom') input.value = preset.value;
+      else input.focus();
+    });
+  });
+</script>
+
+<style>
+  [data-threshold-custom][hidden] { display: none; }
+</style>

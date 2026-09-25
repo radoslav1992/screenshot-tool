@@ -6,7 +6,7 @@ const { rule = defaultRule } = Astro.props;
 <div class="stack gap-12">
 <label>Alert when
 <select class="input" name="rule_kind">
-{[['visual','Visual changes exceed the threshold'],['text','Page text changes'],['appeared','A phrase appears'],['disappeared','A phrase disappears'],['price','Numbers in a price element change'],['element','Text in a selected element changes']].map(([value,label]) => <option value={value} selected={rule.kind===value}>{label}</option>)}
+{[['visual','Visual changes meet the threshold'],['text','Page text changes'],['appeared','A phrase appears'],['disappeared','A phrase disappears'],['price','Numbers in a price element change'],['element','Text in a selected element changes']].map(([value,label]) => <option value={value} selected={rule.kind===value}>{label}</option>)}
 </select></label>
 <label>Phrase to watch<input class="input" name="rule_phrase" value={rule.phrase} maxlength="200" placeholder="Out of stock" /></label>
 <label>Element CSS selector (required for price and element rules)<input class="input" name="rule_selector" value={rule.selector} maxlength="200" placeholder=".product-price" /></label>

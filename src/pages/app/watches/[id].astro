@@ -1,4 +1,5 @@
 ---
+import MonitorThreshold from '../../../components/MonitorThreshold.astro';
 import MonitorRuleFields from '../../../components/MonitorRuleFields.astro';
 import { getMonitorRule, workflowsReady } from '../../../lib/monitor-rule-store';
 import { canSendEmail } from '../../../lib/mailer';
@@ -97,8 +98,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           {watch.url}
         </a>
         <p class="xs muted-2">
-          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · alerts over{' '}
-          {watch.threshold}% change
+          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? `visual alerts at ${watch.threshold}% or more` : `${rule.kind} alert rule`}
           {watch.webhook_url && ' · webhook on'}
         </p>
         <div class="rows" style="margin-top: 4px">
@@ -152,6 +152,12 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
         <button class="btn btn--ink" type="submit">Save alert rule</button>
         <p role="status"></p>
       </form>}
+      <form id="threshold-form" class="card card--pad stack gap-12" data-watch={watch.id}>
+        <h2 class="h4">Change sensitivity</h2>
+        <MonitorThreshold value={watch.threshold} />
+        <button class="btn btn--ink" type="submit">Save threshold</button>
+        <p role="status" aria-live="polite"></p>
+      </form>
       {beforeUrl && afterUrl && (
       <section class="stack gap-8">
           <div class="row-between">
@@ -272,7 +278,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
                 </span>
                 <span class="row__note" style="max-width: 55%">
                   {run.change_pct !== null && run.status === 'done'
-                    ? `${run.change_pct}% different`
+                    ? (run.detail || `${run.change_pct}% different · ${run.changed ? 'Alert rule met' : 'No alert triggered'}`)
                     : (run.detail ?? '')}
                 </span>
               </div>
@@ -319,6 +325,24 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
   </div>
 </AppShell>
 <script>
+  document.querySelector<HTMLFormElement>('#threshold-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const state = form.querySelector('[role="status"]')!;
+    if (button.disabled || !form.reportValidity()) return;
+    button.disabled = true;
+    state.textContent = 'Saving…';
+    try {
+      const body = new FormData(form); body.set('action', 'threshold');
+      const response = await fetch(`/api/watches/${form.dataset.watch}`, { method: 'POST', body });
+      const result = await response.json() as { error?: { message: string } };
+      if (!response.ok) throw new Error(result.error?.message || 'Could not save threshold.');
+      window.location.reload();
+    } catch (error) { state.textContent = error instanceof Error ? error.message : 'Could not save threshold.'; }
+    finally { button.disabled = false; }
+  });
+
   document.querySelector<HTMLFormElement>('#rules-form')?.addEventListener('submit', async e => {
     e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
     const state = form.querySelector('[role="status"]')!;

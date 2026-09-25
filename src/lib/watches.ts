@@ -9,7 +9,7 @@ import type { SessionUser } from './auth';
 import { toSessionUser, type UserRow } from './auth';
 import { createCaptureRow, fileUrl, getUsage, runCapture, safeParseFiles, type CaptureRow } from './captures';
 import { displayUrl, type CaptureMode, type CaptureOptions, type ViewportId } from './capture-options';
-import { HttpError } from './http';
+import { HttpError, badRequest } from './http';
 import { prefixedId } from './ids';
 import { canSendEmail, sendMail } from './mailer';
 import { allowedFrequencies, frequencyHours, frequencyLabel, getPlan, watchLimit } from './plans';
@@ -293,6 +293,17 @@ export async function setWatchFrequency(watch: WatchRow, user: SessionUser, freq
     .run();
 }
 
+/** Changing sensitivity keeps the existing baseline, schedule, and paused state. */
+export async function setWatchThreshold(watch: WatchRow, user: SessionUser, raw: string): Promise<void> {
+  if (watch.user_id !== user.id) throw new HttpError(404, 'not_found', 'No such watch.');
+  const threshold = Number(raw);
+  if (!raw.trim() || !Number.isFinite(threshold) || threshold < 0.1 || threshold > 100) {
+    throw badRequest('Choose a visual change threshold between 0.1% and 100%.', 'threshold');
+  }
+  await env.DB.prepare('UPDATE watches SET threshold = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+    .bind(threshold, new Date().toISOString(), watch.id, user.id).run();
+}
+
 export async function deleteWatch(id: string): Promise<void> {
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM watch_runs WHERE watch_id = ?`).bind(id),
@@ -484,7 +495,9 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
         const diff = await compareImages(before, after, scaled);
         changePct = diff.changedPct;
         changed = diff.resized || diff.changedPct >= watch.threshold;
-        detail = diff.resized ? `page height changed, ${diff.changedPct}% of the shared area differs` : null;
+        detail = diff.resized
+          ? `Page dimensions changed · ${diff.changedPct}% of the shared area differs. Dimension changes trigger an alert regardless of the visual threshold.`
+          : `${diff.changedPct}% changed · ${changed ? 'Met' : 'Below'} the ${watch.threshold}% threshold used for this check.`;
       }
     } catch (error) {
       // Preserve the last good baseline so the next successful check can still detect the change.

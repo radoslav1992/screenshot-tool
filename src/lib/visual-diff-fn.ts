@@ -10,6 +10,8 @@
 export interface DiffResult {
   /** Share of pixels that differ, 0–100. */
   changedPct: number;
+  /** Count before percentage rounding, after tolerance and downsampling. */
+  changedPixels: number;
   /** True when the two images are not the same size — itself a change. */
   resized: boolean;
   width: number;
@@ -56,7 +58,7 @@ export async function compareInPage(
   const width = Math.min(region?.width ?? Infinity, a.naturalWidth - x, b.naturalWidth - x);
   const height = Math.min(region?.height ?? Infinity, a.naturalHeight - y, b.naturalHeight - y);
   if (region && (width < region.width || height < region.height)) throw new Error("Watched region is outside the captured page.");
-  if (!width || !height) return { changedPct: 100, resized, width, height };
+  if (!width || !height) return { changedPct: 100, changedPixels: 0, resized, width, height };
 
   const scale = Math.min(1, Math.sqrt(maxPixels / (width * height)));
   const w = Math.max(1, Math.round(width * scale));
@@ -85,5 +87,5 @@ export async function compareInPage(
     }
   }
 
-  return { changedPct: (changed / (w * h)) * 100, resized, width, height };
+  return { changedPct: (changed / (w * h)) * 100, changedPixels: changed, resized, width, height };
 }

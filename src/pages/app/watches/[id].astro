@@ -98,7 +98,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           {watch.url}
         </a>
         <p class="xs muted-2">
-          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? `visual alerts at ${watch.threshold}% or more` : `${rule.kind} alert rule`}
+          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? (watch.threshold === 0 ? 'alerts for any detected visual change' : `visual alerts at ${watch.threshold}% or more`) : `${rule.kind} alert rule`}
           {watch.webhook_url && ' · webhook on'}
         </p>
         <div class="rows" style="margin-top: 4px">

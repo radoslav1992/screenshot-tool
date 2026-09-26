@@ -297,8 +297,8 @@ export async function setWatchFrequency(watch: WatchRow, user: SessionUser, freq
 export async function setWatchThreshold(watch: WatchRow, user: SessionUser, raw: string): Promise<void> {
   if (watch.user_id !== user.id) throw new HttpError(404, 'not_found', 'No such watch.');
   const threshold = Number(raw);
-  if (!raw.trim() || !Number.isFinite(threshold) || threshold < 0.1 || threshold > 100) {
-    throw badRequest('Choose a visual change threshold between 0.1% and 100%.', 'threshold');
+  if (!raw.trim() || !Number.isFinite(threshold) || (threshold !== 0 && threshold < 0.1) || threshold > 100) {
+    throw badRequest('Choose Any detected change (0), or a percentage between 0.1% and 100%.', 'threshold');
   }
   await env.DB.prepare('UPDATE watches SET threshold = ?, updated_at = ? WHERE id = ? AND user_id = ?')
     .bind(threshold, new Date().toISOString(), watch.id, user.id).run();
@@ -494,10 +494,14 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
         const scaled = region ? { x: region.x * watch.scale, y: region.y * watch.scale, width: region.width * watch.scale, height: region.height * watch.scale } : undefined;
         const diff = await compareImages(before, after, scaled);
         changePct = diff.changedPct;
-        changed = diff.resized || diff.changedPct >= watch.threshold;
+        changed = diff.resized || (watch.threshold === 0 ? diff.changedPixels > 0 : diff.changedPct >= watch.threshold);
         detail = diff.resized
           ? `Page dimensions changed · ${diff.changedPct}% of the shared area differs. Dimension changes trigger an alert regardless of the visual threshold.`
-          : `${diff.changedPct}% changed · ${changed ? 'Met' : 'Below'} the ${watch.threshold}% threshold used for this check.`;
+          : watch.threshold === 0
+            ? (changed
+              ? `${diff.changedPct === 0 ? '<0.01' : diff.changedPct}% changed · Any detected change was enabled for this check.`
+              : 'No visual change detected · Any detected change was enabled for this check.')
+            : `${diff.changedPct}% changed · ${changed ? 'Met' : 'Below'} the ${watch.threshold}% threshold used for this check.`;
       }
     } catch (error) {
       // Preserve the last good baseline so the next successful check can still detect the change.

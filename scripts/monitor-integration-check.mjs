@@ -33,6 +33,7 @@ const state = {
   emailAccepted: true,
   emails: 0,
   changedPct: 20,
+  changedPixels: 1,
 };
 const calls = [];
 const bind = (sql, args = []) => ({
@@ -77,7 +78,7 @@ const plugin = {
         'export const {getUsage,createCaptureRow,runCapture,fileUrl,safeParseFiles} = globalThis.__monitorFixture.captures;',
     }));
     b.onLoad({ filter: /\/lib\/visual-diff\.ts$/ }, () => ({
-      contents: `export function diffAvailable(){return globalThis.__monitorFixture.state.canCompare} export async function compareImages(){const s=globalThis.__monitorFixture.state;if(s.comparisonFails) throw Error('fixture');return {changedPct:s.changedPct,resized:false}}`,
+      contents: `export function diffAvailable(){return globalThis.__monitorFixture.state.canCompare} export async function compareImages(){const s=globalThis.__monitorFixture.state;if(s.comparisonFails) throw Error('fixture');return {changedPct:s.changedPct,changedPixels:s.changedPixels,resized:false}}`,
     }));
     b.onLoad({ filter: /\/lib\/mailer\.ts$/ }, () => ({
       contents:
@@ -207,7 +208,7 @@ try {
   current = await watches.getWatch(watch.id);
   assert.equal(current.threshold, 0.1);
   assert.deepEqual({ baseline: current.baseline_capture_id, next: current.next_run_at, status: current.status }, beforeEdit);
-  for (const invalid of ['', ' ', 'NaN', 'Infinity', '-1', '0', '0.09', '100.01', 'oops']) {
+  for (const invalid of ['', ' ', 'NaN', 'Infinity', '-1', '0.09', '100.01', 'oops']) {
     await assert.rejects(() => watches.setWatchThreshold(current, user, invalid));
   }
   await assert.rejects(() => watches.setWatchThreshold(current, { id: 'other', plan: 'pro' }, '5'));
@@ -252,13 +253,35 @@ try {
   assert.equal((await update(null, '1')).status, 401);
   assert.equal((await update({ id: 'other', plan: 'pro' }, '1')).status, 404);
   assert.equal((await update(user, '1', 'https://untrusted.test')).status, 403);
-  assert.equal((await update(user, '0')).status, 400);
+  assert.equal((await update(user, '0.01')).status, 400);
   let response = await update(user, '0.1');
   assert.equal(response.status, 200);
   assert.equal((await response.json()).threshold, 0.1);
   response = await update(user, '2.5', 'https://fixture.test', true);
   assert.equal(response.status, 200);
   assert.equal((await response.json()).threshold, 2.5);
+
+  response = await update(user, '0');
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).threshold, 0);
+  state.changedPct = 0;
+  state.changedPixels = 0;
+  const beforeAny = state.emails;
+  outcome = await watches.runWatch(await watches.getWatch(watch.id), 'https://fixture.test');
+  assert.equal(outcome.changed, false, 'identical images never alert with zero threshold');
+  assert.equal(state.emails, beforeAny);
+  state.changedPixels = 1;
+  outcome = await watches.runWatch(await watches.getWatch(watch.id), 'https://fixture.test');
+  assert.equal(outcome.changed, true, 'one detected pixel alerts even if percentage rounds to zero');
+  assert.match(outcome.detail, /<0.01% changed/);
+  assert.equal(state.emails, beforeAny + 1);
+  state.changedPct = 0.05;
+  outcome = await watches.runWatch(await watches.getWatch(watch.id), 'https://fixture.test');
+  assert.equal(outcome.changed, true, 'the observed 0.05% change alerts');
+  await update(user, '0.1');
+  state.changedPct = 0;
+  outcome = await watches.runWatch(await watches.getWatch(watch.id), 'https://fixture.test');
+  assert.equal(outcome.changed, false, 'normal percentage thresholds retain their existing behavior');
   console.log(
     'Monitor integration passed: baseline preservation, quota skips, webhook HTTP failure, alert persistence, schedule authorization, paused state, account-scoped health metrics, threshold boundaries, historical sensitivity, and web/native threshold updates.',
   );

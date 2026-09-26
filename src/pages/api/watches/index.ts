@@ -54,8 +54,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
 
     const threshold = body.threshold === undefined || body.threshold === '' ? 1 : Number(body.threshold);
-    if (!Number.isFinite(threshold) || threshold < 0.1 || threshold > 100) {
-      throw badRequest('`threshold` is a percentage between 0.1 and 100.', 'threshold');
+    if (!Number.isFinite(threshold) || (threshold !== 0 && threshold < 0.1) || threshold > 100) {
+      throw badRequest('`threshold` must be 0 for any detected change, or between 0.1 and 100.', 'threshold');
     }
 
     let webhookUrl = (body.webhook_url ?? '').trim();

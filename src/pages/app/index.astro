@@ -6,6 +6,7 @@ import { DEVICE_LIST, FORMATS, FRAME_LIST, MODES } from '../../lib/capture-optio
 import { getUsage } from '../../lib/captures';
 import { cheapestPlanWith, getPlan } from '../../lib/plans';
 import { isVerified } from '../../lib/verification';
+import { formatDate } from '../../lib/dates';
 
 const user = Astro.locals.user!;
 const [usage, verified] = await Promise.all([getUsage(user), isVerified(user.id)]);
@@ -354,7 +355,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
       <p class="xs center muted-2 capture-note" id="quota-line">
         {usage.remaining > 0
           ? `Uses 1 of ${usage.remaining.toLocaleString()} shots left this month`
-          : `No shots left this month — resets ${usage.renewsOn}`}
+          : `No shots left this month — resets ${formatDate(`${usage.renewsOn}T00:00:00Z`)}`}
       </p>
 
       {plan.watermark && (

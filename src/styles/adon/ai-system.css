@@ -302,11 +302,6 @@ body.adon-theme .shell--app > .tabbar {
   border-color: #edcbb7;
 }
 
-/* Small orange text in shared components reads at text contrast too. */
-.adon-theme .estimator__label {
-  color: var(--theme-text-sm);
-}
-
 /* ---------------------------------------------------------------------------
    Workspace patterns, shared by every /app screen.
    --------------------------------------------------------------------------- */

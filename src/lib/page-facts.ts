@@ -46,6 +46,14 @@ export interface PageFacts {
   timings: { ttfb_ms: number | null; dom_content_loaded_ms: number | null; load_ms: number | null };
   /** Visible text, capped. Used to say what changed between two captures. */
   text: string;
+  /**
+   * Length and hash of the whole visible text, past the cap. Absent on
+   * captures taken before they were recorded.
+   */
+  text_length?: number;
+  text_hash?: string;
+  /** Whether each phrase a monitor rule asked about appears anywhere in the visible text. */
+  phrases?: Record<string, boolean>;
   /** True when the page was too large to derive signals from in full. */
   truncated: boolean;
 }
@@ -247,6 +255,9 @@ export function buildFacts(input: FactsInput): PageFacts {
       load_ms: raw.timings.loadMs,
     },
     text: raw.text,
+    text_length: raw.textLength,
+    text_hash: raw.textHash,
+    ...(raw.phrases ? { phrases: raw.phrases } : {}),
     truncated: raw.htmlTruncated,
   };
 }

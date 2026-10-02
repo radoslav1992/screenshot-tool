@@ -25,15 +25,42 @@ export function evaluateRule(rule: MonitorRule, before: PageFacts | null, after:
    return { changed: false, detail: 'Saved the first baseline for this element rule.' };
   if (!before.monitored_element.found || !after.monitored_element.found) throw new Error('Watched element was not found. Check its CSS selector.');
   a = normalize(before.monitored_element.text); b = normalize(after.monitored_element.text);
+  if (rule.kind === 'element') return a !== b ? { changed: true, detail: `The watched element changed: ${a.slice(0,100)} → ${b.slice(0,100)}` } : unchanged;
  }
- let changed = a !== b;
- if (rule.kind === 'appeared') changed = !a.toLowerCase().includes(rule.phrase.toLowerCase()) && b.toLowerCase().includes(rule.phrase.toLowerCase());
- if (rule.kind === 'disappeared') changed = a.toLowerCase().includes(rule.phrase.toLowerCase()) && !b.toLowerCase().includes(rule.phrase.toLowerCase());
  if (rule.kind === 'price') {
   const numbers = (s: string) => s.match(/\d+(?:[.,\s\u00a0]\d+)*/g)?.map(n=>n.trim()).join('|');
   const x = numbers(a), y = numbers(b);
   if (!x || !y) throw new Error('No numeric price found in the selected element. Choose a price-only element.');
-  changed = x !== y;
+  return x !== y ? { changed: true, detail: `Price changed: ${a.slice(0,100)} → ${b.slice(0,100)}` } : unchanged;
  }
- return { changed, detail: changed ? `${rule.kind} rule matched: ${a.slice(0,100)} → ${b.slice(0,100)}` : 'No matching rule change.' };
+ /*
+  * The stored text stops at 8,000 characters. The hash covers all of it, so a
+  * change further down still counts, and a page known to be unchanged is not
+  * second-guessed from its excerpt.
+  */
+ const hashed = Boolean(before.text_hash && after.text_hash);
+ if (hashed && before.text_hash === after.text_hash) return unchanged;
+ if (rule.kind === 'appeared' || rule.kind === 'disappeared') {
+  const phrase = normalize(rule.phrase);
+  const was = contains(before, a, phrase), is = contains(after, b, phrase);
+  const changed = rule.kind === 'appeared' ? !was.found && is.found : was.found && !is.found;
+  if (!changed) return unchanged;
+  // Only an absence can be an artefact of the excerpt, so only an absence is qualified.
+  const partial = (rule.kind === 'appeared' ? was : is).partial ? ' (only the first 8,000 characters could be checked)' : '';
+  return { changed, detail: rule.kind === 'appeared' ? `“${phrase}” appeared on the page${partial}.` : `“${phrase}” is no longer on the page${partial}.` };
+ }
+ return hashed || a !== b ? { changed: true, detail: 'The page text changed.' } : unchanged;
+}
+const unchanged = { changed: false, detail: 'No matching rule change.' };
+/**
+ * Whether a capture's text contains a phrase. A capture that checked the
+ * phrase against its whole text answers exactly; otherwise only the stored
+ * excerpt can be searched, and a miss on a page longer than it is partial.
+ */
+function contains(facts: PageFacts, text: string, phrase: string): { found: boolean; partial: boolean } {
+ const key = phrase.toLowerCase();
+ const recorded = Object.entries(facts.phrases ?? {}).find(([name]) => name.replace(/\s+/g,' ').trim().toLowerCase() === key);
+ if (recorded) return { found: recorded[1] === true, partial: false };
+ const found = text.toLowerCase().includes(key);
+ return { found, partial: !found && (facts.text_length ?? 0) > facts.text.length };
 }

@@ -10,6 +10,7 @@
     "preview": "astro preview",
     "deploy": "astro build && wrangler deploy",
     "check": "astro check",
+    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s monitor:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check",
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
     "stripe:setup": "node scripts/stripe-setup.mjs",
@@ -32,15 +33,16 @@
     "retention:check": "node scripts/retention-check.mjs"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.1.7",
-    "@cloudflare/puppeteer": "^1.3.0",
-    "astro": "^7.1.6"
+    "@astrojs/cloudflare": "^14.3.3",
+    "@cloudflare/puppeteer": "^1.4.0",
+    "astro": "^7.3.5"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@cloudflare/workers-types": "^5.20260801.1",
-    "sharp": "^0.35.3",
+    "@cloudflare/workers-types": "^5.20261002.1",
+    "playwright-core": "^1.56.1",
+    "sharp": "^0.35.5",
     "typescript": "^5.9.2",
-    "wrangler": "^4.119.0"
+    "wrangler": "^4.147.0"
   }
 }

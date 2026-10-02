@@ -1,7 +1,12 @@
 import { env } from 'cloudflare:workers';
 import { defaultRule, type MonitorRule } from './monitor-rules';
+/** Cached per isolate like watchSettingsReady: a yes for good, a no for a minute. */
+let rulesTable: { ready: boolean; at: number } | undefined;
 export async function workflowsReady() {
- return !!await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='monitor_rules'").first();
+ if (rulesTable && (rulesTable.ready || Date.now() - rulesTable.at < 60_000)) return rulesTable.ready;
+ const ready = !!await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='monitor_rules'").first();
+ rulesTable = { ready, at: Date.now() };
+ return ready;
 }
 export async function getMonitorRule(id: string): Promise<MonitorRule> {
  if (!await workflowsReady()) return { ...defaultRule };

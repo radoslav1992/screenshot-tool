@@ -2,8 +2,17 @@ import { env } from 'cloudflare:workers';
 import { HttpError } from './http';
 import { parseCaptureOptions, type CaptureOptions } from './capture-options';
 import { sha256Hex } from './ids';
+/**
+ * Once a table exists it stays, so a yes is kept for the life of the isolate.
+ * A no is re-checked after a minute, so applying the migration takes effect
+ * without a redeploy.
+ */
+let settingsTable: { ready: boolean; at: number } | undefined;
 export async function watchSettingsReady() {
-  return !!(await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='watch_settings'").first());
+  if (settingsTable && (settingsTable.ready || Date.now() - settingsTable.at < 60_000)) return settingsTable.ready;
+  const ready = !!(await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='watch_settings'").first());
+  settingsTable = { ready, at: Date.now() };
+  return ready;
 }
 export function noiseStrings(options: CaptureOptions) {
   return {

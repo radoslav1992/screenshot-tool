@@ -16,6 +16,17 @@ assert.equal(evaluateRule(rule('price',{selector:'.price'}),facts('',element('Pr
 assert.throws(()=>evaluateRule(rule('price',{selector:'.price'}),facts('',element('€19')),facts('',{selector:'.price',found:false,text:''})));
 assert.throws(()=>evaluateRule(rule('text'),null,facts('x')));
 assert.equal(evaluateRule(rule('element',{selector:'.price'}),facts('old'),facts('',element('new'))).changed,false,'new element rule must establish baseline');
+// The stored text is an 8,000-character excerpt; the hash and phrase answers cover the whole page.
+const whole = (text,hash,length,phrases) => ({text,text_hash:hash,text_length:length,...(phrases?{phrases}:{})});
+assert.equal(evaluateRule(rule('text'),whole('Same top','a',20000),whole('Same top','b',20000)).changed,true,'a change past the excerpt still counts');
+assert.equal(evaluateRule(rule('text'),whole('Top','a',3),whole('Top, reflowed','a',13)).changed,false,'equal hashes mean an unchanged page');
+assert.equal(evaluateRule(rule('disappeared',{phrase:'Sold out'}),whole('Sold out','a',20000,{'Sold out':true}),whole('Header','b',20000,{'Sold out':true})).changed,false,'a phrase that moved past the excerpt has not disappeared');
+assert.equal(evaluateRule(rule('appeared',{phrase:'In  stock'}),whole('Header','a',20000,{'In stock':false}),whole('Header','b',20000,{'in stock':true})).changed,true,'a phrase appearing past the excerpt is seen');
+const partial = evaluateRule(rule('disappeared',{phrase:'Sold out'}),whole('Sold out','a',20000),whole('Header','b',20000));
+assert.equal(partial.changed,true);
+assert.match(partial.detail,/only the first 8,000 characters could be checked/,'a miss on a long page without a whole-page answer says so');
+assert.equal(evaluateRule(rule('appeared',{phrase:'In stock'}),facts('Sold out'),facts('In stock now')).detail,'“In stock” appeared on the page.','rule alerts say what was found');
+assert.match(evaluateRule(rule('price',{selector:'.price'}),facts('',element('€19,99')),facts('',element('€29,99'))).detail,/^Price changed: €19,99 → €29,99$/);
 assert.throws(()=>parseMonitorRule({rule_kind:'appeared'}));
 assert.throws(()=>parseMonitorRule({rule_kind:'price'}));
 assert.throws(()=>parseMonitorRule({watch_region:'0,0,2,2;1,1,2,2'}));
@@ -32,7 +43,7 @@ console.log('Workflow checks passed: text/price/element rules, missing facts, ba
 const diffBundle = await build({entryPoints:['src/lib/visual-diff-fn.ts'],bundle:true,write:false,platform:'node',format:'esm'});
 const {compareInPage}=await import('data:text/javascript;base64,'+Buffer.from(diffBundle.outputFiles[0].text).toString('base64'));
 const oldImage=globalThis.Image, oldDocument=globalThis.document;
-globalThis.Image=class { naturalWidth=100; naturalHeight=100; set src(value){this.source=value;queueMicrotask(()=>this.onload());} };
+globalThis.Image=class { naturalWidth=100; naturalHeight=100; set src(value){this.source=value;if(value==='taller')this.naturalHeight=200;queueMicrotask(()=>this.onload());} };
 globalThis.document={createElement(){ let pixels; return {getContext(){return {
  drawImage(image,x,y,width,height,_dx,_dy,w,h){pixels=new Uint8ClampedArray(w*h*4);for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++){const changed=image.source==='after' && x+xx*width/w<50;const i=(yy*w+xx)*4;pixels[i]=pixels[i+1]=pixels[i+2]=changed?0:255;pixels[i+3]=255;}},
  getImageData(){return {data:pixels};}
@@ -42,5 +53,10 @@ try {
  assert.equal((await compareInPage('before','after',12,10000,{x:50,y:0,width:50,height:100})).changedPct,0,'changes outside watched region ignored');
  assert.equal((await compareInPage('before','after',12,10000,{x:0,y:0,width:50,height:100})).changedPct,100,'changes within region detected');
  await assert.rejects(compareInPage('before','after',12,10000,{x:90,y:0,width:50,height:100}));
+ const taller=await compareInPage('before','taller',12,10000);
+ assert.deepEqual([taller.resized,taller.changedPct,taller.sharedPct],[true,50,0],'a page twice as tall changed by the half it grew, not by all of it');
+ assert.ok(taller.changedPixels>0,'a resize is always a detected change');
+ const same=await compareInPage('before','after',12,10000);
+ assert.equal(same.sharedPct,same.changedPct,'without a resize both measures agree');
 } finally {globalThis.Image=oldImage;globalThis.document=oldDocument;}
-console.log('Region comparison passed: inside/outside selection, cropped pixel denominator, and invalid bounds.');
+console.log('Region comparison passed: inside/outside selection, cropped pixel denominator, invalid bounds, and resize area.');

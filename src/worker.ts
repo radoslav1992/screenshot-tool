@@ -34,9 +34,11 @@ export default {
       runDueWatches(siteOrigin(), now)
         .then((result) => {
           if (!result.due) return;
+          // backlog: due but left for a later tick; late_max: the most overdue start, in minutes.
           console.log(
             `[watch] due=${result.due} ran=${result.ran} changed=${result.changed} ` +
-              `errors=${result.errors} skipped=${result.skipped}`,
+              `errors=${result.errors} skipped=${result.skipped} backlog=${result.backlog} ` +
+              `late_max=${Math.round(result.maxLateMs / 60_000)}m`,
           );
         })
         .catch((error) => {

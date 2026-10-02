@@ -38,7 +38,11 @@ export async function compareImages(beforeUrl: string, afterUrl: string, region?
     )) as DiffResult;
 
     succeeded = true;
-    return { ...result, changedPct: Math.round(result.changedPct * 100) / 100 };
+    return {
+      ...result,
+      changedPct: Math.round(result.changedPct * 100) / 100,
+      sharedPct: Math.round(result.sharedPct * 100) / 100,
+    };
   } finally {
     if (page) {
       try {

@@ -25,6 +25,17 @@ assert.equal(
   'overdue checks do not backfill missed runs',
 );
 assert.equal(forecast([schedule('a', 'weekly')], budget, now).untilReset, 3);
+// Schedules land on the hour, so the forecast counts exactly the ticks left before the reset.
+assert.equal(
+  forecast([schedule('a', 'hourly', 'active', '2026-09-30T22:00:00.000Z')], budget, new Date('2026-09-30T21:30:00Z')).untilReset,
+  2,
+  'an hourly monitor due at 22:00 runs at 22:00 and 23:00 before the reset',
+);
+assert.equal(
+  forecast([schedule('a', 'daily', 'active', '2026-09-29T10:00:00.000Z')], budget, new Date('2026-09-29T09:00:00Z')).untilReset,
+  2,
+  'a daily monitor due at 10:00 runs on the 29th and 30th',
+);
 const many = Array.from({ length: 25 }, (_, i) => schedule(String(i), 'hourly'));
 assert.equal(forecast(many, budget, now).monthly, 18000);
 assert.equal(forecast(many, budget, now).shortfall, 9900);

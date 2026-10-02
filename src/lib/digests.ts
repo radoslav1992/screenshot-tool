@@ -2,6 +2,30 @@ import { env } from 'cloudflare:workers';
 import { collaborationReady, projectAccess } from './collaboration';
 import { digestWeek, nextDigest } from './digest-schedule';
 import { canSendEmail, sendMail } from './mailer';
+import { formatDateTime } from './dates';
+
+/**
+ * "25 Sept 2026, 09:00 – 2 Oct 2026, 09:00 (Europe/Sofia)": the subscriber's
+ * own clock when their timezone is known and valid, otherwise UTC.
+ */
+export function digestPeriod(since: string, now: Date, timezone: string | null | undefined): string {
+  try {
+    if (!timezone) throw new RangeError('no timezone');
+    const format = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    return `${format.format(new Date(since))} – ${format.format(now)} (${timezone})`;
+  } catch {
+    return `${formatDateTime(since)} – ${formatDateTime(now)}`;
+  }
+}
+
 /** At-most-once attempts: a unique claim precedes delivery. Ambiguous outcomes are never automatically resent. */
 export async function runProjectDigests(origin: string, now = new Date()) {
   if (!(await collaborationReady()) || !canSendEmail()) return { attempted: 0 };
@@ -48,7 +72,7 @@ export async function runProjectDigests(origin: string, now = new Date()) {
           to: d.email,
           subject: `Weekly review · ${project.name}`,
           text: `${project.name} — weekly monitor summary
-Period: ${since} to ${now.toISOString()}
+Period: ${digestPeriod(since, now, d.timezone)}
 
 Completed checks: ${stats?.completed ?? 0}
 Changed checks: ${stats?.changed ?? 0}

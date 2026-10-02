@@ -29,13 +29,36 @@ export async function checkRateLimit(
   const key = `rl:${bucket}:${window}`;
   const resetSeconds = (window + 1) * windowSeconds - now;
 
-  const current = Number.parseInt((await env.RATE.get(key)) ?? '0', 10) || 0;
+  let current = 0;
+  try {
+    current = Number.parseInt((await env.RATE.get(key)) ?? '0', 10) || 0;
+  } catch (error) {
+    // Fairness is not worth an outage: an unreadable counter lets the request
+    // through rather than turning every request into a 500.
+    kvFailed(error);
+    return { ok: true, limit, remaining: Math.max(0, limit - cost), resetSeconds };
+  }
   if (current + cost > limit) {
     return { ok: false, limit, remaining: Math.max(0, limit - current), resetSeconds };
   }
 
-  await env.RATE.put(key, String(current + cost), { expirationTtl: Math.max(60, windowSeconds * 2) });
+  try {
+    await env.RATE.put(key, String(current + cost), { expirationTtl: Math.max(60, windowSeconds * 2) });
+  } catch (error) {
+    // KV takes about one write a second per key, so a busy key can refuse one.
+    // The request was within its limit when read; it goes through uncounted.
+    kvFailed(error);
+  }
   return { ok: true, limit, remaining: Math.max(0, limit - current - cost), resetSeconds };
+}
+
+let kvFailureLogged = false;
+
+/** Logged once per isolate: a struggling KV would otherwise log on every request. */
+function kvFailed(error: unknown): void {
+  if (kvFailureLogged) return;
+  kvFailureLogged = true;
+  console.error('[rate-limit] KV unavailable; allowing requests through', error);
 }
 
 export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {

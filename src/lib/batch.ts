@@ -22,14 +22,56 @@ export interface BatchResult {
   failed: Array<{ url: string; error: string }>;
 }
 
+/** http→https, then apex→www, then a CDN's own hop: past that it is a loop. */
+const MAX_SITEMAP_REDIRECTS = 3;
+
+/**
+ * Fetches a sitemap, following redirects one hop at a time.
+ *
+ * Sites routinely send `/sitemap.xml` from http to https or from the apex to
+ * www, so refusing every redirect refused most real sitemaps. Letting fetch
+ * follow them would not do either: each destination has to pass the same
+ * public-address check the first URL did, or a redirect becomes the way to a
+ * private one.
+ */
 async function fetchSitemap(raw: string): Promise<string> {
-  const url = assertPublicCaptureUrl(raw);
-  // Reject redirects instead of allowing an unchecked destination or private child sitemap.
-  const response = await fetch(url.toString(), {
-    redirect: 'error',
-    signal: AbortSignal.timeout(10_000),
-    headers: { 'user-agent': 'EasyScreenCapture/1 (+https://easyscreencapture.com)' },
-  });
+  let url = assertPublicCaptureUrl(raw);
+  let response: Response;
+  for (let hop = 0; ; hop++) {
+    try {
+      response = await fetch(url.toString(), {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
+        headers: { 'user-agent': 'EasyScreenCapture/1 (+https://easyscreencapture.com)' },
+      });
+    } catch (error) {
+      // DNS failures, refused connections and the timeout all land here, and
+      // all of them are about the address given, not about this service.
+      const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+      throw new HttpError(
+        400,
+        'sitemap_unreachable',
+        timedOut ? 'The sitemap took too long to answer.' : 'The sitemap could not be reached.',
+      );
+    }
+    const location = response.headers.get('location');
+    if (response.status < 300 || response.status >= 400 || !location) break;
+    await response.body?.cancel().catch(() => undefined);
+    if (hop >= MAX_SITEMAP_REDIRECTS) {
+      throw new HttpError(400, 'sitemap_unreachable', 'The sitemap redirected too many times.');
+    }
+    let next: URL;
+    try {
+      next = new URL(location, url);
+    } catch {
+      throw new HttpError(400, 'sitemap_unreachable', 'The sitemap redirected to an address that is not a URL.');
+    }
+    try {
+      url = assertPublicCaptureUrl(next.toString());
+    } catch {
+      throw new HttpError(400, 'sitemap_unreachable', 'The sitemap redirected to an address that cannot be fetched.');
+    }
+  }
   if (!response.ok) throw new HttpError(400, 'sitemap_unreachable', `The sitemap answered ${response.status}.`);
   const reader = response.body?.getReader();
   if (!reader) throw badRequest('The sitemap was empty.');
@@ -46,6 +88,10 @@ async function fetchSitemap(raw: string): Promise<string> {
       text += decoder.decode(value, { stream: true });
     }
     return text + decoder.decode();
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    // The timeout covers the body too; a stalled or dropped download ends here.
+    throw new HttpError(400, 'sitemap_unreachable', 'The sitemap stopped answering partway through.');
   } finally {
     await reader.cancel().catch(() => undefined);
   }

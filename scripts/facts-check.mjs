@@ -2,7 +2,9 @@
  * Checks the derived half of page facts against markup whose answer is known.
  *
  * These functions are pure string-in/value-out, which is the whole reason they
- * were kept that way: no browser, no network, no fixtures on disk.
+ * were kept that way: no browser, no network, no fixtures on disk. The last
+ * section is the exception — the in-page reader only runs in a page, so it is
+ * driven in local Chromium, as diff-check and redact-check do.
  *
  *   node scripts/facts-check.mjs
  */
@@ -176,6 +178,58 @@ check(
   webhookBody('slack', { ...notice, summary: null }).text.includes('4.2%'),
   true,
 );
+
+const ruleNotice = { ...notice, changePct: 0, rule: { kind: 'appeared', detail: '“In stock” appeared on the page.' } };
+check('a rule alert leads with its finding, not 0%', webhookBody('slack', ruleNotice).text.includes('“In stock” appeared'), true);
+check('discord leads with the finding too', webhookBody('discord', ruleNotice).content.includes('“In stock” appeared'), true);
+check('json carries the rule', webhookBody('json', ruleNotice).rule, { kind: 'appeared', detail: '“In stock” appeared on the page.' });
+check('a visual alert still leads with the summary', webhookBody('slack', { ...notice, rule: { kind: 'visual', detail: '4.2% changed' } }).text.includes('$19 to $29'), true);
+check('teams workflows are recognised', webhookFlavour('https://prod-01.westeurope.logic.azure.com/workflows/x/triggers/manual/paths/invoke'), 'teams');
+check('teams connectors are recognised', webhookFlavour('https://contoso.webhook.office.com/webhookb2/x'), 'teams');
+check('google chat is recognised', webhookFlavour('https://chat.googleapis.com/v1/spaces/x/messages?key=k'), 'google_chat');
+check('a lookalike host is not teams', webhookFlavour('https://webhook.office.com.evil.example/x'), 'json');
+check(
+  'teams gets an adaptive card that leads with the finding',
+  webhookBody('teams', ruleNotice).attachments[0].content.body[1].text,
+  '“In stock” appeared on the page.',
+);
+check('teams keeps the JSON fields for flows that read them', webhookBody('teams', notice).event, 'watch.changed');
+check('google chat links the monitor', webhookBody('google_chat', notice).text.includes('<https://esc/app/watches/wat_1|Open monitor>'), true);
+
+/* ---------------------------------------------------------------- */
+/* Facts read in the page                                            */
+/* ---------------------------------------------------------------- */
+
+// The one part that needs a browser: the function runs inside the captured page.
+const { chromium } = await import('playwright-core');
+const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const factsFn = transformSync(readFileSync(new URL('../src/lib/page-facts-fn.ts', import.meta.url), 'utf8'), { loader: 'ts' })
+  .code.replace(/^export\s+/gm, '');
+const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
+try {
+  const page = await browser.newPage();
+  const filler = 'Plenty of words about the product. '.repeat(400);
+  await page.setContent(`<!doctype html><html><head><title>Orders for ada@example.com</title>
+    <meta name="description" content="Call +359 88 123 4567"><meta property="og:title" content="ada@example.com"></head>
+    <body><h1>Visible heading</h1><h1 class="secret">Hidden heading</h1><h1>Shown <span class="secret">and hidden</span></h1>
+    <p>${filler}</p><p>Sold out</p></body></html>`);
+  await page.addScriptTag({ content: factsFn });
+  // The `hide` option is applied the same way before facts are read.
+  await page.evaluate(() => document.querySelectorAll('.secret').forEach((node) => node.style.setProperty('display', 'none', 'important')));
+  const plainFacts = await page.evaluate(() => readFactsInPage());
+  check('headings hidden by `hide` stay out of the facts', plainFacts.headings, ['Visible heading', 'Shown']);
+  check('the excerpt is capped', plainFacts.text.length, 8000);
+  check('the whole text is measured past the cap', plainFacts.textLength > 8000, true);
+  check('the hash is stable', (await page.evaluate(() => readFactsInPage())).textHash, plainFacts.textHash);
+  check('without a request the head is read as it is', plainFacts.title, 'Orders for ada@example.com');
+  const asked = await page.evaluate((patterns) => readFactsInPage({ phrases: ['Sold  out', 'In stock'], redact: patterns }), PII_PATTERNS);
+  check('phrases are looked for in the whole text', asked.phrases, { 'Sold  out': true, 'In stock': false });
+  check('redaction covers the title', asked.title.includes('ada@example.com'), false);
+  check('redaction covers meta descriptions', asked.description.includes('123 4567'), false);
+  check('redaction covers Open Graph tags', asked.og.title.includes('@'), false);
+} finally {
+  await browser.close();
+}
 
 let failures = 0;
 for (const c of cases) {

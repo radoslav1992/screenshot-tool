@@ -1,17 +1,32 @@
 ---
-import Logo from './Logo.astro';
-import { COMPANY } from '../lib/company';
+import Logo from "./Logo.astro";
+import { COMPANY } from "../lib/company";
 
 const year = new Date().getFullYear();
 ---
 
 <footer class="sitefooter">
   <div class="wrap">
+    <a
+      class="adon-footer-callout"
+      href={Astro.locals.user ? "/app" : "/signup"}
+    >
+      <span>
+        Make your next
+        <br />
+        <em>capture count.</em>
+      </span>
+      <span aria-hidden="true">↗</span>
+    </a>
     <div class="sitefooter__grid">
       <div class="sitefooter__brand">
         <Logo variant="lime" wordColor="var(--paper)" />
-        <p class="small" style="color: var(--dim); margin-top: 12px; max-width: 30ch">
-          Clean, exact screenshots of any page — from any device, or through the API.
+        <p
+          class="small"
+          style="color: var(--dim); margin-top: 12px; max-width: 30ch"
+        >
+          Clean, exact screenshots of any page — from any device, or through the
+          API.
         </p>
       </div>
 
@@ -38,7 +53,10 @@ const year = new Date().getFullYear();
     </div>
 
     <div class="sitefooter__base">
-      <span>© {year} {COMPANY.name} · UIC {COMPANY.uic} · {COMPANY.address.city}, {COMPANY.address.country}</span>
+      <span>
+        © {year} {COMPANY.name} · UIC {COMPANY.uic} · {COMPANY.address.city},{" "}
+        {COMPANY.address.country}
+      </span>
       <span>Built on Cloudflare</span>
     </div>
   </div>

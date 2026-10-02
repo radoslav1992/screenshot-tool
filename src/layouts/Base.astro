@@ -1,6 +1,8 @@
 ---
-import '../styles/global.css';
-import '../styles/studio.css';
+import "../styles/global.css";
+import "../styles/studio.css";
+import "../styles/adon.css";
+import "../styles/adon/ai-system.css";
 
 interface Props {
   title: string;
@@ -11,19 +13,25 @@ interface Props {
 
 const {
   title,
-  description = 'Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.',
-  themeColor = '#F7F8FA',
-  bodyClass = '',
+  description = "Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.",
+  themeColor = "#F5F5F5",
+  bodyClass = "",
 } = Astro.props;
 
-const fullTitle = title === 'Easy Screen Capture' ? title : `${title} · Easy Screen Capture`;
+const isWorkspace = Astro.url.pathname.startsWith("/app");
+const isAuth = ["/login", "/signup"].includes(Astro.url.pathname);
+const fullTitle =
+  title === "Easy Screen Capture" ? title : `${title} · Easy Screen Capture`;
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <meta name="theme-color" content={themeColor} />
@@ -34,11 +42,26 @@ const fullTitle = title === 'Easy Screen Capture' ? title : `${title} · Easy Sc
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Easy Capture" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="mobile-web-app-capable" content="yes" />
 
-    <link rel="preload" href="/fonts/sora-var.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/ibm-plex-sans-var.woff2" as="font" type="font/woff2" crossorigin />
+    <link
+      rel="preload"
+      href="/vendor/adon/fonts/BDOGrotesk-Regular.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/ibm-plex-sans-var.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
 
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
@@ -47,22 +70,43 @@ const fullTitle = title === 'Easy Screen Capture' ? title : `${title} · Easy Sc
 
     <script is:inline>
       // Standalone (installed PWA) drops the desktop "phone frame" treatment.
-      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-        document.documentElement.dataset.standalone = 'true';
+      if (
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone
+      ) {
+        document.documentElement.dataset.standalone = "true";
       }
     </script>
   </head>
-  <body class={bodyClass}>
+  <body
+    class:list={[
+      bodyClass,
+      "adon-theme",
+      { "adon-workspace": isWorkspace, "adon-auth": isAuth },
+    ]}
+    data-demo="adon-ai-light"
+  >
     <slot />
+    {!isWorkspace && !isAuth && (
+      <button
+        class="adon-scroll-top"
+        type="button"
+        data-adon-top
+        aria-label="Back to top"
+        hidden
+      >
+        ↑
+      </button>
+    )}
 
     <script is:inline>
-      if (document.documentElement.dataset.standalone === 'true') {
-        document.body.classList.add('is-standalone');
+      if (document.documentElement.dataset.standalone === "true") {
+        document.body.classList.add("is-standalone");
       }
 
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {
             /* offline support is a progressive enhancement */
           });
         });
@@ -70,15 +114,15 @@ const fullTitle = title === 'Easy Screen Capture' ? title : `${title} · Easy Sc
 
       // Remember the install prompt so the Account screen can offer it.
       window.__escInstallPrompt = null;
-      window.addEventListener('beforeinstallprompt', (event) => {
+      window.addEventListener("beforeinstallprompt", (event) => {
         event.preventDefault();
         window.__escInstallPrompt = event;
-        document.dispatchEvent(new CustomEvent('esc:installable'));
+        document.dispatchEvent(new CustomEvent("esc:installable"));
       });
     </script>
-
     <script>
-      import '../scripts/ui';
+      import "../scripts/ui";
+      import "../scripts/adon-motion";
     </script>
   </body>
 </html>

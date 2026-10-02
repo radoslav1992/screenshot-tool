@@ -2,14 +2,59 @@
 import { defaultRule, type MonitorRule } from '../lib/monitor-rules';
 interface Props { rule?: MonitorRule }
 const { rule = defaultRule } = Astro.props;
+const kinds = [
+  ['visual', 'Visual changes meet the threshold'],
+  ['text', 'Page text changes'],
+  ['appeared', 'A phrase appears'],
+  ['disappeared', 'A phrase disappears'],
+  ['price', 'Numbers in a price element change'],
+  ['element', 'Text in a selected element changes'],
+];
+// Each field is shown only for the rules that use it.
+const FOR = {
+  phrase: ['appeared', 'disappeared'],
+  selector: ['price', 'element'],
+  price: ['price'],
+  text: ['text', 'appeared', 'disappeared', 'price', 'element'],
+  region: ['visual'],
+};
+const shown = (kinds: string[]) => kinds.includes(rule.kind);
 ---
-<div class="stack gap-12">
-<label>Alert when
-<select class="input" name="rule_kind">
-{[['visual','Visual changes meet the threshold'],['text','Page text changes'],['appeared','A phrase appears'],['disappeared','A phrase disappears'],['price','Numbers in a price element change'],['element','Text in a selected element changes']].map(([value,label]) => <option value={value} selected={rule.kind===value}>{label}</option>)}
-</select></label>
-<label>Phrase to watch<input class="input" name="rule_phrase" value={rule.phrase} maxlength="200" placeholder="Out of stock" /></label>
-<label>Element CSS selector (required for price and element rules)<input class="input" name="rule_selector" value={rule.selector} maxlength="200" placeholder=".product-price" /></label>
-<p class="small muted">Phrase matching ignores case. Price rules compare numbers in the selected element; select a price-only element. Text rules use collected page text and do not use the visual threshold or rectangular masks.</p>
-<label>Watched rectangle for visual comparisons (optional)<input class="input" name="watch_region" value={rule.region} placeholder="x,y,width,height" maxlength="100" /></label>
+<div class="stack gap-12" data-rule-fields>
+  <label>Alert when
+    <select class="input" name="rule_kind" data-rule-kind>
+      {kinds.map(([value, label]) => <option value={value} selected={rule.kind === value}>{label}</option>)}
+    </select>
+  </label>
+  <label data-rule-for={FOR.phrase.join(' ')} hidden={!shown(FOR.phrase)}>Phrase to watch
+    <input class="input" name="rule_phrase" value={rule.phrase} maxlength="200" placeholder="Out of stock" required={shown(FOR.phrase)} data-rule-required />
+    <span class="xs muted">Phrase matching ignores case.</span>
+  </label>
+  <label data-rule-for={FOR.selector.join(' ')} hidden={!shown(FOR.selector)}>Element CSS selector
+    <input class="input" name="rule_selector" value={rule.selector} maxlength="200" placeholder=".product-price" required={shown(FOR.selector)} data-rule-required />
+    <span class="xs muted" data-rule-for={FOR.price.join(' ')} hidden={!shown(FOR.price)}>Price rules compare the numbers in this element, so select a price-only element.</span>
+  </label>
+  <p class="small muted" data-rule-for={FOR.text.join(' ')} hidden={!shown(FOR.text)}>
+    Text rules use collected page text and do not use the visual threshold or rectangular masks.
+  </p>
+  <label data-rule-for={FOR.region.join(' ')} hidden={!shown(FOR.region)}>Watched rectangle for visual comparisons (optional)
+    <input class="input" name="watch_region" value={rule.region} placeholder="x,y,width,height" maxlength="100" />
+  </label>
 </div>
+<script>
+  document.querySelectorAll<HTMLElement>('[data-rule-fields]').forEach((root) => {
+    const kind = root.querySelector<HTMLSelectElement>('[data-rule-kind]')!;
+    const update = () => {
+      root.querySelectorAll<HTMLElement>('[data-rule-for]').forEach((node) => {
+        const show = node.dataset.ruleFor!.split(' ').includes(kind.value);
+        node.hidden = !show;
+        // A hidden required field would block the form with nothing to fix.
+        node.querySelectorAll<HTMLInputElement>(':scope > [data-rule-required]').forEach((input) => {
+          input.required = show;
+        });
+      });
+    };
+    kind.addEventListener('change', update);
+    update();
+  });
+</script>

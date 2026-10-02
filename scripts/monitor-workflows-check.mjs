@@ -23,8 +23,10 @@ assert.equal(evaluateRule(rule('text'),whole('Top','a',3),whole('Top, reflowed',
 assert.equal(evaluateRule(rule('disappeared',{phrase:'Sold out'}),whole('Sold out','a',20000,{'Sold out':true}),whole('Header','b',20000,{'Sold out':true})).changed,false,'a phrase that moved past the excerpt has not disappeared');
 assert.equal(evaluateRule(rule('appeared',{phrase:'In  stock'}),whole('Header','a',20000,{'In stock':false}),whole('Header','b',20000,{'in stock':true})).changed,true,'a phrase appearing past the excerpt is seen');
 const partial = evaluateRule(rule('disappeared',{phrase:'Sold out'}),whole('Sold out','a',20000),whole('Header','b',20000));
-assert.equal(partial.changed,true);
-assert.match(partial.detail,/only the first 8,000 characters could be checked/,'a miss on a long page without a whole-page answer says so');
+assert.equal(partial.changed,false,'an absence read only from the excerpt does not alert');
+assert.match(partial.detail,/Only the first 8,000 characters could be checked/,'and says why it stayed quiet');
+// A baseline taken before whole-page phrase answers must not make a phrase that was always there "appear".
+assert.equal(evaluateRule(rule('appeared',{phrase:'In stock'}),whole('Header','a',20000),whole('Header','b',20000,{'In stock':true})).changed,false,'no false alert on the first exact check');
 assert.equal(evaluateRule(rule('appeared',{phrase:'In stock'}),facts('Sold out'),facts('In stock now')).detail,'“In stock” appeared on the page.','rule alerts say what was found');
 assert.match(evaluateRule(rule('price',{selector:'.price'}),facts('',element('€19,99')),facts('',element('€29,99'))).detail,/^Price changed: €19,99 → €29,99$/);
 assert.throws(()=>parseMonitorRule({rule_kind:'appeared'}));

@@ -185,6 +185,8 @@ export interface CaptureOptions {
   /** Collect what the page says about itself alongside the picture. */
   facts: boolean;
   monitorSelector?: string;
+  /** Phrases a monitor rule looks for, answered against the whole page text rather than the stored excerpt. */
+  monitorPhrases?: string[];
   /**
    * Extra viewports to shoot in the same visit, on top of the main one. One
    * page load, several sizes — the browser is already there and warm.

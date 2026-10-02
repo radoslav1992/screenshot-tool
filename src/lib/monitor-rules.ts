@@ -45,9 +45,16 @@ export function evaluateRule(rule: MonitorRule, before: PageFacts | null, after:
   const was = contains(before, a, phrase), is = contains(after, b, phrase);
   const changed = rule.kind === 'appeared' ? !was.found && is.found : was.found && !is.found;
   if (!changed) return unchanged;
-  // Only an absence can be an artefact of the excerpt, so only an absence is qualified.
-  const partial = (rule.kind === 'appeared' ? was : is).partial ? ' (only the first 8,000 characters could be checked)' : '';
-  return { changed, detail: rule.kind === 'appeared' ? `“${phrase}” appeared on the page${partial}.` : `“${phrase}” is no longer on the page${partial}.` };
+  /*
+   * Only an absence can be an artefact of the excerpt. Checks now answer each
+   * phrase against the whole page, so an absence read from the excerpt is a
+   * baseline taken before that — alerting on it would announce a phrase that
+   * was there all along. Stay quiet once; the next comparison is exact.
+   */
+  if ((rule.kind === 'appeared' ? was : is).partial) {
+   return { changed: false, detail: `Only the first 8,000 characters could be checked for “${phrase}”; the next check covers the whole page.` };
+  }
+  return { changed, detail: rule.kind === 'appeared' ? `“${phrase}” appeared on the page.` : `“${phrase}” is no longer on the page.` };
  }
  return hashed || a !== b ? { changed: true, detail: 'The page text changed.' } : unchanged;
 }

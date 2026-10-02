@@ -582,6 +582,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     const options = {
       ...optionsFor(watch),
       monitorSelector: rule.selector || undefined,
+      monitorPhrases: (rule.kind === 'appeared' || rule.kind === 'disappeared') && rule.phrase ? [rule.phrase] : undefined,
       hide: noise.hide.split(',').filter(Boolean),
       ignoreRegions: parseIgnoreRegions(noise.ignore_regions),
     };

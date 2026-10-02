@@ -627,7 +627,12 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
     let facts: PageFacts | undefined;
     if (options.facts) {
       try {
-        const raw = await page.evaluate(readFactsInPage);
+        // The title and meta tags sit outside the redacted body, so the reader
+        // covers them itself; monitor phrases are answered against all the text.
+        const raw = await page.evaluate(readFactsInPage, {
+          phrases: options.monitorPhrases,
+          redact: options.redactPii ? PII_PATTERNS.map(({ source, flags }) => ({ source, flags })) : undefined,
+        });
         facts = buildFacts({ raw, finalUrl, status, redirects });
         if (options.monitorSelector) {
           facts.monitored_element = await page.evaluate((selector: string) => {

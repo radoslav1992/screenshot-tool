@@ -553,6 +553,26 @@ try {
     assert.equal(redactions, 3, 'once for the page, then again for each viewport');
   });
 
+  await section('monitor phrases and redaction reach the facts reader', async () => {
+    const page = fakePage();
+    const evaluate = page.evaluate;
+    let request = null;
+    page.evaluate = async (fn, ...args) => {
+      if (fn?.name === 'readFactsInPage') {
+        request = args[0] ?? null;
+        throw new Error('facts are not under test here');
+      }
+      return evaluate(fn, ...args);
+    };
+    useBrowser(page);
+    const options = parse({ url: 'https://example.com/', facts: '1', redact_pii: '1' });
+    options.monitorPhrases = ['In stock'];
+    await renderer.render(options).catch(() => undefined);
+    assert.ok(request, 'the facts reader was called with a request');
+    assert.deepEqual(request.phrases, ['In stock'], 'the phrase is answered against the whole page');
+    assert.ok(request.redact?.some((pattern) => pattern.source.includes('@')), 'the head is covered by the PII patterns');
+  });
+
   await section('an error inside the page is never retried through REST', async () => {
     setEnv({ BROWSER: {}, CF_ACCOUNT_ID: 'acct', CF_API_TOKEN: 'token' });
     const page = fakePage();

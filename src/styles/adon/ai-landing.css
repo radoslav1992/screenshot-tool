@@ -322,8 +322,8 @@
   background-image: radial-gradient(#1112 0.8px, transparent 0.8px);
   background-size: 10px 10px;
 }
-.ai-capability-art img {
-  width: 90px;
+.ai-capability-art .concept-art {
+  width: 140px;
   height: auto;
 }
 .ai-capability-art span {
@@ -421,8 +421,9 @@
 .ai-feature-top > span {
   font: 10px var(--mono);
 }
-.ai-feature-top > img {
-  object-fit: contain;
+.ai-feature-top > .concept-art {
+  width: 116px;
+  height: auto;
 }
 .ai-features h3 {
   font: 300 37px/1 var(--font_astronebula);
@@ -646,8 +647,8 @@
     padding: 25px;
     flex-direction: row;
   }
-  .ai-capability-art img {
-    width: 70px;
+  .ai-capability-art .concept-art {
+    width: 84px;
   }
   .ai-gallery-card {
     flex-basis: calc((100% - 25px) / 2);

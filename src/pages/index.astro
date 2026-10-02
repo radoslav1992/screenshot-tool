@@ -4,6 +4,7 @@ import Icon from "../components/Icon.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import AdonPreview from "../components/AdonPreview.astro";
+import ConceptArt from "../components/ConceptArt.astro";
 import CodeBlock from "../components/CodeBlock.astro";
 import { FRAME_LIST, MODES } from "../lib/capture-options";
 import { PLANS, WATCH_LIMIT } from "../lib/plans";
@@ -22,6 +23,7 @@ const projects = [
     text: "Capture the viewport, the full page, or a scroll series. Keep the details that matter.",
     tag: "WEBSITE CAPTURE",
     variant: "capture",
+    art: "capture",
     href: captureHref,
   },
   {
@@ -30,6 +32,7 @@ const projects = [
     text: "Schedule a check. Compare it with the last capture. Get an alert when your threshold is met.",
     tag: "VISUAL MONITORING",
     variant: "monitor",
+    art: "monitor",
     href: monitorHref,
   },
   {
@@ -38,6 +41,7 @@ const projects = [
     text: "Bring captures together in a project and share a before-and-after report with an expiring link.",
     tag: "CLIENT REPORTS",
     variant: "report",
+    art: "report",
     href: "/sample-report",
   },
   {
@@ -46,6 +50,7 @@ const projects = [
     text: "Check desktop and mobile, or choose a ready-made size for your next social post.",
     tag: "RESPONSIVE CAPTURE",
     variant: "devices",
+    art: "devices",
     href: "#sizes",
   },
 ] as const;
@@ -217,13 +222,7 @@ const faqs = [
                   </a>
                 </div>
                 <div class="ai-capability-art">
-                  <img
-                    src={`/vendor/adon/shapes/shape-s-${[5, 7, 8, 9][index]}.webp`}
-                    width="125"
-                    height="125"
-                    alt=""
-                    loading="lazy"
-                  />
+                  <ConceptArt variant={project.art} size={140} />
                   <span>[ 0{index + 1} / CONNECTED ]</span>
                 </div>
               </article>
@@ -289,13 +288,7 @@ const faqs = [
           {MODES.map((mode, index) => (
             <article data-adon-reveal>
               <div class="ai-feature-top">
-                <img
-                  src={`/vendor/adon/shapes/shape-s-${7 + index}.webp`}
-                  alt=""
-                  width="100"
-                  height="100"
-                  loading="lazy"
-                />
+                <ConceptArt variant={mode.id} size={116} />
                 <span>[ 0{index + 1} ]</span>
               </div>
               <h3>{mode.label}</h3>

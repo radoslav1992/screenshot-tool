@@ -30,6 +30,7 @@ The theme is intentionally isolated:
 | `src/scripts/adon-motion.ts`         | Optional marketing motion                             |
 | `src/components/AdonPreview.astro`   | Product illustrations                                 |
 | `src/components/AdonAuthStory.astro` | Account-page editorial panel                          |
+| `src/components/ConceptArt.astro`    | Capture-mode and capability illustrations             |
 | `src/components/AiPage.astro`        | Public page shell: header, ruled grid and footer      |
 | `src/components/AiPageHead.astro`    | Page hero: label rule, display title and lede row     |
 | `src/components/AiDoc.astro`         | Long-form layout with a sticky section index          |

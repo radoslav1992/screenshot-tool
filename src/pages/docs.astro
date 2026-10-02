@@ -5,6 +5,7 @@ import AiPageHead from '../components/AiPageHead.astro';
 import AiDoc from '../components/AiDoc.astro';
 import DocSection from '../components/DocSection.astro';
 import CodeBlock from '../components/CodeBlock.astro';
+import Icon from '../components/Icon.astro';
 import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
 import { API_RATE_LIMIT, PLANS } from '../lib/plans';
 import { docSections } from '../lib/doc-sections';
@@ -361,8 +362,8 @@ const { list: sections, byId: s } = docSections(toc);
           {
             DEVICE_LIST.map((device) => (
               <div class="row">
-                <span class="row__label">
-                  {device.icon} {device.label}
+                <span class="row__label" style="display: flex; align-items: center; gap: 8px">
+                  <Icon name={device.icon} size={16} /> {device.label}
                 </span>
                 <span class="row__value mono">
                   {device.width}×{device.height} @{device.scale}x

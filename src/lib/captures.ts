@@ -560,6 +560,19 @@ export async function getCapture(id: string): Promise<CaptureRow | null> {
 }
 
 export async function deleteCapture(row: CaptureRow): Promise<void> {
+  // A monitor compares each check with its baseline. Deleting it would make the
+  // next check a silent "first check" and miss whatever changed in between.
+  const monitor = await env.DB.prepare(`SELECT label, url FROM watches WHERE baseline_capture_id = ? LIMIT 1`)
+    .bind(row.id)
+    .first<{ label: string; url: string }>();
+  if (monitor) {
+    throw new HttpError(
+      409,
+      'baseline_in_use',
+      `This capture is the comparison baseline for the monitor “${monitor.label || displayUrl(monitor.url)}”. ` +
+        'It is replaced after the next check, or delete the monitor first.',
+    );
+  }
   const files = safeParseFiles(row.files);
   await Promise.all(files.map((file) => env.SHOTS.delete(file.key).catch(() => undefined)));
   await env.DB.prepare(`DELETE FROM captures WHERE id = ?`).bind(row.id).run();

@@ -133,7 +133,12 @@ context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such
 
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and
 `CF_API_TOKEN` (a token with *Browser Rendering: Edit*) as secrets to use the REST fallback — it
-covers `visible`, `fullpage` and `pdf`, but not `series`.
+covers `visible`, `fullpage` and `pdf`, but not `series`. Options only the binding can honour (`hide`,
+`blur`, `redact_pii`, ignore regions, credentials, actions, `dark_mode`, `sizes`) are refused with
+`501 unsupported_option` rather than silently dropped. When the binding exists but cannot be reached,
+REST stands in only for captures that ask for none of those (and no ad blocking, consent handling or
+facts, so a monitor's picture stays comparable); anything else answers a retryable
+`503 browser_unavailable`.
 
 ```bash
 npx wrangler secret put CF_ACCOUNT_ID

@@ -311,8 +311,13 @@ const { list: sections, byId: s } = docSections(toc);
         <p>
           <span class="mono">POST /v1/compare</span> captures two pages and measures how much of the picture differs.
           Each side takes the same parameters as a capture, prefixed <span class="mono">a_</span> and
-          {' '}<span class="mono">b_</span>; anything unprefixed applies to both. Staging against production, a page
-          before and after a deploy, your pricing page against a competitor's.
+          {' '}<span class="mono">b_</span>; anything unprefixed applies to both — except credentials:
+          {' '}<span class="mono">headers</span>, <span class="mono">cookies</span> and
+          {' '}<span class="mono">basic_auth</span> must be sent per side (<span class="mono">a_basic_auth</span>,
+          {' '}<span class="mono">b_cookies</span>…), so staging credentials never reach the other page.
+          {' '}<span class="mono">sizes</span> is not accepted here. A comparison costs two screenshots, both checked
+          before anything is captured. Staging against production, a page before and after a deploy, your pricing page
+          against a competitor's.
         </p>
         <CodeBlock tag="POST /v1/compare" code={compareExample} />
       </DocSection>

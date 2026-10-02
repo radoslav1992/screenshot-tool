@@ -8,14 +8,18 @@ import Logo from "./Logo.astro";
     <span class="eyebrow" style="color:var(--ink)">
       YOUR WEBSITE, IN FOCUS
     </span>
-    <h2 style="margin-top:24px">
+    {/*
+      A slogan, not a heading: it sits before the form in the document, and as
+      an <h2> it put a second-level heading ahead of the page's only <h1>.
+    */}
+    <div class="adon-auth-story__headline">
       A clearer
       <br />
       <em>picture.</em>
       <br />A better
       <br />
       workflow.
-    </h2>
+    </div>
     <p>
       Capture the page. Catch the change. Keep every review and handoff in one
       place.
@@ -27,3 +31,22 @@ import Logo from "./Logo.astro";
     <span>SHARE</span>
   </div>
 </aside>
+
+<style>
+  /* The same type the theme gave the old heading (ai-system.css). */
+  .adon-auth-story__headline {
+    margin-top: 24px;
+    font: 300 clamp(42px, 5.2vw, 78px) / 0.98 var(--font_astronebula);
+    letter-spacing: -0.025em;
+    text-transform: uppercase;
+  }
+  .adon-auth-story__headline em {
+    font: inherit;
+    color: var(--theme);
+  }
+  @media (max-width: 899px) {
+    .adon-auth-story__headline {
+      font-size: clamp(30px, 10vw, 52px);
+    }
+  }
+</style>

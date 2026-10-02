@@ -3,11 +3,16 @@ import Base from '../layouts/Base.astro';
 import AiPage from '../components/AiPage.astro';
 import AiPageHead from '../components/AiPageHead.astro';
 import { consumeVerificationToken } from '../lib/verification';
+import { safeNext } from '../lib/safe-next';
 
 const token = Astro.url.searchParams.get('token') ?? '';
 const userId = token ? await consumeVerificationToken(token) : null;
 const ok = Boolean(userId);
-const signedInAsSameUser = ok && Astro.locals.user?.id === userId;
+// Set when the confirmation was asked for by something waiting on it, such as
+// a team invitation. Protected pages send a signed-out visitor through login
+// and back, so the link needs nothing more.
+const next = safeNext(Astro.url.searchParams.get('next'), Astro.url.origin);
+Astro.response.headers.set('referrer-policy', 'no-referrer');
 ---
 
 <Base title={ok ? 'Email confirmed' : 'Link not valid'}>
@@ -29,13 +34,15 @@ const signedInAsSameUser = ok && Astro.locals.user?.id === userId;
       <p>
         {
           ok
-            ? 'Your account is verified. You can start capturing right away.'
+            ? next === '/app'
+              ? 'Your account is verified. You can start capturing right away.'
+              : 'Your account is verified. Carry on where you left off.'
             : 'The link has expired or was already used. Request a new one from your account page.'
         }
       </p>
       <div class="ai-actions">
-        <a class="rr-btn-classic" href={signedInAsSameUser || ok ? '/app' : '/login'}>
-          {ok ? 'Start capturing' : 'Log in'} <span aria-hidden="true">↗</span>
+        <a class="rr-btn-classic" href={ok ? next : '/login'}>
+          {ok ? (next === '/app' ? 'Start capturing' : 'Continue') : 'Log in'} <span aria-hidden="true">↗</span>
         </a>
       </div>
     </AiPageHead>

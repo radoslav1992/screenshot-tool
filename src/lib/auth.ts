@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { getPlan, type PlanId } from './plans';
 import { prefixedId, randomId, randomToken, sha256Hex, timingSafeEqual, toHex } from './ids';
-import { HttpError } from './http';
+import { HttpError, badRequest } from './http';
 
 export const SESSION_COOKIE = 'sf_session';
 export const SESSION_TTL_DAYS = 30;
@@ -110,6 +110,79 @@ export async function verifyPassword(password: string, stored: string | null): P
   return timingSafeEqual(toHex(derived), toHex(fromBase64(hashRaw)));
 }
 
+/**
+ * A genuine hash of a password nobody knows. Checking against it when there is
+ * no account to check against costs the same PBKDF2 run as a real login, so the
+ * response time does not say which addresses are registered.
+ */
+const DUMMY_HASH = 'pbkdf2$100000$FiBaxWQNfkwQlpPTAf0OMw==$ReeZN+9w6C6HDOzhLXTiZ62PSnKo5CH0NUx3pt/9wZY=';
+
+/** `verifyPassword`, but it does the work even when there is nothing stored. */
+export async function verifyPasswordEvenly(password: string, stored: string | null | undefined): Promise<boolean> {
+  if (stored) return verifyPassword(password, stored);
+  await verifyPassword(password, DUMMY_HASH);
+  return false;
+}
+
+export const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 200;
+
+/** The rules signup applies, shared by password changes and resets. */
+export function checkNewPassword(password: string, param = 'password'): void {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    throw badRequest(`Passwords must be at least ${PASSWORD_MIN_LENGTH} characters.`, param);
+  }
+  if (password.length > PASSWORD_MAX_LENGTH) {
+    throw badRequest('That password is too long.', param);
+  }
+}
+
+/**
+ * Sets a new password and signs out every session except, optionally, the one
+ * making the change. One batch, so a password never changes while the sessions
+ * opened under the old one survive.
+ *
+ * `expectedHash` makes it a compare-and-swap: the write only lands while the
+ * password is still the one the caller checked, so two submissions of the same
+ * reset link (or two password changes racing) cannot both win. The session
+ * delete is tied to the same outcome, so a losing request ends nobody's session.
+ *
+ * `confirmEmail` is for resets: following a link sent to the address proves
+ * the person controls it, which is everything verification asks for.
+ */
+export async function replacePassword(
+  userId: string,
+  password: string,
+  options: { expectedHash?: string | null; keepSessionToken?: string; confirmEmail?: boolean } = {},
+): Promise<{ replaced: boolean; sessionsEnded: number }> {
+  const hash = await hashPassword(password);
+  const now = new Date().toISOString();
+  const guarded = options.expectedHash !== undefined;
+  const guard = guarded ? ' AND password_hash IS ?' : '';
+  const guardArgs = guarded ? [options.expectedHash ?? null] : [];
+
+  const update = options.confirmEmail
+    ? env.DB.prepare(
+        `UPDATE users SET password_hash = ?, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
+         WHERE id = ?${guard}`,
+      ).bind(hash, now, now, userId, ...guardArgs)
+    : env.DB.prepare(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?${guard}`).bind(
+        hash,
+        now,
+        userId,
+        ...guardArgs,
+      );
+
+  const keep = options.keepSessionToken ? await sha256Hex(options.keepSessionToken) : null;
+  const sessions = env.DB.prepare(
+    `DELETE FROM sessions WHERE user_id = ?${keep ? ' AND id <> ?' : ''}
+       AND EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash = ?)`,
+  ).bind(userId, ...(keep ? [keep] : []), userId, hash);
+
+  const [updated, ended] = await env.DB.batch([update, sessions]);
+  return { replaced: (updated?.meta?.changes ?? 0) > 0, sessionsEnded: ended?.meta?.changes ?? 0 };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Sessions                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -142,6 +215,26 @@ export async function resolveSession(token: string | undefined): Promise<Session
 export async function destroySession(token: string | undefined): Promise<void> {
   if (!token) return;
   await env.DB.prepare(`DELETE FROM sessions WHERE id = ?`).bind(await sha256Hex(token)).run();
+}
+
+/**
+ * Signs a user out everywhere, or everywhere but the session in `keepToken`.
+ * Push registrations hang off sessions, so those devices stop getting alerts.
+ */
+export async function endSessions(userId: string, keepToken?: string): Promise<number> {
+  const result = keepToken
+    ? await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ? AND id <> ?`)
+        .bind(userId, await sha256Hex(keepToken))
+        .run()
+    : await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId).run();
+  return result.meta?.changes ?? 0;
+}
+
+export async function countSessions(userId: string): Promise<number> {
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM sessions WHERE user_id = ? AND expires_at > ?`)
+    .bind(userId, new Date().toISOString())
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 export function sessionCookie(token: string, expiresAt: Date, secure: boolean): string {

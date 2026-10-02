@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import "../styles/studio.css";
 import "../styles/adon.css";
+import "../styles/adon/ai-system.css";
 
 interface Props {
   title: string;
@@ -13,7 +14,7 @@ interface Props {
 const {
   title,
   description = "Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.",
-  themeColor = "#FA814D",
+  themeColor = "#F5F5F5",
   bodyClass = "",
 } = Astro.props;
 
@@ -83,7 +84,7 @@ const fullTitle =
       "adon-theme",
       { "adon-workspace": isWorkspace, "adon-auth": isAuth },
     ]}
-    data-demo="adon-startup-light"
+    data-demo="adon-ai-light"
   >
     <slot />
     {!isWorkspace && !isAuth && (

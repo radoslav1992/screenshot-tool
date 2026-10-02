@@ -1,4 +1,4 @@
-/* Adon Startup Agency / light. Shared product adaptation. */
+/* Adon shared product foundations. */
 @font-face {
   font-family: Adon Grotesk;
   src: url("/vendor/adon/fonts/BDOGrotesk-Regular.ttf") format("truetype");
@@ -15,12 +15,6 @@
   font-family: Adon Grotesk;
   src: url("/vendor/adon/fonts/BDOGrotesk-DemiBold.ttf") format("truetype");
   font-weight: 600 900;
-  font-display: swap;
-}
-@font-face {
-  font-family: Adon Editorial;
-  src: url("/vendor/adon/fonts/PPEditorialNew-Italic.otf") format("opentype");
-  font-style: italic;
   font-display: swap;
 }
 :root {
@@ -43,7 +37,7 @@
   --olive: #625b51;
   --sans: "Adon Grotesk", system-ui, sans-serif;
   --display: var(--sans);
-  --font_ppeditor: "Adon Editorial", Georgia, serif;
+  --font_ppeditor: var(--sans);
   --primary: #111;
   --secondary: #555;
   --black: #111;

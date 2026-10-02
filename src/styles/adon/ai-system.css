@@ -517,7 +517,7 @@ body.adon-theme .shell--app > .tabbar {
   row-gap: 12px;
 }
 .back-link,
-.appbar > a:not(.btn):not(.avatar):not(.logo) {
+.appbar > a:not(.btn):not(.avatar):not(.logo):not(.icon-btn) {
   display: inline-flex;
   align-items: center;
   min-height: 44px;

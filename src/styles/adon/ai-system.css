@@ -387,6 +387,12 @@ body.adon-theme .shell--app > .tabbar {
   background: white;
 }
 
+/* In a column that already spaces its children, the heading adds no margin. */
+.adon-theme :is(.stack, .app-col) > :is(.section-heading, .panel-heading),
+.adon-theme .project-panel.stack > h2 {
+  margin-bottom: 2px;
+}
+
 /* A row of actions: buttons keep their own width and wrap. */
 .btn-row {
   display: flex;
@@ -412,6 +418,28 @@ body.adon-theme .shell--app > .tabbar {
   align-items: center;
   min-height: 44px;
   font-weight: 600;
+}
+
+/* A button that reads as an inline text link. */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-block: -12px;
+  padding: 0 4px;
+  font-weight: 600;
+  color: var(--green);
+}
+.link-button:hover {
+  color: var(--ink);
+}
+
+/* Small print directly under the capture button. */
+.capture-note {
+  margin-top: -10px;
+}
+.preset-hint {
+  margin-top: 10px;
 }
 
 /* Destructive actions: outlined in the danger colour and set apart from Save. */
@@ -489,6 +517,7 @@ body.adon-theme .shell--app > .tabbar {
   margin-block: -6px;
 }
 .adon-theme .chips--wrap,
+.adon-theme .frames,
 .adon-theme .preset-row {
   row-gap: 12px;
 }

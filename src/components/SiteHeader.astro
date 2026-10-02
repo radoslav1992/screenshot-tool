@@ -1,6 +1,6 @@
 ---
-import Logo from './Logo.astro';
-import Icon from './Icon.astro';
+import Logo from "./Logo.astro";
+import Icon from "./Icon.astro";
 
 interface Props {
   /** The hero sits on ink, so the header inverts over it. */
@@ -11,11 +11,14 @@ interface Props {
 const { dark = false, user = null } = Astro.props;
 ---
 
-<header class={dark ? 'siteheader siteheader--dark' : 'siteheader'}>
+<header class={dark ? "siteheader siteheader--dark" : "siteheader"}>
   <div class="wrap siteheader__inner">
-    <Logo variant={dark ? 'lime' : 'ink'} wordColor={dark ? 'var(--paper)' : undefined} />
+    <Logo
+      variant={dark ? "lime" : "ink"}
+      wordColor={dark ? "var(--paper)" : undefined}
+    />
 
-    <nav class="siteheader__nav">
+    <nav class="siteheader__nav" aria-label="Main navigation">
       <a href="/features">Features</a>
       <a href="/sample-report">Sample report</a>
       <a href="/pricing">Pricing</a>
@@ -51,7 +54,12 @@ const { dark = false, user = null } = Astro.props;
     </button>
   </div>
 
-  <nav class="siteheader__sheet" id="menu" hidden>
+  <nav
+    class="siteheader__sheet"
+    id="menu"
+    aria-label="Mobile navigation"
+    hidden
+  >
     <div class="wrap stack">
       <a href="/features">Features</a>
       <a href="/sample-report">Sample report</a>
@@ -70,21 +78,28 @@ const { dark = false, user = null } = Astro.props;
 </header>
 
 <script>
-  const toggle = document.getElementById('menu-toggle');
-  const menu = document.getElementById('menu');
-  toggle?.addEventListener('click', () => {
-    const open = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', String(!open));
+  const toggle = document.getElementById("menu-toggle");
+  const menu = document.getElementById("menu");
+  toggle?.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!open));
     if (menu) menu.hidden = open;
-    toggle.setAttribute('aria-label', open ? 'Open menu' : 'Close menu');
+    toggle.setAttribute("aria-label", open ? "Open menu" : "Close menu");
   });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && toggle?.getAttribute('aria-expanded') === 'true') {
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      toggle?.getAttribute("aria-expanded") === "true"
+    ) {
       toggle.click();
       toggle.focus();
     }
   });
-  menu?.addEventListener('click', (event) => {
-    if ((event.target as HTMLElement).closest('a') && toggle?.getAttribute('aria-expanded') === 'true') toggle.click();
+  menu?.addEventListener("click", (event) => {
+    if (
+      (event.target as HTMLElement).closest("a") &&
+      toggle?.getAttribute("aria-expanded") === "true"
+    )
+      toggle.click();
   });
 </script>

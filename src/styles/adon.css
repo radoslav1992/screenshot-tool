@@ -1,0 +1,625 @@
+/* Adon Startup Agency / light. Shared product adaptation. */
+@font-face {
+  font-family: Adon Grotesk;
+  src: url("/vendor/adon/fonts/BDOGrotesk-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Adon Grotesk;
+  src: url("/vendor/adon/fonts/BDOGrotesk-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: Adon Grotesk;
+  src: url("/vendor/adon/fonts/BDOGrotesk-DemiBold.ttf") format("truetype");
+  font-weight: 600 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: Adon Editorial;
+  src: url("/vendor/adon/fonts/PPEditorialNew-Italic.otf") format("opentype");
+  font-style: italic;
+  font-display: swap;
+}
+:root {
+  --ink: #111;
+  --ink-2: #171717;
+  --surface-dark: #202020;
+  --paper: #f8f8f8;
+  --canvas: #efeeeb;
+  --lime: #fa814d;
+  --lime-tint: #fff0e8;
+  --muted: #62625f;
+  --muted-2: #73736d;
+  --line: #d7d6d1;
+  --line-2: #e3e2dc;
+  --line-3: #efeee9;
+  --green: #963f1b;
+  --green-deep: #793113;
+  --dim: #c2c1bc;
+  --dim-2: #aaa9a3;
+  --olive: #625b51;
+  --sans: "Adon Grotesk", system-ui, sans-serif;
+  --display: var(--sans);
+  --font_ppeditor: "Adon Editorial", Georgia, serif;
+  --primary: #111;
+  --secondary: #555;
+  --black: #111;
+  --white: #fff;
+  --theme: #fa814d;
+  --shadow-card: 0 5px 20px #11111104;
+  --shadow-float: 0 24px 65px #1111110c;
+}
+.adon-theme {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.adon-theme .wrap {
+  width: min(1400px, calc(100% - 96px));
+  max-width: 1400px;
+  padding-inline: 0;
+}
+.adon-theme h1,
+.adon-theme h2,
+.adon-theme h3 {
+  font-weight: 500;
+}
+.adon-theme .section__title {
+  font-size: clamp(38px, 5.5vw, 76px);
+  font-weight: 400;
+  line-height: 1.04;
+  letter-spacing: -0.055em;
+}
+.adon-theme .section__sub {
+  line-height: 1.8;
+  max-width: 60ch;
+}
+.adon-theme .eyebrow {
+  color: var(--green);
+  letter-spacing: 0.08em;
+}
+.adon-theme .btn {
+  border-radius: 999px;
+  min-height: 48px;
+  transition:
+    background 0.25s,
+    color 0.25s,
+    transform 0.25s;
+  gap: 14px;
+}
+.adon-theme .btn:hover {
+  transform: translateY(-2px);
+}
+.adon-theme .btn--ink:hover {
+  background: #3b302a;
+  box-shadow: none;
+}
+.adon-theme .btn--lime,
+.adon-theme .btn--pill-lime {
+  background: var(--theme);
+  color: var(--ink);
+}
+.adon-theme .btn--lime:hover,
+.adon-theme .btn--pill-lime:hover {
+  background: #ff9b72;
+  color: var(--ink);
+}
+.adon-theme .input {
+  border-radius: 6px;
+  background: white;
+}
+.adon-theme input[type="checkbox"],
+.adon-theme input[type="radio"] {
+  accent-color: var(--ink);
+}
+.adon-theme .siteheader {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 20;
+}
+.adon-theme .siteheader__inner {
+  min-height: 100px;
+  gap: 24px;
+}
+.adon-theme .siteheader__nav {
+  gap: 28px;
+}
+.adon-theme .siteheader__nav a {
+  font-size: 14px;
+  color: var(--ink);
+  position: relative;
+}
+.adon-theme .siteheader__nav a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s;
+}
+.adon-theme .siteheader__nav a:hover::after {
+  transform: scaleX(1);
+}
+.adon-theme .siteheader__toggle {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+.adon-theme .siteheader__sheet {
+  background: var(--paper);
+  padding-block: 20px;
+}
+.adon-theme .siteheader__sheet a {
+  font-size: 23px;
+  padding: 6px 0;
+}
+.adon-theme .siteheader--dark {
+  background: var(--ink);
+  color: white;
+}
+.adon-theme .siteheader--dark .siteheader__nav a {
+  color: white;
+}
+.adon-theme .logo__word {
+  font-weight: 600;
+  letter-spacing: -0.045em;
+}
+.adon-theme .logo__mark {
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+}
+.adon-theme .sitefooter {
+  padding: 0;
+  background: var(--ink);
+  color: white;
+}
+.adon-footer-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 80px 0;
+  border-bottom: 1px solid #ffffff35;
+  color: white;
+}
+.adon-footer-callout > span:first-child {
+  font-size: clamp(44px, 7.5vw, 106px);
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+.adon-footer-callout em {
+  font-family: var(--font_ppeditor);
+  font-weight: 400;
+}
+.adon-footer-callout > span:last-child {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 100px;
+  height: 100px;
+  border: 1px solid #ffffff65;
+  border-radius: 50%;
+  font-size: 52px;
+  transition:
+    transform 0.35s,
+    background 0.35s,
+    color 0.35s;
+}
+.adon-footer-callout:hover {
+  color: var(--theme);
+}
+.adon-footer-callout:hover > span:last-child {
+  transform: rotate(45deg);
+  background: var(--theme);
+  color: var(--ink);
+  border-color: var(--theme);
+}
+.adon-theme .sitefooter__grid {
+  padding-block: 70px;
+  gap: 40px;
+}
+.adon-theme .sitefooter__title {
+  font-family: var(--sans);
+  font-size: 16px;
+  color: white;
+  margin-bottom: 22px;
+}
+.adon-theme .sitefooter__base {
+  padding-block: 24px;
+  border-top: 1px solid #ffffff26;
+  color: #b8b7b2;
+}
+.adon-theme .sitefooter a:not(.adon-footer-callout):hover {
+  color: var(--theme);
+}
+.adon-theme .plan {
+  border-radius: 12px;
+  background: white;
+  border-color: var(--line);
+  box-shadow: none;
+}
+.adon-theme .plan--featured {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: white;
+}
+.adon-theme .plan__badge {
+  background: var(--theme);
+  color: var(--ink);
+  border-radius: 999px;
+  font-size: 10px;
+}
+.adon-theme .plan__price {
+  font-weight: 400;
+  letter-spacing: -0.05em;
+}
+.adon-theme .switch {
+  border-radius: 999px;
+  background: #eae8e2;
+  padding: 5px;
+}
+.adon-theme .switch button {
+  border-radius: 999px;
+}
+.adon-theme .switch button[aria-pressed="true"] {
+  background: var(--ink);
+  color: white;
+}
+.adon-theme .workspace-features {
+  padding-block: 72px;
+}
+.adon-theme .workspace-features > h2 {
+  font-size: clamp(28px, 4vw, 48px);
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+}
+.adon-theme .feature-grid article,
+.adon-theme .feature-table {
+  border-radius: 8px;
+}
+.adon-theme .section--ink {
+  background: var(--ink);
+}
+/* Keep control density and mobile bottom navigation intact inside the app. */
+.adon-workspace .workspace-intro h1 {
+  font-weight: 400;
+  font-size: clamp(28px, 3.4vw, 44px);
+}
+.adon-workspace .workspace-intro {
+  padding-block: 16px 12px;
+}
+.adon-workspace .capture-panel,
+.adon-workspace .card,
+.adon-workspace .usage-card,
+.adon-workspace .shot {
+  border-radius: 8px;
+  border-color: var(--line);
+}
+.adon-workspace .capture-panel {
+  border-top: 3px solid var(--ink);
+}
+.adon-workspace .usage-card {
+  background: var(--lime-tint);
+  border: 1px solid #edcbb7;
+}
+.adon-workspace .device,
+.adon-workspace .mode,
+.adon-workspace .chip,
+.adon-workspace .preset-row button {
+  border-radius: 6px;
+}
+.adon-workspace .preset-row button[aria-pressed="true"],
+.adon-workspace .device:has(input:checked),
+.adon-workspace .mode:has(input:checked),
+.adon-workspace .chip:has(input:checked) {
+  background: var(--lime-tint);
+  border-color: var(--theme);
+  color: var(--ink);
+}
+.adon-workspace .workflow-link {
+  border-color: #edcbb7;
+  border-radius: 6px;
+}
+.adon-workspace .btn {
+  border-radius: 6px;
+}
+.adon-workspace .tabbar__item[aria-current="page"] .tabbar__icon {
+  background: var(--theme);
+  color: var(--ink);
+}
+.adon-auth {
+  background: var(--theme);
+}
+.adon-auth-layout {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 1600px;
+  margin: auto;
+}
+.adon-auth-story {
+  padding: 60px clamp(28px, 6vw, 100px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 65px;
+}
+.adon-auth-story h2 {
+  font-size: clamp(56px, 6.6vw, 100px);
+  letter-spacing: -0.06em;
+  line-height: 1;
+}
+.adon-auth-story h2 em {
+  font-family: var(--font_ppeditor);
+  font-weight: 400;
+}
+.adon-auth-story p {
+  max-width: 35ch;
+  line-height: 1.7;
+  margin-top: 26px;
+}
+.adon-auth-meta {
+  display: flex;
+  gap: 24px;
+  font: 11px var(--mono);
+  border-top: 1px solid #11111155;
+  padding-top: 24px;
+}
+.adon-auth-form {
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+.adon-auth .adon-auth-form .shell {
+  margin: 0;
+  min-height: auto;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.adon-auth .h2 {
+  font-size: 40px;
+  letter-spacing: -0.05em;
+  font-weight: 400;
+}
+.adon-skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  transform: translateY(-150%);
+  z-index: 1000;
+  background: var(--ink);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 4px;
+}
+.adon-skip-link:focus {
+  transform: none;
+  color: white;
+}
+.adon-scroll-top {
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  width: 48px;
+  height: 48px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  z-index: 30;
+  font-size: 24px;
+  box-shadow: 0 5px 20px #1111;
+}
+.adon-motion-paused *,
+.adon-motion-paused *::before,
+.adon-motion-paused *::after {
+  animation-play-state: paused !important;
+}
+@media (min-width: 900px) {
+  .adon-workspace .shell--app > .tabbar {
+    background: var(--ink);
+    color: white;
+    border-right: 0;
+    padding: 30px 16px;
+  }
+  .adon-workspace .tabbar .logo {
+    color: white;
+  }
+  .adon-workspace .shell--app > .tabbar .tabbar__item {
+    color: #c9c7c1;
+    border-radius: 6px;
+  }
+  .adon-workspace .shell--app > .tabbar .tabbar__item:hover {
+    background: #292929;
+    color: white;
+  }
+  .adon-workspace .shell--app > .tabbar .tabbar__item[aria-current="page"] {
+    background: var(--theme);
+    color: var(--ink);
+  }
+  .adon-workspace .rail-note {
+    border-top-color: #ffffff35;
+    color: #bbb;
+  }
+  .adon-workspace .rail-note a {
+    color: var(--theme);
+  }
+  .adon-workspace .shell--app > .appbar {
+    background: var(--paper);
+  }
+}
+@media (max-width: 1100px) {
+  .adon-theme .siteheader__nav {
+    gap: 16px;
+  }
+  .adon-theme .siteheader__inner {
+    gap: 16px;
+  }
+  .adon-theme .logo__word {
+    font-size: 14px;
+  }
+}
+@media (max-width: 899px) {
+  .adon-theme .wrap {
+    width: calc(100% - 48px);
+  }
+  .adon-theme .siteheader__inner {
+    min-height: 80px;
+  }
+  .adon-theme .siteheader__nav,
+  .adon-theme .siteheader__actions {
+    display: none;
+  }
+  .adon-theme .siteheader__toggle {
+    display: flex;
+    margin-left: auto;
+  }
+  .adon-auth-layout {
+    grid-template-columns: 1fr;
+  }
+  .adon-auth-story {
+    padding: 30px;
+    gap: 30px;
+  }
+  .adon-auth-story h2 {
+    font-size: 52px;
+  }
+  .adon-auth-story p {
+    display: none;
+  }
+  .adon-auth-meta {
+    display: none;
+  }
+  .adon-auth-form {
+    padding: 24px;
+  }
+  .adon-footer-callout {
+    padding-block: 56px;
+  }
+  .adon-footer-callout > span:last-child {
+    width: 64px;
+    height: 64px;
+    font-size: 36px;
+  }
+}
+@media (max-width: 560px) {
+  .adon-theme .wrap {
+    width: calc(100% - 36px);
+  }
+  .adon-theme .sitefooter__grid {
+    gap: 32px;
+    padding-block: 45px;
+  }
+  .adon-theme .sitefooter__base {
+    gap: 15px;
+  }
+  .adon-footer-callout {
+    gap: 16px;
+  }
+  .adon-footer-callout > span:first-child {
+    font-size: 44px;
+  }
+  .adon-theme .section__title {
+    font-size: 40px;
+  }
+  .adon-scroll-top {
+    right: 16px;
+    bottom: 16px;
+  }
+  .adon-auth-form {
+    padding: 12px;
+  }
+  .adon-auth .h2 {
+    font-size: 34px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adon-theme .btn:hover {
+    transform: none;
+  }
+  .adon-marquee-track {
+    animation: none !important;
+  }
+  .adon-orbit {
+    animation: none !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+/* Beat the legacy footer's generic anchor rules for the large Adon CTA. */
+.adon-theme .sitefooter .adon-footer-callout {
+  display: flex;
+  padding: 80px 0;
+  margin: 0;
+  color: white;
+}
+.adon-theme .sitefooter .adon-footer-callout:hover {
+  color: var(--theme);
+}
+.adon-theme .sitefooter .logo {
+  display: inline-flex;
+  padding: 0;
+  margin: 0;
+}
+.adon-theme .section__head--center .section__title {
+  max-width: none;
+}
+@media (min-width: 1280px) {
+  .adon-theme .plan-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .adon-theme .plan-grid .plan {
+    padding: 22px 18px;
+  }
+  .adon-theme .plan__head {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .adon-theme .plan__price {
+    font-size: 30px;
+  }
+}
+@media (max-width: 899px) {
+  .adon-theme .sitefooter .adon-footer-callout {
+    padding-block: 56px;
+  }
+}
+.adon-preview-dots {
+  display: flex;
+  gap: 4px;
+}
+.adon-preview-dots i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c0bbb2;
+}
+.adon-scroll-top {
+  background: conic-gradient(
+    var(--theme) var(--scroll-progress, 0%),
+    var(--paper) 0
+  );
+}
+.adon-workspace .device:has(input:checked) .device__name {
+  color: var(--ink);
+}
+.adon-workspace .device:has(input:checked) .device__size {
+  color: var(--muted);
+}

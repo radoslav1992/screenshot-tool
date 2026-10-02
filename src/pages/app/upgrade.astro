@@ -3,6 +3,7 @@ import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import { PLANS, PLAN_ORDER, getPlan, type PlanId } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, priceIdFor, type BillingInterval } from '../../lib/billing';
+import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
 const plan = getPlan(user.plan);
@@ -43,98 +44,129 @@ const priceOf = (entry: { plan: (typeof PLANS)[PlanId]; interval: BillingInterva
 
 const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly * 12 - p.priceYearly);
 ---
-
 <AppShell title="Upgrade" tab="account">
   <header class="appbar" slot="appbar">
-    <a href="/app/account" class="appbar__title" style="color: var(--ink-2)">‹ Account</a>
+    <a href="/app/account">← Account</a>
   </header>
 
-  <div class="app-wrap stack gap-16">
-    <div>
-      <h1 class="h3">Change your plan</h1>
-      <p class="small muted" style="margin-top: 4px">
-        You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Review any credits, charges and
-        the effective date in Stripe before confirming a change.
-      </p>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">YOUR PLAN</span>
+        <h1>Change your plan.</h1>
+        <p>
+          You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Review any
+          credits, charges and the effective date in Stripe before confirming a change.
+        </p>
+      </div>
     </div>
 
     {
       options.length === 0 && !switchToYearly ? (
         <div class="notice notice--info">
-          You are on the top plan. To change your card, download invoices or cancel, use
-          {' '}<a href="/app/account">Billing on your account</a>.
+          You are on the top plan. To change your card, download invoices or cancel, use{' '}
+          <a href="/app/account">Billing on your account</a>.
         </div>
       ) : (
-        <div class="upgrade-list">
-          {switchToYearly && (
-            <form method="post" action="/api/billing/portal" class="upgrade">
-              <input type="hidden" name="plan" value={switchToYearly.plan.id} />
-              <input type="hidden" name="interval" value="yearly" />
-              <div class="upgrade__head">
-                <div>
-                  <div class="upgrade__name">
-                    {plan.name}, billed yearly
-                    <span class="upgrade__tag">SAVE ${yearlySaving(plan)}</span>
+        <section class="project-panel" aria-labelledby="plans-heading">
+          <h2 class="section-heading" id="plans-heading">
+            <span>[ 01 ]</span> Available changes
+          </h2>
+          <div class="upgrade-list">
+            {switchToYearly && (
+              <form method="post" action="/api/billing/portal" class="upgrade">
+                <input type="hidden" name="plan" value={switchToYearly.plan.id} />
+                <input type="hidden" name="interval" value="yearly" />
+                <div class="upgrade__head">
+                  <div>
+                    <div class="upgrade__name">
+                      {plan.name}, billed yearly
+                      <span class="upgrade__tag">SAVE ${yearlySaving(plan)}</span>
+                    </div>
+                    <div class="xs muted upgrade__tagline">Same allowance each month, billed once per year</div>
                   </div>
-                  <div class="xs muted" style="margin-top: 2px">Same allowance each month, billed once per year</div>
-                </div>
-                <div class="upgrade__price">
-                  ${plan.priceYearly}<span class="upgrade__per">/yr</span>
-                </div>
-              </div>
-              <button type="submit" class="btn btn--outline-ink btn--sm" style="margin-top: 12px; width: 100%">
-                Switch to yearly
-              </button>
-            </form>
-          )}
-
-          {options.map((entry) => (
-            <form method="post" action="/api/billing/portal" class="upgrade">
-              <input type="hidden" name="plan" value={entry.plan.id} />
-              <input type="hidden" name="interval" value={entry.interval} />
-
-              <div class="upgrade__head">
-                <div>
-                  <div class="upgrade__name">
-                    {/* Both periods can be on screen at once, so each card says which it is. */}
-                    {entry.plan.name}, billed {entry.interval === 'yearly' ? 'yearly' : 'monthly'}
-                    {entry.interval === 'yearly' && intervals.length > 1 && (
-                      <span class="upgrade__tag">SAVE ${yearlySaving(entry.plan)}</span>
-                    )}
+                  <div class="upgrade__price">
+                    ${plan.priceYearly}
+                    <span class="upgrade__per">/yr</span>
                   </div>
-                  <div class="xs muted" style="margin-top: 2px">{entry.plan.tagline}</div>
                 </div>
-                <div class="upgrade__price">
-                  ${priceOf(entry)}
-                  <span class="upgrade__per">{entry.interval === 'yearly' ? '/yr' : '/mo'}</span>
+                <button type="submit" class="btn btn--outline-ink upgrade__action">
+                  Switch to yearly
+                </button>
+              </form>
+            )}
+
+            {options.map((entry, index) => (
+              <form method="post" action="/api/billing/portal" class="upgrade">
+                <input type="hidden" name="plan" value={entry.plan.id} />
+                <input type="hidden" name="interval" value={entry.interval} />
+
+                <div class="upgrade__head">
+                  <div>
+                    <div class="upgrade__name">
+                      {/* Both periods can be on screen at once, so each card says which it is. */}
+                      {entry.plan.name}, billed {entry.interval === 'yearly' ? 'yearly' : 'monthly'}
+                      {entry.interval === 'yearly' && intervals.length > 1 && (
+                        <span class="upgrade__tag">SAVE ${yearlySaving(entry.plan)}</span>
+                      )}
+                    </div>
+                    <div class="xs muted upgrade__tagline">{entry.plan.tagline}</div>
+                  </div>
+                  <div class="upgrade__price">
+                    ${priceOf(entry)}
+                    <span class="upgrade__per">{entry.interval === 'yearly' ? '/yr' : '/mo'}</span>
+                  </div>
                 </div>
-              </div>
 
-              <ul class="upgrade__features">
-                {entry.plan.features.filter((f) => f.included).map((feature) => (
-                  <li><Icon name="check" size={14} /> <span>{feature.text}</span></li>
-                ))}
-              </ul>
+                <ul class="upgrade__features">
+                  {entry.plan.features
+                    .filter((f) => f.included)
+                    .map((feature) => (
+                      <li>
+                        <Icon name="check" size={14} /> <span>{feature.text}</span>
+                      </li>
+                    ))}
+                </ul>
 
-              <button
-                type="submit"
-                class={entry.plan.id === 'pro' ? 'btn btn--ink' : 'btn btn--outline-ink'}
-                style="margin-top: 14px"
-              >
-                Upgrade to {entry.plan.name}
-              </button>
-            </form>
-          ))}
-        </div>
+                {/* The next plan up is the one primary action; the rest are alternatives. */}
+                <button type="submit" class={`btn upgrade__action ${index === 0 ? 'btn--lime' : 'btn--outline-ink'}`}>
+                  Upgrade to {entry.plan.name}
+                </button>
+              </form>
+            ))}
+          </div>
+        </section>
       )
     }
 
-    <p class="xs muted-2">
-      Stripe shows the payment details before you confirm. Credits and the timing of plan changes depend on the
-      billing settings. Screenshot quota still resets on the first day of each UTC calendar month.
-    </p>
+    <section class="project-panel stack gap-12" aria-labelledby="usage-heading">
+      <h2 class="section-heading" id="usage-heading">
+        <span>[ {options.length === 0 && !switchToYearly ? '01' : '02'} ]</span> How screenshots are counted
+      </h2>
+      <p class="small muted">
+        Manual captures and monitor checks share your monthly screenshot allowance. One daily monitor uses about 30
+        screenshots; one hourly monitor uses about 720. Pro can cover 25 daily monitors (about 750 checks), but checking
+        all 25 hourly would require about 18,000 screenshots. A monitor slot is not an unlimited check allowance.
+      </p>
+      <p class="xs muted-2">
+        Stripe shows the payment details before you confirm. Credits and the timing of plan changes depend on the
+        billing settings. Screenshot quota still resets on the first day of each UTC calendar month.
+      </p>
+    </section>
 
-    <a class="btn btn--outline" href="/app/account">Back to account</a>
+    <nav class="link-row" aria-label="Account">
+      <a href="/app/account">← Back to account</a>
+    </nav>
   </div>
-<p class="small muted" style="max-width:900px;margin:24px auto;padding:16px">Manual captures and monitor checks share your monthly screenshot allowance. One daily monitor uses about 30 screenshots; one hourly monitor uses about 720. Pro can cover 25 daily monitors (about 750 checks), but checking all 25 hourly would require about 18,000 screenshots. A monitor slot is not an unlimited check allowance.</p>
 </AppShell>
+
+<style>
+  .upgrade__tagline {
+    margin-top: 2px;
+  }
+  /* `.upgrade .btn` pushes the button to the bottom so a row of cards lines up. */
+  .upgrade__head:has(+ .upgrade__action),
+  .upgrade__features {
+    padding-bottom: 14px;
+  }
+</style>

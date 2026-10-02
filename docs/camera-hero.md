@@ -4,7 +4,7 @@ Generated with the built-in image-generation tool for Easy Screen Capture.
 
 Asset: `public/images/capture-camera.webp` (transparent alpha, 1254 × 1254, WebP delivery encoding).
 
-The camera replaces the abstract network shape in the AI Agency hero. Slow floating motion honors reduced-motion preferences and the existing pause control. It is decorative; the heading and capture form communicate the product without it.
+The camera replaces the abstract network shape in the AI Agency hero. It is enlarged and extends above the top border of its grid cell, echoing the reference robot composition, with a smaller overlap on mobile. The caption sits below the artwork to keep it readable. Slow floating motion honors reduced-motion preferences and the existing pause control. It is decorative; the heading and capture form communicate the product without it.
 
 ## Generation prompt
 

@@ -104,18 +104,42 @@ npx wrangler kv namespace create RATE
    ```
 
    No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console (Cloudflare dashboard →
-   Storage & Databases → D1 → *screenify-data* → Console) and run it. It contains the same schema
-   plus the `d1_migrations` bookkeeping rows, so a later `npm run db:migrate` reports *No migrations
-   to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
+   Storage & Databases → D1 → *screenify-data* → Console) and run it. It is for a **fresh, empty
+   database**: the schema every migration through `0012` adds up to, plus the `d1_migrations`
+   bookkeeping rows, so a later `npm run db:migrate` reports *No migrations to apply* rather than
+   trying to create the tables twice. It is idempotent — safe to re-run.
 
-   **Upgrading a database that already has an older schema?** Run the matching `db/000N-upgrade.sql`
-   files in order (`0002-upgrade.sql` through `0005-upgrade.sql`) — `apply-manually.sql` creates tables
-   but cannot add columns to existing ones.
+   **Upgrading a database that already has an older schema?** Not with `apply-manually.sql`: it
+   creates missing tables but cannot add columns to existing ones, and it would still record every
+   migration as applied. Paste the upgrade file for each migration the database is missing, in order:
+
+   | File | Migration |
+   | --- | --- |
+   | `db/0002-upgrade.sql` | email verification and retention |
+   | `db/0003-upgrade.sql` | Stripe billing |
+   | `db/0004-upgrade.sql` | watches |
+   | `db/0005-upgrade.sql` | page facts |
+   | `db/0006-upgrade.sql` | projects and review reports |
+   | `db/0007-upgrade.sql` | collaboration and digests |
+   | `db/0008-upgrade.sql` | monitor noise settings |
+   | `db/0009-upgrade.sql` | monitor rules and alert retries |
+   | `db/0010-upgrade.sql` | mobile push |
+   | `db/0011-upgrade.sql` | Apple subscriptions and the free quota |
+   | `db/0012-upgrade.sql` | watch-run index |
+
+   `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
+   Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
+   afterwards.
 
    The D1 console flattens pasted SQL onto one line, which makes `--` comments swallow everything
-   after them. The `db/000N-upgrade.sql` files are therefore comment-free and safe to paste as-is.
+   after them. `apply-manually.sql` and the upgrade files are therefore comment-free and safe to
+   paste as-is; `npm test` checks that, and that each one builds exactly what its migrations do.
    `ALTER TABLE … ADD COLUMN` is not idempotent in SQLite: if a re-run reports *duplicate column
-   name*, that column is already there — drop that line and run the rest.
+   name*, that column is already there — drop that line and run the rest. The exceptions are 0002
+   and 0011, which also update existing rows (0002 marks existing accounts as confirmed, 0011 gives
+   existing free accounts the grandfathered 200-capture quota): if their first `ALTER` reports a
+   duplicate column, that upgrade has already run, and running its `UPDATE` again would hand the
+   same to every account created since.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 

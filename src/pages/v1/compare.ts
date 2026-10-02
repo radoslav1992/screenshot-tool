@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { apiErrorResponse, guardApiRequest, preflight, touchApiKey } from '../../lib/api-guard';
 import { parseCaptureOptions } from '../../lib/capture-options';
 import { badRequest, json, readBody } from '../../lib/http';
-import { compareCaptures } from '../../lib/compare';
+import { compareCaptures, splitCompareInput } from '../../lib/compare';
 
 export const prerender = false;
 
@@ -13,32 +13,19 @@ export const OPTIONS: APIRoute = () => preflight();
  *
  * Two pages captured and measured against each other. Each side takes the same
  * parameters as `/v1/capture`, prefixed `a_` and `b_`; anything unprefixed
- * applies to both, so `device=mobile` need only be said once.
+ * applies to both, so `device=mobile` need only be said once. Credentials are
+ * the exception: `headers`, `cookies` and `basic_auth` must name their side.
  */
 export const POST: APIRoute = async ({ request, locals }) => {
   let headers: Record<string, string> = {};
 
   try {
-    const guard = await guardApiRequest(request);
+    // Two captures, so it costs two against the rate limit.
+    const guard = await guardApiRequest(request, 2);
     headers = guard.headers;
 
     const body = await readBody(request);
-    const shared: Record<string, string> = {};
-    for (const [key, value] of Object.entries(body)) {
-      if (!key.startsWith('a_') && !key.startsWith('b_')) shared[key] = value;
-    }
-    const side = (prefix: 'a_' | 'b_'): Record<string, string> => {
-      const out = { ...shared };
-      for (const [key, value] of Object.entries(body)) {
-        if (key.startsWith(prefix)) out[key.slice(2)] = value;
-      }
-      return out;
-    };
-
-    const beforeInput = side('a_');
-    const afterInput = side('b_');
-    if (!beforeInput.url && !beforeInput.html) throw badRequest('`a_url` is required.', 'a_url');
-    if (!afterInput.url && !afterInput.html) throw badRequest('`b_url` is required.', 'b_url');
+    const { before: beforeInput, after: afterInput } = splitCompareInput(body);
 
     const before = parseCaptureOptions(beforeInput);
     const after = parseCaptureOptions(afterInput);

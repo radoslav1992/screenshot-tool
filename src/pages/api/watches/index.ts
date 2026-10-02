@@ -2,14 +2,13 @@ import { parseMonitorRule } from '../../../lib/monitor-rules';
 import { workflowsReady } from '../../../lib/monitor-rule-store';
 import { env } from 'cloudflare:workers';
 import { previewFingerprint } from '../../../lib/watch-settings';
-import { frequencyHours } from '../../../lib/plans';
 import type { APIRoute } from 'astro';
-import { assertPublicCaptureUrl, parseCaptureOptions } from '../../../lib/capture-options';
+import { parseCaptureOptions } from '../../../lib/capture-options';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
 import { assertVerified } from '../../../lib/verification';
 import { FREQUENCIES } from '../../../lib/plans';
-import { createWatch, listWatches, toWatchDTO } from '../../../lib/watches';
+import { createWatch, listWatches, nextRunAt, parseWebhookUrl, toWatchDTO } from '../../../lib/watches';
 
 export const prerender = false;
 
@@ -58,12 +57,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       throw badRequest('`threshold` must be 0 for any detected change, or between 0.1 and 100.', 'threshold');
     }
 
-    let webhookUrl = (body.webhook_url ?? '').trim();
-    if (webhookUrl && !/^https:\/\/\S+$/i.test(webhookUrl)) {
-      throw badRequest('A webhook URL must start with https://.', 'webhook_url');
-    }
-
-    if (webhookUrl) webhookUrl = assertPublicCaptureUrl(webhookUrl).toString();
+    const webhookUrl = parseWebhookUrl(body.webhook_url ?? '');
 
     let baseline: string | null = null;
     if (body.preview_token) {
@@ -84,11 +78,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
       frequency,
       threshold,
       notifyEmail: body.notify_email !== '0' && body.notify_email !== 'false',
-      webhookUrl: webhookUrl || null,
+      webhookUrl,
     });
 
     if (baseline) {
-      watch.next_run_at = new Date(Date.now() + frequencyHours(frequency) * 3600000).toISOString();
+      watch.next_run_at = nextRunAt(frequency);
       await env.DB.prepare('UPDATE watches SET baseline_capture_id=?,next_run_at=? WHERE id=?')
         .bind(baseline, watch.next_run_at, watch.id)
         .run();

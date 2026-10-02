@@ -1,17 +1,7 @@
-# Brand source
+# Easy Screen Capture identity
 
-`logo.png` is the master artwork, 1536×1024 on a dark ground.
+`mark.svg` is the vector master used directly by `Mark.astro` and by `npm run icons`. The orange tile has clipped corners that echo the AI Agency typography; the graphite camera and octagonal lens connect it to the 3D hero. It remains readable at favicon sizes. Colors: orange `#FB7515`, graphite `#111111`, highlight `#F5F5F5`.
 
-It lives here rather than in `public/` because everything under `public/` is
-deployed as a static asset, and a 1.1 MB file nothing links to is 1.1 MB of
-dead weight in the bundle. The icons that *are* served are generated from it:
+`Logo.astro` pairs the mark with an uppercase two-line wordmark: BDO Grotesk for “Easy Screen” and Astro Nebula for “Capture”. The accessible link name remains Easy Screen Capture.
 
-    public/icons/icon-192.png            centre square, 192
-    public/icons/icon-512.png            centre square, 512
-    public/icons/icon-maskable-512.png   centre square, 512, inset 10% for the safe zone
-    public/icons/apple-touch-icon.png    centre square, 180
-
-Small sizes do not use this file. At 26px in the header and 16px in a browser
-tab the window chrome and the camera badge are mud, so those use the compact
-mark instead — `public/icons/favicon.svg` and `src/components/Mark.astro`,
-which keep the capture brackets and a lens.
+Run `npm run icons` to regenerate SVG favicons, PNG app icons, Apple touch artwork and a maskable icon with a 20% inset. The script uses Sharp and requires no browser installation. The older `logo.png` is archived artwork and is no longer used.

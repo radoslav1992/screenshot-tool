@@ -6,7 +6,7 @@
  * - API calls and rendered files: never cached (they are private and large).
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2-camera-brand';
 const SHELL_CACHE = `esc-shell-${VERSION}`;
 const RUNTIME_CACHE = `esc-runtime-${VERSION}`;
 const OFFLINE_URL = '/offline';

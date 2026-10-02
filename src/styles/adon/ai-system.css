@@ -204,3 +204,31 @@
     font-size: clamp(25px, 7.4vw, 34px);
   }
 }
+
+/* Camera mark and compact wordmark share the hero's angular geometry. */
+.adon-theme .logo {
+  gap: 10px;
+}
+.adon-theme .logo__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 0;
+  background: transparent;
+}
+.adon-theme .logo__word {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.adon-theme .logo__eyebrow {
+  font: 600 9px/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.adon-theme .logo__name {
+  font: 300 22px/1 var(--font_astronebula);
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}

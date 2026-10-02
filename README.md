@@ -72,8 +72,8 @@ CI=1 npm run dev
 ```
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
-retention, push, Apple, commerce, capture engine, auth and billing, D1 schema files) against SQLite and
-local Chromium; no real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
+retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1 schema
+files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
 shape the app decodes.
@@ -424,6 +424,30 @@ answers `503`, and the app behaves exactly as it did before billing existed.
 
    A plan with no price id configured is still listed on `/pricing` but is not purchasable, so you
    can launch one tier at a time. `GET /api/health` reports which ones are live under `billing`.
+
+### When Stripe says no
+
+A failed checkout or portal visit sends the customer back to `/pricing` or `/app/account` with a
+short code (`?billing_error=checkout_unavailable`), and the page shows a fixed message for it from
+`src/lib/billing-errors.ts`. Unknown codes get one generic message; nothing from the URL is ever
+shown, so a crafted link cannot put words on the real pricing page. JSON callers keep
+`{error:{type,message}}`.
+
+When Stripe *rejects* the request (a 4xx — nearly always a dashboard setting, such as a product
+with no tax code), the customer is told checkout isn't available and the site owner has been told,
+and Stripe's own message goes to the log and by email to the operator: what Stripe said, the
+request path, and the likely fix when the cause is a known one. At most one email per Stripe error
+code per hour (throttled in the `RATE` KV, which fails open). The address is `BILLING_ALERT_EMAIL`,
+falling back to the contact address in `src/lib/company.ts`; it needs a working mailer (see
+*Sending mail*). Set it as a secret, since a deploy replaces plain-text variables with those in
+`wrangler.jsonc`:
+
+```bash
+npx wrangler secret put BILLING_ALERT_EMAIL
+```
+
+`GET /api/billing/diagnose`, for the signed-in account owner, still shows Stripe's own wording for
+a plan change that fails.
 
 ### Tax
 

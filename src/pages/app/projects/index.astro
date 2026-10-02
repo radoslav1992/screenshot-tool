@@ -30,14 +30,10 @@ const projects = ready ? await listProjects(Astro.locals.user!.id) : [];
         <p>Keep captures, monitors and review reports together.</p>
       </div>
     </div>
-    <div class="project-links">
-      <a class="btn btn--ink" href="/app/batch">
-        Batch &amp; launch capture ↗
-      </a>
-      <a class="btn btn--outline" href="/app/library">
-        Capture library
-      </a>
-    </div>
+    <nav class="link-row" aria-label="Related tools">
+      <a href="/app/batch">Batch &amp; launch capture →</a>
+      <a href="/app/library">Capture library →</a>
+    </nav>
     {!ready ? (
       <p class="project-panel" role="status">
         Projects are being prepared. Captures, batch capture and monitors remain available.
@@ -65,7 +61,7 @@ const projects = ready ? await listProjects(Astro.locals.user!.id) : [];
                 Report brand
                 <input class="input" name="brand" maxlength="100" placeholder="Your agency name" />
               </label>
-              <button class="btn btn--ink" type="submit">
+              <button class="btn btn--lime" type="submit">
                 Create project
               </button>
               <p role="status" aria-live="polite"></p>

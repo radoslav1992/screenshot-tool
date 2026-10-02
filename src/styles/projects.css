@@ -73,7 +73,7 @@
   object-fit: cover;
   object-position: top center;
 }
-.project-item__actions {
+form.project-item__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
@@ -85,6 +85,25 @@
 }
 .project-item__actions label {
   flex: 1 1 160px;
+}
+/* Removing sits apart from Save, under a rule, at the end of the item. */
+form.project-item__remove {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line, #d9d9d0);
+}
+.project-item__actions [role='status'],
+.project-item__remove [role='status'],
+.project-item__actions .form-error,
+.project-item__remove .form-error {
+  flex-basis: 100%;
+}
+.project-item--row .btn {
+  width: auto;
 }
 .project-item--row {
   display: flex;

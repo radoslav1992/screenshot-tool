@@ -3,14 +3,14 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Easy Screen Capture \u2014 screenshots as a service. Astro PWA on Cloudflare Workers.",
+  "description": "Easy Screen Capture — screenshots as a service. Astro PWA on Cloudflare Workers.",
   "scripts": {
     "dev": "astro dev",
     "build": "npm run commerce:check && astro build",
     "preview": "astro preview",
     "deploy": "astro build && wrangler deploy",
     "check": "astro check",
-    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s monitor:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check && npm run -s capture:check",
+    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s monitor:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check && npm run -s capture:check && npm run -s auth:check",
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
     "stripe:setup": "node scripts/stripe-setup.mjs",
@@ -32,7 +32,8 @@
     "push:check": "node --experimental-strip-types scripts/push-check.mjs",
     "apple:check": "node scripts/apple-billing-check.mjs",
     "retention:check": "node scripts/retention-check.mjs",
-    "capture:check": "node scripts/capture-check.mjs"
+    "capture:check": "node scripts/capture-check.mjs",
+    "auth:check": "node scripts/auth-billing-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.3",

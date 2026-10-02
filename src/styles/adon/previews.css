@@ -237,7 +237,7 @@
 }
 .adon-marquee-track i {
   font-style: normal;
-  color: var(--theme);
+  color: var(--theme-text);
   font-size: 45px;
 }
 @keyframes adon-marquee {

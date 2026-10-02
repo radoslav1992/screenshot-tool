@@ -29,7 +29,9 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
 
   --shell: 480px;
-  --tabbar-h: 62px;
+  /* The bottom tab bar is exactly this tall (plus the safe-area inset), and
+     the shell reserves exactly the same, so nothing hides behind it. */
+  --tabbar-h: 64px;
 
   --shadow-card: 0 4px 12px rgba(20, 22, 15, 0.1);
   --shadow-float: 0 24px 48px rgba(20, 22, 15, 0.12);
@@ -519,6 +521,7 @@ button {
   width: 100%;
   max-width: var(--shell);
   display: flex;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line-2);
   background: var(--white);
   padding-bottom: env(safe-area-inset-bottom);
@@ -527,10 +530,11 @@ button {
 
 .tabbar__item {
   flex: 1;
+  min-width: 0;
   text-align: center;
-  padding: 12px 0 16px;
+  padding: 11px 0 0;
   color: var(--muted-2);
-  font: 500 10px var(--display);
+  font: 500 11px var(--display);
 }
 
 .tabbar__item:hover {

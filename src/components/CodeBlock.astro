@@ -14,7 +14,7 @@ const { tag, code, light = false, copyable = true } = Astro.props;
     <span class="code__tag">{tag}</span>
     {
       copyable && (
-        <button type="button" class="code__copy" data-copy data-copy-value={code} style={light ? 'color: var(--green)' : undefined}>
+        <button type="button" class="code__copy" data-copy data-copy-value={code} aria-label={`Copy ${tag} example`}>
           Copy
         </button>
       )

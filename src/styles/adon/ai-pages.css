@@ -18,7 +18,7 @@
   margin-top: 28px;
 }
 .ai-page-title > span {
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .ai-page-head__foot {
   display: grid;
@@ -222,7 +222,7 @@
   position: absolute;
   left: 0;
   font-family: var(--mono);
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .ai-prose .rows,
 .ai-prose .deflist {

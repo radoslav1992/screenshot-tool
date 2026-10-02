@@ -26,7 +26,7 @@
   --lime: #fa814d;
   --lime-tint: #fff0e8;
   --muted: #62625f;
-  --muted-2: #73736d;
+  --muted-2: #6b6b66;
   --line: #d7d6d1;
   --line-2: #e3e2dc;
   --line-3: #efeee9;
@@ -98,7 +98,7 @@
 }
 .adon-theme .btn--lime:hover,
 .adon-theme .btn--pill-lime:hover {
-  background: #ff9b72;
+  background: #ff8a33;
   color: var(--ink);
 }
 .adon-theme .input {
@@ -212,7 +212,7 @@
     color 0.35s;
 }
 .adon-footer-callout:hover {
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .adon-footer-callout:hover > span:last-child {
   transform: rotate(45deg);
@@ -236,7 +236,7 @@
   color: #b8b7b2;
 }
 .adon-theme .sitefooter a:not(.adon-footer-callout):hover {
-  color: var(--theme);
+  color: var(--theme-text-sm);
 }
 .adon-theme .plan {
   border-radius: 12px;
@@ -552,7 +552,7 @@
   color: white;
 }
 .adon-theme .sitefooter .adon-footer-callout:hover {
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .adon-theme .sitefooter .logo {
   display: inline-flex;

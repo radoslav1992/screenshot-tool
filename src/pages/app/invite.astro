@@ -1,16 +1,48 @@
 ---
 import AppShell from '../../layouts/AppShell.astro';
 import ProjectForms from '../../components/ProjectForms.astro';
+import { COMPANY } from '../../lib/company';
+import { canSendEmail } from '../../lib/mailer';
+import { hasConfirmedEmail } from '../../lib/verification';
 import '../../styles/projects.css';
 Astro.response.headers.set('cache-control', 'private, no-store');
 Astro.response.headers.set('referrer-policy', 'no-referrer');
+
+const user = Astro.locals.user!;
+// Accepting always needs a confirmed address — the invitation is for an email,
+// and this is how we know the account really holds it — so say so up front
+// rather than only after the button fails.
+const confirmed = await hasConfirmedEmail(user.id).catch(() => true);
+const mailReady = canSendEmail();
 ---
 
 <AppShell title="Accept invitation" tab="projects">
   <div class="app-wrap">
     <section class="project-panel">
       <h1>Join a client project</h1>
-      <p>Signed in as {Astro.locals.user!.email}. Your verified email must match the invitation.</p>
+      <p>Signed in as {user.email}. Your confirmed email must match the invitation.</p>
+      {
+        !confirmed && (
+          <div class="notice notice--info" id="confirm-email">
+            <strong>Confirm your email address first.</strong>{' '}
+            {mailReady ? (
+              <>
+                We will send a link to {user.email}; opening it brings you back here to accept.{' '}
+                <button type="button" id="send-confirmation" class="btn btn--sm btn--outline">
+                  Send confirmation email
+                </button>
+                <span id="confirmation-state" class="xs" aria-live="polite" />
+              </>
+            ) : (
+              <>
+                Confirmation emails are not available right now. Email{' '}
+                <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a> from {user.email} and we will confirm it for
+                you.
+              </>
+            )}
+          </div>
+        )
+      }
       <form data-project-form data-endpoint="/api/collaboration">
         <input type="hidden" name="action" value="accept" />
         <input type="hidden" name="token" value={Astro.url.searchParams.get('token') ?? ''} />
@@ -23,3 +55,37 @@ Astro.response.headers.set('referrer-policy', 'no-referrer');
   </div>
   <ProjectForms />
 </AppShell>
+
+<script>
+  document.getElementById('send-confirmation')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const state = document.getElementById('confirmation-state');
+    button.disabled = true;
+    try {
+      // The confirmation page then offers a way straight back to this invitation.
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ next: `${location.pathname}${location.search}` }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        sent?: boolean;
+        reason?: string;
+        error?: { message?: string };
+      } | null;
+      if (state) {
+        state.textContent = response.ok
+          ? payload?.sent
+            ? ' Sent — open the link in that email to come back and accept.'
+            : payload?.reason === 'already_verified'
+              ? ' Already confirmed — you can accept now.'
+              : ' Could not send it right now.'
+          : ` ${payload?.error?.message ?? 'Could not send it.'}`;
+      }
+    } catch {
+      if (state) state.textContent = ' Could not send. Check your connection and try again.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>

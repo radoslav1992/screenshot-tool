@@ -19,7 +19,7 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
 <AppShell title="Set up a monitor" tab="watches">
   <header class="appbar" slot="appbar">
     <a href="/app/watches">← Monitors</a>
-    <span class="pill">{usage.remaining} shots left</span>
+    <span class="pill pill--quota">{usage.remaining.toLocaleString()} shots left</span>
   </header>
   <div class="app-wrap stack gap-20">
     <div class="workspace-intro">
@@ -30,15 +30,20 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
       </div>
     </div>
     {!ready ? (
-      <p class="project-panel">Monitor setup is being prepared. Existing monitors remain available.</p>
+      <p class="project-panel" role="status">Monitor setup is being prepared. Existing monitors remain available.</p>
     ) : !frequencies.length ? (
-      <a class="btn btn--ink" href="/app/upgrade">
-        Upgrade to start monitoring
-      </a>
+      <section class="project-panel stack gap-12">
+        <p>Your plan does not include monitors.</p>
+        <div class="btn-row">
+          <a class="btn btn--lime" href="/app/upgrade">
+            Upgrade to start monitoring
+          </a>
+        </div>
+      </section>
     ) : (
       <form id="monitor-setup" class="stack gap-20">
         <section class="project-panel">
-          <h2>01 · Page &amp; capture area</h2>
+          <h2 class="section-heading"><span>[ 01 ]</span> Page &amp; capture area</h2>
           <div class="project-grid">
             <label>
               Page URL
@@ -71,8 +76,8 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
             </label>
           </div>
         </section>
-        <section class="project-panel">
-          <h2>02 · Ignore noise &amp; preview</h2>
+        <section class="project-panel stack gap-12">
+          <h2 class="section-heading"><span>[ 02 ]</span> Ignore noise &amp; preview</h2>
           <label>
             Hide elements by CSS selector
             <input class="input" name="hide" placeholder=".cookie-banner, .live-clock" maxlength="2000" />
@@ -87,25 +92,33 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
             only; underlying page text may still be collected. Mobile coordinates differ from desktop. Ads and consent
             dismissal are enabled.
           </p>
-          <button type="button" class="btn btn--outline" id="monitor-preview">
-            Preview baseline · 1 screenshot
-          </button>
+          <div class="btn-row">
+            <button type="button" class="btn btn--outline-ink" id="monitor-preview">
+              Preview baseline · 1 screenshot
+            </button>
+          </div>
           <p role="status" id="monitor-preview-status" aria-live="polite"></p>
-          <label>Draw on preview<select class="input" id="region-tool"><option value="watch_region">Watch this area only</option><option value="ignore_regions">Ignore this area</option></select></label>
-          <p class="small muted">Drag across the preview to select a rectangle. You can also enter coordinates in the fields. Ignored areas require a new preview before saving.</p>
-          <div id="region-canvas" style="position:relative;width:fit-content;max-width:100%;touch-action:none">
-          <img
-            id="monitor-baseline"
-            hidden
-            alt="Monitor baseline preview"
-            style="display:block;max-width:100%;height:auto" draggable="false"
-          />
-          <div id="region-outline" hidden style="position:absolute;border:2px solid #467452;background:rgba(180,224,90,.25);pointer-events:none"></div></div>
+          <p class="notice notice--error" id="monitor-preview-error" role="alert" hidden></p>
+          <label>
+            Draw on preview
+            <select class="input" id="region-tool">
+              <option value="watch_region">Monitor this area only</option>
+              <option value="ignore_regions">Ignore this area</option>
+            </select>
+          </label>
+          <p class="small muted">
+            Drag across the preview to select a rectangle. You can also enter coordinates in the fields. Ignored areas
+            require a new preview before saving.
+          </p>
+          <div id="region-canvas" class="region-canvas">
+            <img id="monitor-baseline" hidden alt="Monitor baseline preview" draggable="false" />
+            <div id="region-outline" class="region-outline" hidden></div>
+          </div>
           <input type="hidden" name="preview_token" id="preview-token" />
           <input type="hidden" name="format" value="png" />
         </section>
-        <section class="project-panel">
-          <h2>03 · Rules, schedule &amp; destination</h2>
+        <section class="project-panel stack gap-12">
+          <h2 class="section-heading"><span>[ 03 ]</span> Rules, schedule &amp; destination</h2>
           <MonitorRuleFields />
           <MonitorThreshold />
           <label>
@@ -131,7 +144,7 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
             </select>
           </label>
           {!emailReady && (
-            <p class="notice">
+            <p class="notice notice--info">
               Email alerts are currently unavailable. You can still review changes here or use a webhook.
             </p>
           )}
@@ -143,52 +156,148 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
             The accepted preview becomes the baseline; the first scheduled comparison runs after the selected interval.
             Preview approval expires after 15 minutes. You can test notifications on the monitor’s detail page.
           </p>
-          <button type="submit" class="btn btn--ink" id="monitor-save" disabled>
-            Use baseline &amp; start monitor
-          </button>
+          <div class="save-row">
+            <button type="submit" class="btn btn--lime" id="monitor-save" disabled aria-describedby="monitor-save-hint">
+              Use baseline &amp; start monitor
+            </button>
+            <p class="small muted" id="monitor-save-hint">Preview the baseline first (step 02) to enable this.</p>
+          </div>
           <p role="status" id="monitor-save-status" aria-live="polite"></p>
+          <p class="notice notice--error" id="monitor-save-error" role="alert" hidden></p>
         </section>
       </form>
     )}
   </div>
 </AppShell>
+<style>
+  .region-canvas {
+    position: relative;
+    width: fit-content;
+    max-width: 100%;
+    touch-action: none;
+  }
+  .region-canvas img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+  .save-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+  }
+  .save-row .btn {
+    width: auto;
+  }
+  .save-row p {
+    flex: 1 1 200px;
+  }
+</style>
 <script>
   const form = document.querySelector<HTMLFormElement>('#monitor-setup');
   if (form) {
     const preview = document.querySelector<HTMLButtonElement>('#monitor-preview')!;
     const save = document.querySelector<HTMLButtonElement>('#monitor-save')!;
+    const saveHint = document.querySelector<HTMLElement>('#monitor-save-hint')!;
     const token = document.querySelector<HTMLInputElement>('#preview-token')!;
+    const previewStatus = document.querySelector<HTMLElement>('#monitor-preview-status')!;
+    const previewError = document.querySelector<HTMLElement>('#monitor-preview-error')!;
+    const saveStatus = document.querySelector<HTMLElement>('#monitor-save-status')!;
+    const saveError = document.querySelector<HTMLElement>('#monitor-save-error')!;
+    // Workers types redefine Element, so select elements are cast via unknown.
+    const tool = document.querySelector('#region-tool') as unknown as HTMLSelectElement;
+    const ruleKind = form.querySelector('[name="rule_kind"]') as unknown as HTMLSelectElement | null;
     let busy = false;
     const canvas = document.querySelector<HTMLElement>('#region-canvas')!;
     const img = document.querySelector<HTMLImageElement>('#monitor-baseline')!;
     const outline = document.querySelector<HTMLElement>('#region-outline')!;
-    let start: {x:number;y:number} | null = null;
-    const point = (event: PointerEvent) => { const rect = img.getBoundingClientRect(); return {x:Math.max(0,Math.min(rect.width,event.clientX-rect.left)),y:Math.max(0,Math.min(rect.height,event.clientY-rect.top))}; };
-    canvas.onpointerdown = e => { if(busy || img.hidden || !img.complete) return; start=point(e); canvas.setPointerCapture(e.pointerId); outline.hidden=false; outline.style.width='0'; outline.style.height='0'; };
-    canvas.onpointermove = e => { if(!start) return; const end=point(e); Object.assign(outline.style,{left:Math.min(start.x,end.x)+'px',top:Math.min(start.y,end.y)+'px',width:Math.abs(end.x-start.x)+'px',height:Math.abs(end.y-start.y)+'px'}); };
-    canvas.onpointerup = e => {
-      if(!start) return; const end=point(e), rect=img.getBoundingClientRect();
-      const factor=img.naturalWidth/rect.width/Number(img.dataset.scale || 2);
-      const values=[Math.floor(Math.min(start.x,end.x)*factor),Math.floor(Math.min(start.y,end.y)*factor),Math.floor(Math.abs(end.x-start.x)*factor),Math.floor(Math.abs(end.y-start.y)*factor)];
-      start=null; if(values[2]<1 || values[3]<1) return;
-      const target = (document.querySelector('#region-tool') as unknown as HTMLSelectElement).value;
-      const input = form.querySelector<HTMLInputElement>(`[name="${target}"]`)!;
-      if(target==='ignore_regions' && input.value.split(';').filter(Boolean).length>=10) { document.querySelector('#monitor-preview-status')!.textContent='Maximum ten ignored regions.'; return; }
-      input.value=target==='ignore_regions' && input.value.trim()?input.value+';'+values.join(','):values.join(',');
-      input.dispatchEvent(new Event('input',{bubbles:true}));
+    let start: { x: number; y: number } | null = null;
+
+    const showError = (box: HTMLElement, message: string) => {
+      box.textContent = message;
+      box.hidden = !message;
     };
-    canvas.onpointercancel=()=>{start=null;outline.hidden=true;};
+    /** Keep the reason for a disabled final button next to it. */
+    const setSaveReady = (ready: boolean) => {
+      save.disabled = !ready;
+      saveHint.textContent = ready
+        ? 'Baseline approved. It becomes the first comparison; approval expires after 15 minutes.'
+        : 'Preview the baseline first (step 02) to enable this.';
+    };
+    /** Only visual rules use a watched rectangle, so only they can draw one. */
+    const syncRegionTool = () => {
+      const visual = !ruleKind || ruleKind.value === 'visual';
+      const watchOption = tool.querySelector<HTMLOptionElement>('option[value="watch_region"]')!;
+      watchOption.disabled = !visual;
+      if (!visual && tool.value === 'watch_region') tool.value = 'ignore_regions';
+    };
+    ruleKind?.addEventListener('change', syncRegionTool);
+    syncRegionTool();
+
+    const point = (event: PointerEvent) => {
+      const rect = img.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+        y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+      };
+    };
+    canvas.onpointerdown = (e) => {
+      if (busy || img.hidden || !img.complete) return;
+      start = point(e);
+      canvas.setPointerCapture(e.pointerId);
+      outline.hidden = false;
+      outline.style.width = '0';
+      outline.style.height = '0';
+    };
+    canvas.onpointermove = (e) => {
+      if (!start) return;
+      const end = point(e);
+      Object.assign(outline.style, {
+        left: Math.min(start.x, end.x) + 'px',
+        top: Math.min(start.y, end.y) + 'px',
+        width: Math.abs(end.x - start.x) + 'px',
+        height: Math.abs(end.y - start.y) + 'px',
+      });
+    };
+    canvas.onpointerup = (e) => {
+      if (!start) return;
+      const end = point(e),
+        rect = img.getBoundingClientRect();
+      const factor = img.naturalWidth / rect.width / Number(img.dataset.scale || 2);
+      const values = [
+        Math.floor(Math.min(start.x, end.x) * factor),
+        Math.floor(Math.min(start.y, end.y) * factor),
+        Math.floor(Math.abs(end.x - start.x) * factor),
+        Math.floor(Math.abs(end.y - start.y) * factor),
+      ];
+      start = null;
+      if (values[2] < 1 || values[3] < 1) return;
+      const target = tool.value;
+      const input = form.querySelector<HTMLInputElement>(`[name="${target}"]`)!;
+      if (target === 'ignore_regions' && input.value.split(';').filter(Boolean).length >= 10) {
+        showError(previewError, 'You can ignore at most ten regions. Remove one before drawing another.');
+        return;
+      }
+      input.value =
+        target === 'ignore_regions' && input.value.trim() ? input.value + ';' + values.join(',') : values.join(',');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    canvas.onpointercancel = () => {
+      start = null;
+      outline.hidden = true;
+    };
     const invalidate = () => {
+      if (!token.value) return;
       token.value = '';
-      save.disabled = true;
-      document.querySelector('#monitor-preview-status')!.textContent =
-        'Capture settings changed. Preview again before starting.';
+      setSaveReady(false);
+      previewStatus.textContent = 'Capture settings changed. Preview again before starting.';
     };
     for (const name of ['url', 'device', 'mode', 'hide', 'ignore_regions'])
       form.querySelector(`[name="${name}"]`)?.addEventListener('input', invalidate);
     async function submit(url: string) {
       const response = await fetch(url, { method: 'POST', body: new FormData(form!) });
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => ({}))) as {
         error?: { message: string };
         preview_token?: string;
         capture?: { images: string[]; viewport: { scale: number } };
@@ -201,10 +310,10 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
       if (busy || !form.reportValidity()) return;
       busy = true;
       preview.disabled = true;
-      save.disabled = true;
+      setSaveReady(false);
       token.value = '';
-      const state = document.querySelector('#monitor-preview-status')!;
-      state.textContent = 'Capturing baseline…';
+      showError(previewError, '');
+      previewStatus.textContent = 'Capturing baseline…';
       const controls = Array.from(form.querySelectorAll('input,select')) as unknown as Array<
         HTMLInputElement | HTMLSelectElement
       >;
@@ -214,20 +323,23 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
       try {
         const result = await pending;
         token.value = result.preview_token!;
-        const img = document.querySelector<HTMLImageElement>('#monitor-baseline')!;
         img.src = result.capture!.images[0];
         img.dataset.scale = String(result.capture!.viewport.scale);
         img.hidden = false;
-        state.textContent = 'Baseline ready. One screenshot used. Review masks, then choose your schedule.';
+        previewStatus.textContent = 'Baseline ready. One screenshot used. Review masks, then choose your schedule.';
       } catch (e) {
-        state.textContent =
+        previewStatus.textContent = '';
+        showError(
+          previewError,
           (e instanceof Error ? e.message : 'Preview failed.') +
-          ' Check the library before retrying an interrupted request.';
+            ' Check the library before retrying an interrupted request.',
+        );
       } finally {
         controls.forEach((c) => (c.disabled = false));
+        syncRegionTool();
         busy = false;
         preview.disabled = false;
-        save.disabled = !token.value;
+        setSaveReady(!!token.value);
       }
     };
     form.onsubmit = async (e) => {
@@ -236,13 +348,14 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
       busy = true;
       save.disabled = true;
       preview.disabled = true;
-      const state = document.querySelector('#monitor-save-status')!;
-      state.textContent = 'Creating monitor…';
+      showError(saveError, '');
+      saveStatus.textContent = 'Creating monitor…';
       try {
         const result = await submit('/api/watches');
         location.assign(`/app/watches/${result.id}`);
       } catch (e) {
-        state.textContent = e instanceof Error ? e.message : 'Could not create monitor.';
+        saveStatus.textContent = '';
+        showError(saveError, e instanceof Error ? e.message : 'Could not create the monitor. Try again.');
         busy = false;
         save.disabled = false;
         preview.disabled = false;

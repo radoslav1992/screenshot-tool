@@ -3,8 +3,10 @@ import { env } from 'cloudflare:workers';
 import AppShell from '../../../layouts/AppShell.astro';
 import ProjectForms from '../../../components/ProjectForms.astro';
 import { projectsReady, ownProject } from '../../../lib/projects';
-import { listCaptures, type CaptureRow } from '../../../lib/captures';
+import { listCaptures, safeParseFiles, type CaptureRow } from '../../../lib/captures';
+import { displayUrl } from '../../../lib/capture-options';
 import { listWatches } from '../../../lib/watches';
+import { formatDateTime } from '../../../lib/dates';
 import '../../../styles/projects.css';
 const user = Astro.locals.user!;
 if (!(await projectsReady())) return Astro.redirect('/app/projects');
@@ -37,13 +39,20 @@ const [attached, available, watches, monitors, presets, reports] = await Promise
 const eligible = attached.results.filter(
   (c) => c.status === 'done' && ['png', 'jpg'].includes(c.format) && c.mode !== 'series',
 );
-const fields = { project_id: project.id };
+/** A thumbnail from the row already loaded: the first image file, if there is one. */
+const thumb = (c: CaptureRow) => {
+  if (c.status !== 'done' || !['png', 'jpg'].includes(c.format)) return null;
+  const file = safeParseFiles(c.files)[0];
+  return file ? `/f/${c.id}/${file.name}?t=${c.share_token}` : null;
+};
+const approved = attached.results.filter((c) => c.review_status === 'approved').length;
+const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c.device} · ${displayUrl(c.url)}`;
 ---
 
 <AppShell title={project.name} tab="projects">
   <header class="appbar" slot="appbar">
     <a href="/app/projects">← Projects</a>
-    <div class="appbar__title">{project.name}</div>
+    <div class="appbar__title truncate">{project.name}</div>
   </header>
   <div class="app-wrap stack gap-20">
     <div class="workspace-intro">
@@ -52,30 +61,27 @@ const fields = { project_id: project.id };
         <h1>{project.name}</h1>
         <p>{project.brand || 'From first capture to final approval.'}</p>
       </div>
-    </div>
-    <div class="project-links"><a class="btn btn--outline" href={`/app/start?project=${project.id}`}>Setup progress</a>
-      <a class="btn btn--outline" href={`/app/team/${project.id}`}>
-        Team &amp; weekly digest
-      </a>
-      <a class="btn btn--ink" href={`/app/batch?project=${project.id}`}>
+      <a class="btn btn--lime" href={`/app/batch?project=${project.id}`}>
         Capture pages
       </a>
-      <a class="btn btn--outline" href={`/app/batch?project=${project.id}&launch=1`}>
-        Desktop + mobile launch check
-      </a>
-      <a class="btn btn--outline" href="/app/watches">
-        New monitor
-      </a>
     </div>
+    <nav class="link-row" aria-label="More for this project">
+      <a href={`/app/batch?project=${project.id}&launch=1`}>Desktop + mobile launch check →</a>
+      <a href={`/app/watches/setup`}>New monitor →</a>
+      <a href={`/app/team/${project.id}`}>Team &amp; weekly digest →</a>
+      <a href={`/app/start?project=${project.id}`}>Setup progress →</a>
+    </nav>
     <div class="project-grid">
-      <section class="project-panel">
-        <h2>Add existing work</h2>
+      <section class="project-panel" aria-labelledby="add-heading">
+        <h2 class="section-heading" id="add-heading"><span>[ 01 ]</span> Add existing work</h2>
         <form method="get">
           <label>
             Find older captures
             <input class="input" name="q" placeholder="Website or URL" value={Astro.url.searchParams.get('q') ?? ''} />
           </label>
-          <button class="btn btn--outline">Search library</button>
+          <div class="btn-row">
+            <button class="btn btn--outline">Search library</button>
+          </div>
         </form>
         <p class="small muted">Up to 100 matching captures shown.</p>
         <form data-project-form>
@@ -87,15 +93,15 @@ const fields = { project_id: project.id };
             <select class="input" name="asset_id" required>
               <option value="">Choose a capture</option>
               {available.map((c) => (
-                <option value={c.id}>
-                  {c.created_at.slice(0, 16)} · {c.device} · {c.url}
-                </option>
+                <option value={c.id}>{captureOption(c)}</option>
               ))}
             </select>
           </label>
-          <button type="submit" class="btn btn--outline">
-            Add capture
-          </button>
+          <div class="btn-row">
+            <button type="submit" class="btn btn--outline">
+              Add capture
+            </button>
+          </div>
           <p role="status"></p>
         </form>
         <form data-project-form>
@@ -111,18 +117,20 @@ const fields = { project_id: project.id };
               ))}
             </select>
           </label>
-          <button type="submit" class="btn btn--outline">
-            Add monitor
-          </button>
+          <div class="btn-row">
+            <button type="submit" class="btn btn--outline">
+              Add monitor
+            </button>
+          </div>
           <p role="status"></p>
         </form>
       </section>
-      <section class="project-panel">
-        <h2>Build a review report</h2>
+      <section class="project-panel" aria-labelledby="report-heading">
+        <h2 class="section-heading" id="report-heading"><span>[ 02 ]</span> Build a review report</h2>
         <p class="small muted">
           Compare existing images without taking new captures. Optional second pair for mobile launch evidence.
         </p>
-        <form data-project-form>
+        <form data-project-form data-pending="Creating report…">
           <input type="hidden" name="action" value="report" />
           <input type="hidden" name="project_id" value={project.id} />
           <label>
@@ -135,9 +143,7 @@ const fields = { project_id: project.id };
               <select class="input" name={name} required={i < 2}>
                 <option value="">Choose capture</option>
                 {eligible.map((c) => (
-                  <option value={c.id}>
-                    {c.created_at.slice(0, 16)} · {c.device} · {c.url}
-                  </option>
+                  <option value={c.id}>{captureOption(c)}</option>
                 ))}
               </select>
             </label>
@@ -152,66 +158,80 @@ const fields = { project_id: project.id };
               placeholder="What changed, what to check, and next steps."
             ></textarea>
           </label>
-          <button type="submit" class="btn btn--ink" disabled={eligible.length < 2}>
-            Create report
-          </button>
+          <div class="btn-row">
+            <button type="submit" class="btn btn--outline-ink" disabled={eligible.length < 2}>
+              Create report
+            </button>
+            {eligible.length < 2 && <span class="small muted">Needs two completed PNG or JPG captures.</span>}
+          </div>
           <p role="status"></p>
         </form>
       </section>
     </div>
-    <section class="project-panel">
-      <h2>
-        Review checklist · {attached.results.filter((c) => c.review_status === 'approved').length}/
-        {attached.results.length} approved
+    <section class="project-panel" aria-labelledby="checklist-heading">
+      <h2 class="section-heading" id="checklist-heading">
+        <span>[ 03 ]</span> Review checklist · {approved}/{attached.results.length} approved
       </h2>
       <p class="small muted">
         Review status records your manual assessment. Up to 200 most recent attached captures shown.
       </p>
-      <div class="project-grid">
-        {attached.results.map((c) => (
-          <article class="project-item">
-            <a href={`/app/c/${c.id}`}>{c.url}</a>
-            <p class="small muted">
-              {c.device} · {c.created_at.slice(0, 16)} UTC · {c.status}
-            </p>
-            <form data-project-form>
-              <input type="hidden" name="action" value="review" />
-              {Object.entries(fields).map(([name, value]) => (
-                <input type="hidden" name={name} value={value} />
-              ))}
-              <input type="hidden" name="asset_id" value={c.id} />
-              <label>
-                Review status
-                <select class="input" name="review_status">
-                  {['pending', 'approved', 'changes'].map((s) => (
-                    <option selected={s === c.review_status} value={s}>
-                      {s === 'changes' ? 'Needs changes' : s === 'approved' ? 'Approved' : 'To review'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="submit" class="btn btn--outline">
-                Save status
-              </button>
-              <p role="status"></p>
-            </form>
-            <form data-project-form>
-              <input type="hidden" name="action" value="detach" />
-              <input type="hidden" name="project_id" value={project.id} />
-              <input type="hidden" name="asset_id" value={c.id} />
-              <button type="submit" class="btn btn--outline">
-                Remove from project
-              </button>
-              <p role="status"></p>
-            </form>
-          </article>
-        ))}
-      </div>
-      {!attached.results.length && <p>No captures yet. Add existing work or start a batch above.</p>}
+      {attached.results.length > 0 && (
+        <div class="project-grid checklist">
+          {attached.results.map((c) => (
+            <article class="project-item project-item--capture">
+              {thumb(c) ? (
+                <a class="project-item__thumb" href={`/app/c/${c.id}`} tabindex="-1" aria-hidden="true">
+                  <img src={thumb(c)!} alt="" loading="lazy" decoding="async" />
+                </a>
+              ) : null}
+              <a href={`/app/c/${c.id}`}>{displayUrl(c.url)}</a>
+              <p class="small muted">
+                {c.device} · {formatDateTime(c.created_at)} · {c.status}
+              </p>
+              <form data-project-form class="project-item__actions">
+                <input type="hidden" name="action" value="review" />
+                <input type="hidden" name="project_id" value={project.id} />
+                <input type="hidden" name="asset_id" value={c.id} />
+                <label>
+                  Review status
+                  <select class="input" name="review_status">
+                    {['pending', 'approved', 'changes'].map((s) => (
+                      <option selected={s === c.review_status} value={s}>
+                        {s === 'changes' ? 'Needs changes' : s === 'approved' ? 'Approved' : 'To review'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" class="btn btn--outline">
+                  Save
+                </button>
+                <p role="status"></p>
+              </form>
+              <form
+                data-project-form
+                class="project-item__remove"
+                data-pending="Removing…"
+                data-confirm="Remove this capture from the project? It stays in your library and in existing reports, but its review status here is lost."
+              >
+                <input type="hidden" name="action" value="detach" />
+                <input type="hidden" name="project_id" value={project.id} />
+                <input type="hidden" name="asset_id" value={c.id} />
+                <button type="submit" class="btn btn--sm btn--danger-outline">
+                  Remove from project
+                </button>
+                <p role="status"></p>
+              </form>
+            </article>
+          ))}
+        </div>
+      )}
+      {!attached.results.length && (
+        <p class="small">No captures yet. Add existing work above or capture pages for this project.</p>
+      )}
     </section>
     <div class="project-grid">
-      <section class="project-panel">
-        <h2>Review reports</h2>
+      <section class="project-panel" aria-labelledby="reports-heading">
+        <h2 class="section-heading" id="reports-heading"><span>[ 04 ]</span> Review reports</h2>
         <div class="project-items">
           {reports.results.map((r) => (
             <a class="project-item" href={`/app/reports/${r.id}`}>
@@ -219,45 +239,63 @@ const fields = { project_id: project.id };
             </a>
           ))}
         </div>
-        {!reports.results.length && <p class="muted">Your first report starts with two captures.</p>}
+        {!reports.results.length && <p class="small muted">Your first report starts with two captures.</p>}
       </section>
-      <section class="project-panel">
-        <h2>Project monitors</h2>
-        {monitors.results.map((w) => (
-          <div class="project-item">
-            <a href={`/app/watches/${w.id}`}>{w.label || w.url}</a>
-            <form data-project-form>
-              <input type="hidden" name="action" value="detach" />
-              <input type="hidden" name="kind" value="watch" />
-              <input type="hidden" name="project_id" value={project.id} />
-              <input type="hidden" name="asset_id" value={w.id} />
-              <button type="submit" class="btn btn--outline">
-                Remove from project
-              </button>
-              <p role="status"></p>
-            </form>
-          </div>
-        ))}
+      <section class="project-panel" aria-labelledby="monitors-heading">
+        <h2 class="section-heading" id="monitors-heading"><span>[ 05 ]</span> Project monitors</h2>
+        <div class="project-items">
+          {monitors.results.map((w) => (
+            <div class="project-item project-item--row">
+              <a href={`/app/watches/${w.id}`}>{w.label || w.url}</a>
+              <form
+                data-project-form
+                data-pending="Removing…"
+                data-confirm="Remove this monitor from the project? It keeps running and keeps its history."
+              >
+                <input type="hidden" name="action" value="detach" />
+                <input type="hidden" name="kind" value="watch" />
+                <input type="hidden" name="project_id" value={project.id} />
+                <input type="hidden" name="asset_id" value={w.id} />
+                <button type="submit" class="btn btn--sm btn--danger-outline">
+                  Remove from project
+                </button>
+                <p role="status"></p>
+              </form>
+            </div>
+          ))}
+        </div>
+        {!monitors.results.length && (
+          <p class="small muted">
+            No monitors attached yet. Add one under Add existing work, or <a href="/app/watches/setup">set up a new
+            monitor</a> and attach it here.
+          </p>
+        )}
       </section>
-      <section class="project-panel">
-        <h2>Saved capture settings</h2>
+      <section class="project-panel" aria-labelledby="presets-heading">
+        <h2 class="section-heading" id="presets-heading"><span>[ 06 ]</span> Saved capture settings</h2>
         <p class="small muted">
           Create reusable settings in batch capture. Credentials and input actions are never saved.
         </p>
-        {presets.results.map((p) => (
-          <div class="project-item">
-            <a href={`/app/batch?project=${project.id}&preset=${p.id}`}>{p.name} →</a>
-            <form data-project-form>
-              <input type="hidden" name="action" value="delete_preset" />
-              <input type="hidden" name="project_id" value={project.id} />
-              <input type="hidden" name="preset_id" value={p.id} />
-              <button type="submit" class="btn btn--outline">
-                Delete saved settings
-              </button>
-              <p role="status"></p>
-            </form>
-          </div>
-        ))}
+        <div class="project-items">
+          {presets.results.map((p) => (
+            <div class="project-item project-item--row">
+              <a href={`/app/batch?project=${project.id}&preset=${p.id}`}>{p.name} →</a>
+              <form
+                data-project-form
+                data-pending="Deleting…"
+                data-confirm={`Delete the saved settings “${p.name}”? Captures already made with them are kept.`}
+              >
+                <input type="hidden" name="action" value="delete_preset" />
+                <input type="hidden" name="project_id" value={project.id} />
+                <input type="hidden" name="preset_id" value={p.id} />
+                <button type="submit" class="btn btn--sm btn--danger-outline">
+                  Delete
+                </button>
+                <p role="status"></p>
+              </form>
+            </div>
+          ))}
+        </div>
       </section>
       <section class="project-panel">
         <details>
@@ -273,20 +311,27 @@ const fields = { project_id: project.id };
               Report brand
               <input class="input" name="brand" maxlength="100" value={project.brand} />
             </label>
-            <button type="submit" class="btn btn--outline">
-              Save project
-            </button>
+            <div class="btn-row">
+              <button type="submit" class="btn btn--outline-ink">
+                Save project
+              </button>
+            </div>
             <p role="status"></p>
           </form>
           <form
             data-project-form
+            class="danger-zone"
+            data-pending="Deleting…"
             data-confirm="Delete this project, its reports, notes and review links? Original captures and monitors will be kept."
           >
+            <span class="danger-zone__label">Danger zone</span>
             <input type="hidden" name="action" value="delete" />
             <input type="hidden" name="project_id" value={project.id} />
-            <button type="submit" class="btn btn--outline">
-              Delete project
-            </button>
+            <div class="btn-row">
+              <button type="submit" class="btn btn--danger-outline">
+                Delete project
+              </button>
+            </div>
             <p role="status"></p>
           </form>
         </details>

@@ -2,6 +2,20 @@ const root = document.querySelector<HTMLElement>('#batch-workspace');
 if (root) {
   const form = document.querySelector<HTMLFormElement>('#batch-form')!;
   const status = document.querySelector<HTMLElement>('#batch-status')!;
+  const errorBox = document.querySelector<HTMLElement>('#batch-error');
+  /** Failures go in the alert notice; progress stays in the quiet status line. */
+  const fail = (message: string) => {
+    status.textContent = '';
+    if (!errorBox) {
+      status.textContent = message;
+      return;
+    }
+    errorBox.textContent = message;
+    errorBox.hidden = false;
+  };
+  const clearError = () => {
+    if (errorBox) errorBox.hidden = true;
+  };
   const queue = document.querySelector<HTMLOListElement>('#batch-queue')!;
   const start = document.querySelector<HTMLButtonElement>('#batch-start')!;
   const stop = document.querySelector<HTMLButtonElement>('#batch-stop')!;
@@ -92,6 +106,7 @@ if (root) {
     if (jobs.length && !confirm('Replace this queue? Existing captures stay in your library.')) return;
     const button = document.querySelector<HTMLButtonElement>('#batch-preview')!;
     button.disabled = true;
+    clearError();
     status.textContent = 'Checking pages…';
     try {
       const data = input();
@@ -117,9 +132,11 @@ if (root) {
       document.querySelector('#batch-cost')!.textContent =
         `${result.urls.length} pages · ${count} screenshots · ${remaining} remaining`;
       status.textContent = 'Preview ready. Settings below are fixed for this queue; preview again to apply changes.';
+      // The queue's Start button is now the one primary action.
+      button.classList.replace('btn--lime', 'btn--outline-ink');
       render();
     } catch (e) {
-      status.textContent = e instanceof Error ? e.message : 'Preview failed.';
+      fail(e instanceof Error ? e.message : 'Preview failed.');
     } finally {
       button.disabled = false;
     }
@@ -195,6 +212,7 @@ if (root) {
   document.querySelector('#save-preset')?.addEventListener('click', async () => {
     const button = document.querySelector<HTMLButtonElement>('#save-preset')!;
     button.disabled = true;
+    clearError();
     try {
       const data = input();
       await post('/api/projects', {
@@ -208,7 +226,7 @@ if (root) {
       });
       status.textContent = 'Capture settings saved to this project. URLs and credentials are not saved.';
     } catch (e) {
-      status.textContent = e instanceof Error ? e.message : 'Could not save settings.';
+      fail(e instanceof Error ? e.message : 'Could not save settings.');
     } finally {
       button.disabled = false;
     }

@@ -15,7 +15,7 @@
     errorBox.className = 'notice notice--error form-error';
     errorBox.setAttribute('role', 'alert');
     errorBox.hidden = true;
-    status.after(errorBox);
+    status.parentNode!.insertBefore(errorBox, status.nextSibling);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();

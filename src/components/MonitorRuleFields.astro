@@ -26,7 +26,7 @@ const shown = (kinds: string[]) => kinds.includes(rule.kind);
       {kinds.map(([value, label]) => <option value={value} selected={rule.kind === value}>{label}</option>)}
     </select>
   </label>
-  <label data-rule-for={FOR.phrase.join(' ')} hidden={!shown(FOR.phrase)}>Phrase to watch
+  <label data-rule-for={FOR.phrase.join(' ')} hidden={!shown(FOR.phrase)}>Phrase to look for
     <input class="input" name="rule_phrase" value={rule.phrase} maxlength="200" placeholder="Out of stock" required={shown(FOR.phrase)} data-rule-required />
     <span class="xs muted">Phrase matching ignores case.</span>
   </label>
@@ -37,13 +37,14 @@ const shown = (kinds: string[]) => kinds.includes(rule.kind);
   <p class="small muted" data-rule-for={FOR.text.join(' ')} hidden={!shown(FOR.text)}>
     Text rules use collected page text and do not use the visual threshold or rectangular masks.
   </p>
-  <label data-rule-for={FOR.region.join(' ')} hidden={!shown(FOR.region)}>Watched rectangle for visual comparisons (optional)
+  <label data-rule-for={FOR.region.join(' ')} hidden={!shown(FOR.region)}>Compare only this rectangle (optional)
     <input class="input" name="watch_region" value={rule.region} placeholder="x,y,width,height" maxlength="100" />
   </label>
 </div>
 <script>
   document.querySelectorAll<HTMLElement>('[data-rule-fields]').forEach((root) => {
-    const kind = root.querySelector<HTMLSelectElement>('[data-rule-kind]')!;
+    // Workers types redefine Element, so select elements are cast via unknown.
+    const kind = root.querySelector('[data-rule-kind]') as unknown as HTMLSelectElement;
     const update = () => {
       root.querySelectorAll<HTMLElement>('[data-rule-for]').forEach((node) => {
         const show = node.dataset.ruleFor!.split(' ').includes(kind.value);

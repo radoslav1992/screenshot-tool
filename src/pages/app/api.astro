@@ -237,9 +237,9 @@ const keyMeta = (key: { label: string; environment: string; created_at: string; 
   }
 
   function setFormDisabled(disabled: boolean) {
-    form?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button').forEach(
-      (control) => (control.disabled = disabled),
-    );
+    form?.querySelectorAll<HTMLInputElement>('input, select, button').forEach((control) => {
+      control.disabled = disabled;
+    });
   }
 
   function addRow(key: CreatedKey) {
@@ -251,7 +251,7 @@ const keyMeta = (key: { label: string; environment: string; created_at: string; 
     row.querySelector('.key-row__body .xs')!.textContent =
       `${key.label} · ${key.environment === 'test' ? 'test' : 'live'} · created ${formatDate(key.created_at)} · never used`;
     row.querySelector<HTMLButtonElement>('button')!.dataset.revoke = key.id;
-    list.prepend(row);
+    list.insertBefore(row, list.firstChild);
     list.hidden = false;
     if (empty) empty.hidden = true;
   }

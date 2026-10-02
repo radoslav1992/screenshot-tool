@@ -102,7 +102,7 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
           <label>
             Draw on preview
             <select class="input" id="region-tool">
-              <option value="watch_region">Watch this area only</option>
+              <option value="watch_region">Monitor this area only</option>
               <option value="ignore_regions">Ignore this area</option>
             </select>
           </label>
@@ -205,8 +205,9 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
     const previewError = document.querySelector<HTMLElement>('#monitor-preview-error')!;
     const saveStatus = document.querySelector<HTMLElement>('#monitor-save-status')!;
     const saveError = document.querySelector<HTMLElement>('#monitor-save-error')!;
-    const tool = document.querySelector<HTMLSelectElement>('#region-tool')!;
-    const ruleKind = form.querySelector<HTMLSelectElement>('[name="rule_kind"]');
+    // Workers types redefine Element, so select elements are cast via unknown.
+    const tool = document.querySelector('#region-tool') as unknown as HTMLSelectElement;
+    const ruleKind = form.querySelector('[name="rule_kind"]') as unknown as HTMLSelectElement | null;
     let busy = false;
     const canvas = document.querySelector<HTMLElement>('#region-canvas')!;
     const img = document.querySelector<HTMLImageElement>('#monitor-baseline')!;

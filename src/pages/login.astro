@@ -2,10 +2,16 @@
 import Base from "../layouts/Base.astro";
 import AdonAuthStory from "../components/AdonAuthStory.astro";
 import Logo from "../components/Logo.astro";
-import Icon from "../components/Icon.astro";
+import PasswordField from "../components/PasswordField.astro";
+import { safeNext } from "../lib/safe-next";
 
-const next = Astro.url.searchParams.get("next") ?? "/app";
+// Sanitised here as well as by the API, so the form never carries a value that
+// would send someone off-site even if it were posted somewhere else.
+const next = safeNext(Astro.url.searchParams.get("next"), Astro.url.origin);
 const initialError = Astro.url.searchParams.get("error") ?? "";
+// Someone invited to a project usually has no account yet; keep where they
+// were going when they switch to signing up.
+const signupHref = next === "/app" ? "/signup" : `/signup?next=${encodeURIComponent(next)}`;
 ---
 
 <Base title="Log in">
@@ -36,6 +42,7 @@ const initialError = Astro.url.searchParams.get("error") ?? "";
             <div
               class="notice notice--error"
               id="form-error"
+              role="alert"
               hidden={!initialError}
             >
               {initialError}
@@ -57,32 +64,17 @@ const initialError = Astro.url.searchParams.get("error") ?? "";
               />
             </div>
 
-            <div class="field">
-              <label class="field__label" for="password">
-                Password
-              </label>
-              <div class="input-affix">
-                <input
-                  class="input"
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  autocomplete="current-password"
-                  placeholder="••••••••••"
-                />
-                <button
-                  type="button"
-                  class="input-affix__button"
-                  data-toggle-password="#password"
-                  data-showing="false"
-                  aria-label="Show password"
-                >
-                  <Icon name="eye" size={16} class="pw-on" />
-                  <Icon name="eye-off" size={16} class="pw-off" />
-                </button>
-              </div>
-            </div>
+            <PasswordField
+              id="password"
+              name="password"
+              label="Password"
+              autocomplete="current-password"
+              placeholder="••••••••••"
+            />
+
+            <p class="small" style="margin-top: -4px; text-align: right">
+              <a href="/forgot-password" style="font-weight: 600">Forgot password?</a>
+            </p>
 
             <button type="submit" class="btn btn--ink" style="margin-top: 8px">
               Log in
@@ -91,7 +83,7 @@ const initialError = Astro.url.searchParams.get("error") ?? "";
 
           <p class="small muted center" style="margin-top: 16px">
             New here?{" "}
-            <a href="/signup" style="font-weight: 600">
+            <a href={signupHref} style="font-weight: 600">
               Create an account
             </a>
           </p>

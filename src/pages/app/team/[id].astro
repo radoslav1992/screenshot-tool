@@ -5,7 +5,9 @@ import ProjectForms from '../../../components/ProjectForms.astro';
 import ReviewReport from '../../../components/ReviewReport.astro';
 import { collaborationReady, projectAccess } from '../../../lib/collaboration';
 import { reportCaptures, type Report } from '../../../lib/projects';
+import { canSendEmail } from '../../../lib/mailer';
 import '../../../styles/projects.css';
+const mailReady = canSendEmail();
 if (!(await collaborationReady()))
   return new Response('Collaboration is being prepared. Please try again later.', { status: 503 });
 let access;
@@ -138,7 +140,7 @@ Astro.response.headers.set('cache-control', 'private, no-store');
               </form>
             </div>
           ))}
-          <form data-project-form data-endpoint="/api/collaboration">
+          <form data-invite-form>
             <input type="hidden" name="action" value="invite" />
             <input type="hidden" name="project_id" value={project.id} />
             <label>
@@ -153,12 +155,15 @@ Astro.response.headers.set('cache-control', 'private, no-store');
               </select>
             </label>
             <button type="submit" class="btn btn--ink">
-              Create invitation link
+              {mailReady ? 'Send invitation' : 'Create invitation link'}
             </button>
             <p role="status"></p>
           </form>
           <p class="small muted">
-            Copy and send the invitation link yourself. No invitation email is sent automatically.
+            {mailReady
+              ? 'We email the invitation link to your collaborator. You also get the link here, to copy and send yourself if the email does not arrive.'
+              : 'Invitation emails are not available right now, so copy the invitation link and send it to your collaborator yourself.'}
+            {' '}The collaborator signs in or creates a free account with that address and confirms it before joining.
           </p>
         </section>
       )}
@@ -197,3 +202,46 @@ Astro.response.headers.set('cache-control', 'private, no-store');
   </div>
   <ProjectForms />
 </AppShell>
+
+<script>
+  // Invitations get their own handler: the shared one only knows "copy this
+  // link", and here the link has usually been emailed already.
+  document.querySelectorAll<HTMLFormElement>('form[data-invite-form]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (form.dataset.busy) return;
+      const status = form.querySelector<HTMLElement>('[role="status"]')!;
+      const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      form.dataset.busy = 'true';
+      button.disabled = true;
+      status.textContent = 'Sending…';
+      try {
+        const response = await fetch('/api/collaboration', { method: 'POST', body: new FormData(form) });
+        const result = (await response.json()) as {
+          error?: { message?: string };
+          share_url?: string;
+          emailed?: boolean;
+          email?: string;
+        };
+        if (!response.ok || !result.share_url) throw new Error(result.error?.message ?? 'Could not create the invitation.');
+
+        status.textContent = result.emailed
+          ? `Invitation emailed to ${result.email}. If it does not arrive, send them this link: `
+          : 'The invitation was not emailed. Copy this link now and send it to your collaborator: ';
+        const output = document.createElement('input');
+        output.className = 'input';
+        output.value = result.share_url;
+        output.readOnly = true;
+        output.setAttribute('aria-label', 'Invitation link');
+        status.appendChild(output);
+        output.select();
+        form.querySelector<HTMLInputElement>('input[name="email"]')!.value = '';
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Could not send the invitation. Please try again.';
+      } finally {
+        delete form.dataset.busy;
+        button.disabled = false;
+      }
+    });
+  });
+</script>

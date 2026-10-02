@@ -5,28 +5,39 @@ import {
   isSecureRequest,
   sessionCookie,
   toSessionUser,
-  verifyPassword,
+  verifyPasswordEvenly,
 } from '../../../lib/auth';
+import { AUTH_LIMITS, clientIp, emailBucket, enforceThrottles } from '../../../lib/auth-throttle';
 import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { safeNext } from '../../../lib/safe-next';
 
 export const prerender = false;
 
-function safeNext(value: string | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/app';
-  return value;
-}
-
 export const POST: APIRoute = async ({ request }) => {
   const wantsJson = (request.headers.get('accept') ?? '').includes('application/json');
+  const origin = new URL(request.url).origin;
+  let next = '/app';
 
   try {
     assertSameOrigin(request);
     const body = await readBody(request);
-    const next = safeNext(body.next);
+    next = safeNext(body.next, origin);
+    const email = (body.email ?? '').trim();
 
-    const row = await findUserByEmail(body.email ?? '');
-    const ok = row ? await verifyPassword(body.password ?? '', row.password_hash) : false;
+    // Before the lookup, so a throttled guess learns nothing — not even timing.
+    await enforceThrottles(
+      [
+        { bucket: `login-ip:${clientIp(request)}`, ...AUTH_LIMITS.loginIp },
+        { bucket: await emailBucket('login-email', email), ...AUTH_LIMITS.loginEmail },
+      ],
+      (wait) => `Too many sign-in attempts. Wait ${wait} and try again, or reset your password.`,
+    );
+
+    const row = email ? await findUserByEmail(email) : null;
+    // An unknown email still pays for a full PBKDF2 run, so the response time
+    // does not give away which addresses have accounts.
+    const ok = await verifyPasswordEvenly(body.password ?? '', row?.password_hash);
 
     if (!row || !ok) {
       // Same message either way so the form can't be used to enumerate accounts.
@@ -46,9 +57,9 @@ export const POST: APIRoute = async ({ request }) => {
   } catch (error) {
     const httpError = toHttpError(error, 'login', 'Could not sign you in.');
     if (wantsJson) return httpError.toResponse();
-    return new Response(null, {
-      status: 303,
-      headers: { location: `/login?error=${encodeURIComponent(httpError.message)}` },
-    });
+    // Keep `next` so a second attempt still lands where the first was going.
+    const back = new URLSearchParams({ error: httpError.message });
+    if (next !== '/app') back.set('next', next);
+    return new Response(null, { status: 303, headers: { location: `/login?${back}` } });
   }
 };

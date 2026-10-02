@@ -1,9 +1,12 @@
 ---
 import { env } from 'cloudflare:workers';
 import AppShell from '../../layouts/AppShell.astro';
+import PasswordField from '../../components/PasswordField.astro';
 import { getUsage } from '../../lib/captures';
 import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription } from '../../lib/billing';
+import { PASSWORD_MIN_LENGTH, countSessions } from '../../lib/auth';
+import { canSendEmail } from '../../lib/mailer';
 
 const user = Astro.locals.user!;
 const usage = await getUsage(user);
@@ -11,6 +14,8 @@ const plan = getPlan(user.plan);
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
 const renews = new Date(usage.renewsOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const longDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 const nextPlanId = PLAN_ORDER[PLAN_ORDER.indexOf(plan.id) + 1] ?? null;
 const nextPlan = nextPlanId ? PLANS[nextPlanId] : null;
@@ -22,18 +27,46 @@ const billing = checkout ? await getBillingRow(user.id).catch(() => null) : null
 const hasCustomer = Boolean(billing?.stripe_customer_id);
 const subscribed = hasActiveSubscription(billing);
 const pastDue = billing?.plan_status === 'past_due';
-const paidThrough = billing?.plan_period_end
-  ? new Date(billing.plan_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  : null;
+const paidThrough = billing?.plan_period_end ? longDate(billing.plan_period_end) : null;
 
-// Which confirmation the delete form asks for. An account created by a future
-// sign-in provider would have no password to type.
-const hasPassword = Boolean(
-  await env.DB.prepare(`SELECT 1 FROM users WHERE id = ? AND password_hash IS NOT NULL`).bind(user.id).first(),
-);
+// Apple bills iOS subscribers itself; nothing here can change or cancel that,
+// so the screen says where to go instead. The columns arrive with 0011.
+const apple = await env.DB.prepare(
+  `SELECT u.apple_expires_at AS expires_at,
+          (SELECT product_id FROM apple_subscriptions s WHERE s.user_id = u.id ORDER BY s.expires_at DESC LIMIT 1) AS product_id
+   FROM users u WHERE u.id = ?`,
+)
+  .bind(user.id)
+  .first<{ expires_at: string | null; product_id: string | null }>()
+  .catch(() => null);
+const appleActive = Boolean(apple?.expires_at && apple.expires_at > new Date().toISOString());
+const appleInterval = apple?.product_id?.endsWith('.yearly') ? 'yearly' : 'monthly';
+const APPLE_SUBSCRIPTIONS = 'https://apps.apple.com/account/subscriptions';
 
-const justUpgraded = Astro.url.searchParams.get('checkout') === 'success';
-const billingError = Astro.url.searchParams.get('billing_error');
+// Which confirmation the delete form asks for, and whether there is a password
+// to change. An account created by a future sign-in provider would have none.
+const account = await env.DB.prepare(
+  `SELECT password_hash IS NOT NULL AS has_password, email_verified_at FROM users WHERE id = ?`,
+)
+  .bind(user.id)
+  .first<{ has_password: number; email_verified_at: string | null }>();
+const hasPassword = Boolean(account?.has_password);
+const emailConfirmed = Boolean(account?.email_verified_at);
+const mailReady = canSendEmail();
+const sessions = await countSessions(user.id).catch(() => 1);
+const otherSessions = Math.max(0, sessions - 1);
+
+const params = Astro.url.searchParams;
+const justUpgraded = params.get('checkout') === 'success';
+const billingError = params.get('billing_error');
+const passwordNotice =
+  params.get('password') === 'changed'
+    ? 'Password changed. Every other device was signed out.'
+    : params.get('password') === 'reset'
+      ? 'Your password has been reset. Every other device signed in to this account was signed out.'
+      : null;
+const signedOut = params.has('signed_out') ? Number.parseInt(params.get('signed_out') ?? '0', 10) || 0 : null;
+const passwordError = params.get('password_error');
 ---
 
 <AppShell title="Account" tab="account">
@@ -43,6 +76,14 @@ const billingError = Astro.url.searchParams.get('billing_error');
   </header>
 
   <div class="app-wrap app-split stack gap-16">
+    <div class="workspace-intro" style="grid-column: 1 / -1">
+      <div>
+        <span class="eyebrow">ACCOUNT &amp; BILLING</span>
+        <h1>Your account.</h1>
+        <p>Profile, plan, sign-in and billing in one place.</p>
+      </div>
+    </div>
+
     {
       justUpgraded && (
         <div class="notice notice--info">
@@ -69,14 +110,58 @@ const billingError = Astro.url.searchParams.get('billing_error');
       )
     }
 
+    {passwordNotice && <div class="notice notice--ok" role="status">{passwordNotice}</div>}
+    {
+      signedOut !== null && (
+        <div class="notice notice--ok" role="status">
+          {signedOut === 0
+            ? 'No other devices were signed in.'
+            : `Signed out ${signedOut} other ${signedOut === 1 ? 'device' : 'devices'}.`}
+        </div>
+      )
+    }
+    {
+      passwordError && (
+        <div class="notice notice--error" role="alert">
+          {passwordError}
+        </div>
+      )
+    }
+
     <div class="app-col">
     <div class="card" style="padding: 18px; display: flex; align-items: center; gap: 14px">
       <span class="avatar avatar--lg">{initials}</span>
       <div style="flex: 1; min-width: 0">
         <div class="truncate" style="font: 700 15px var(--display)">{user.name || 'Your account'}</div>
         <div class="xs muted truncate">{user.email}</div>
+        {
+          !emailConfirmed && (
+            <div class="xs" style="margin-top: 4px; color: var(--muted)">
+              Email not confirmed.
+              {mailReady ? (
+                <>
+                  {' '}
+                  <button type="button" id="send-confirmation" style="font-weight: 600; color: var(--green)">
+                    Send confirmation email
+                  </button>
+                  <span id="confirmation-state" aria-live="polite" />
+                </>
+              ) : (
+                ' Needed to join team projects.'
+              )}
+            </div>
+          )
+        }
       </div>
-      <button type="button" class="btn btn--sm btn--outline" id="edit-profile">Edit</button>
+      <button
+        type="button"
+        class="btn btn--sm btn--outline"
+        id="edit-profile"
+        aria-expanded="false"
+        aria-controls="profile-form"
+      >
+        Edit
+      </button>
     </div>
 
     <form id="profile-form" class="card card--pad stack gap-12" hidden>
@@ -100,6 +185,13 @@ const billingError = Astro.url.searchParams.get('billing_error');
       {
         paidThrough && (
           <div class="xs" style="color: var(--dim); margin-top: 4px">Paid through {paidThrough}</div>
+        )
+      }
+      {
+        appleActive && apple?.expires_at && (
+          <div class="xs" style="color: var(--dim); margin-top: 4px">
+            Billed {appleInterval} by Apple · current period ends {longDate(apple.expires_at)}
+          </div>
         )
       }
 
@@ -129,7 +221,9 @@ const billingError = Astro.url.searchParams.get('billing_error');
       </div>
 
       {
-        nextPlan &&
+        // An Apple subscription cannot be combined with a Stripe one, so the
+        // upgrade offer would only end at a refusal.
+        nextPlan && !(appleActive && !subscribed) &&
           (subscribed ? (
             <a class="btn btn--lime" href="/app/upgrade" style="margin-top: 16px; padding: 12px; font-size: 13px">
               Upgrade to {nextPlan.name}
@@ -151,6 +245,14 @@ const billingError = Astro.url.searchParams.get('billing_error');
         <span class="row__value" style="color: var(--muted-2)">›</span>
       </a>
       {
+        appleActive && (
+          <a class="row" href={APPLE_SUBSCRIPTIONS} target="_blank" rel="noopener">
+            <span class="row__label">Apple subscription</span>
+            <span class="row__value">Manage in Apple ↗</span>
+          </a>
+        )
+      }
+      {
         hasCustomer ? (
           <form method="post" action="/api/billing/portal">
             <button type="submit" class="row" style="width: 100%">
@@ -159,10 +261,12 @@ const billingError = Astro.url.searchParams.get('billing_error');
             </button>
           </form>
         ) : (
-          <div class="row">
-            <span class="row__label">Payment method</span>
-            <span class="row__value">{checkout ? 'None yet ›' : 'Not connected ›'}</span>
-          </div>
+          !appleActive && (
+            <div class="row">
+              <span class="row__label">Payment method</span>
+              <span class="row__value">{checkout ? 'None yet' : 'Not connected'}</span>
+            </div>
+          )
         )
       }
       <button type="button" class="row" id="install-app" hidden>
@@ -173,17 +277,94 @@ const billingError = Astro.url.searchParams.get('billing_error');
         <span class="row__label">API documentation</span>
         <span class="row__value" style="color: var(--muted-2)">›</span>
       </a>
+      {
+        hasPassword ? (
+          <button
+            type="button"
+            class="row"
+            id="open-password"
+            aria-expanded="false"
+            aria-controls="password-form"
+            style="width: 100%"
+          >
+            <span class="row__label">Change password</span>
+            <span class="row__value" style="color: var(--muted-2)">›</span>
+          </button>
+        ) : (
+          <a class="row" href="/forgot-password">
+            <span class="row__label">Set a password</span>
+            <span class="row__value" style="color: var(--muted-2)">By email ›</span>
+          </a>
+        )
+      }
+      <form method="post" action="/api/auth/sign-out-others">
+        <button type="submit" class="row" style="width: 100%" disabled={otherSessions === 0}>
+          <span class="row__label">Sign out other devices</span>
+          <span class="row__value" style="color: var(--muted-2)">
+            {otherSessions === 0
+              ? 'Only this one'
+              : `${otherSessions} other ${otherSessions === 1 ? 'session' : 'sessions'} ›`}
+          </span>
+        </button>
+      </form>
       <form method="post" action="/api/auth/logout">
         <button type="submit" class="row" style="width: 100%">
           <span class="row__label" style="color: var(--danger)">Sign out</span>
           <span class="row__value" style="color: var(--muted-2)">›</span>
         </button>
       </form>
-      <button type="button" class="row" id="open-delete" style="width: 100%">
+      <button
+        type="button"
+        class="row"
+        id="open-delete"
+        aria-expanded="false"
+        aria-controls="delete-form"
+        style="width: 100%"
+      >
         <span class="row__label" style="color: var(--danger)">Delete account</span>
         <span class="row__value" style="color: var(--muted-2)">›</span>
       </button>
     </div>
+
+    {
+      hasPassword && (
+        <form
+          id="password-form"
+          class="card card--pad stack gap-12"
+          method="post"
+          action="/api/auth/change-password"
+          hidden
+        >
+          <div style="font: 700 14px var(--display)">Change password</div>
+          <p class="xs muted">
+            Every other device signed in to this account, including the iOS app, is signed out. This one stays signed
+            in.
+          </p>
+          <input type="text" name="username" value={user.email} autocomplete="username" hidden />
+          <PasswordField
+            id="current-password"
+            name="current_password"
+            label="Current password"
+            autocomplete="current-password"
+          />
+          <PasswordField
+            id="new-password"
+            name="password"
+            label="New password"
+            autocomplete="new-password"
+            placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
+            minlength={PASSWORD_MIN_LENGTH}
+          />
+          <div style="display: flex; gap: 8px">
+            <button type="submit" class="btn btn--ink">Change password</button>
+            <button type="button" class="btn btn--outline" id="cancel-password">Cancel</button>
+          </div>
+          <p class="xs muted-2">
+            Forgotten the current one? <a href="/forgot-password">Reset it by email</a>.
+          </p>
+        </form>
+      )
+    }
 
     <form id="delete-form" class="card card--pad stack gap-12" hidden>
       <div style="font: 700 14px var(--display); color: var(--danger)">Delete this account</div>
@@ -200,6 +381,18 @@ const billingError = Astro.url.searchParams.get('billing_error');
         }
         {' '}Invoices stay with Stripe, which the law requires us to keep.
       </p>
+      {
+        appleActive && (
+          <div class="notice notice--error">
+            <strong>Cancel your Apple subscription first.</strong> Deleting your account does not stop Apple billing
+            you — only Apple can do that. Open{' '}
+            <a href={APPLE_SUBSCRIPTIONS} target="_blank" rel="noopener">
+              Apple subscriptions
+            </a>{' '}
+            (or Settings → your name → Subscriptions on your iPhone) and cancel Easy Screen Capture, then come back.
+          </div>
+        )
+      }
       <div class="field">
         <label class="field__label" for="delete-confirm">{hasPassword ? 'Your password' : 'Type your email to confirm'}</label>
         <input
@@ -227,13 +420,25 @@ const billingError = Astro.url.searchParams.get('billing_error');
 </AppShell>
 
 <script>
-  const form = document.getElementById('profile-form') as HTMLFormElement | null;
+  import { wirePasswordToggles } from '../../scripts/auth';
 
-  document.getElementById('edit-profile')?.addEventListener('click', () => {
-    if (form) form.hidden = !form.hidden;
+  wirePasswordToggles();
+
+  /** Shows or hides a panel and keeps its toggle's `aria-expanded` in step. */
+  function setOpen(toggle: HTMLElement | null, panel: HTMLElement | null, open: boolean) {
+    if (panel) panel.hidden = !open;
+    toggle?.setAttribute('aria-expanded', String(open));
+  }
+
+  const form = document.getElementById('profile-form') as HTMLFormElement | null;
+  const editToggle = document.getElementById('edit-profile');
+
+  editToggle?.addEventListener('click', () => {
+    if (form) setOpen(editToggle, form, form.hidden);
   });
   document.getElementById('cancel-profile')?.addEventListener('click', () => {
-    if (form) form.hidden = true;
+    setOpen(editToggle, form, false);
+    editToggle?.focus();
   });
 
   form?.addEventListener('submit', async (event) => {
@@ -256,11 +461,57 @@ const billingError = Astro.url.searchParams.get('billing_error');
     }
   });
 
-  const deleteForm = document.getElementById('delete-form') as HTMLFormElement | null;
+  const passwordForm = document.getElementById('password-form') as HTMLFormElement | null;
+  const passwordToggle = document.getElementById('open-password');
 
-  document.getElementById('open-delete')?.addEventListener('click', () => {
+  passwordToggle?.addEventListener('click', () => {
+    if (!passwordForm) return;
+    const open = passwordForm.hidden;
+    setOpen(passwordToggle, passwordForm, open);
+    if (open) (document.getElementById('current-password') as HTMLInputElement | null)?.focus();
+  });
+  document.getElementById('cancel-password')?.addEventListener('click', () => {
+    passwordForm?.reset();
+    setOpen(passwordToggle, passwordForm, false);
+    passwordToggle?.focus();
+  });
+
+  document.getElementById('send-confirmation')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const state = document.getElementById('confirmation-state');
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { accept: 'application/json' },
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        sent?: boolean;
+        reason?: string;
+        error?: { message?: string };
+      } | null;
+      if (state) {
+        state.textContent = response.ok
+          ? payload?.sent
+            ? ' Sent — check your inbox.'
+            : payload?.reason === 'already_verified'
+              ? ' Already confirmed.'
+              : ' Could not send it right now.'
+          : ` ${payload?.error?.message ?? 'Could not send it.'}`;
+      }
+    } catch {
+      if (state) state.textContent = ' Could not send. Check your connection and try again.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  const deleteForm = document.getElementById('delete-form') as HTMLFormElement | null;
+  const deleteToggle = document.getElementById('open-delete');
+
+  deleteToggle?.addEventListener('click', () => {
     if (!deleteForm) return;
-    deleteForm.hidden = false;
+    setOpen(deleteToggle, deleteForm, true);
     deleteForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
     (document.getElementById('delete-confirm') as HTMLInputElement | null)?.focus();
   });
@@ -268,7 +519,7 @@ const billingError = Astro.url.searchParams.get('billing_error');
   document.getElementById('cancel-delete')?.addEventListener('click', () => {
     if (deleteForm) {
       deleteForm.reset();
-      deleteForm.hidden = true;
+      setOpen(deleteToggle, deleteForm, false);
     }
   });
 

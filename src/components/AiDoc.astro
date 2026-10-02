@@ -1,0 +1,33 @@
+---
+import type { NumberedEntry } from '../lib/doc-sections';
+
+interface Props {
+  sections: readonly NumberedEntry[];
+  label?: string;
+}
+
+const { sections, label = 'ON THIS PAGE' } = Astro.props;
+---
+
+<section class="ai-doc">
+  <nav class="ai-doc__nav" aria-label="On this page">
+    <div class="ai-doc__nav-inner">
+      <span class="ai-doc__nav-label">[ {label} ]</span>
+      <ol>
+        {
+          sections.map((section) => (
+            <li>
+              <a href={`#${section.id}`}>
+                <span>{section.num}</span>
+                {section.title}
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </nav>
+  <div class="ai-doc__body">
+    <slot />
+  </div>
+</section>

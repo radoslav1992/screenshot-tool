@@ -60,7 +60,7 @@ assert.equal(decodeRunDetail('esc-run-v1:{"delivery":{"email":"__proto__"}}').de
 assert.equal(runLabel({ status: 'done', changed: 0, baseline_capture_id: null, change_pct: null }), 'Baseline saved');
 assert.equal(
   runLabel({ status: 'done', changed: 0, baseline_capture_id: 'before', change_pct: null }),
-  'Comparison unavailable',
+  'Check completed',
 );
 assert.equal(runLabel({ status: 'skipped' }), 'Check skipped');
 assert.equal(await observeDelivery(async () => true), 'accepted');

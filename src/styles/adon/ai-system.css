@@ -1,0 +1,297 @@
+/* AI Agency visual system, shared by every public and authenticated page. */
+@font-face {
+  font-family: "Astro Nebula";
+  src: url("/vendor/adon/fonts/Astro-Nebula-Light.otf") format("opentype");
+  font-weight: 300;
+  font-display: swap;
+}
+:root {
+  --theme: #fb7515;
+  --lime: #fb7515;
+  --lime-tint: #fff1e7;
+  --paper: #f5f5f5;
+  --canvas: #efefed;
+  --font_astronebula: "Astro Nebula", var(--sans);
+  --line: #d0d0ce;
+  --line-2: #dededb;
+  --green: #943c00;
+  --green-deep: #793200;
+}
+.adon-theme .btn,
+.adon-theme .input,
+.adon-theme .siteheader__toggle,
+.adon-theme .plan,
+.adon-theme .plan__badge,
+.adon-theme .switch,
+.adon-theme .switch button,
+.adon-theme .capture-panel,
+.adon-theme .card,
+.adon-theme .usage-card,
+.adon-theme .shot,
+.adon-theme .device,
+.adon-theme .mode,
+.adon-theme .chip,
+.adon-theme .preset-row button,
+.adon-theme .workflow-link {
+  border-radius: 0;
+}
+.adon-theme .btn {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.adon-theme .siteheader {
+  background: var(--paper);
+}
+.adon-theme .siteheader__inner {
+  min-height: 94px;
+}
+.adon-theme .siteheader__nav a,
+.adon-theme .siteheader__login {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.adon-theme .section__title,
+.adon-theme .adon-auth-story h2,
+.adon-theme .adon-footer-callout > span:first-child {
+  font-family: var(--font_astronebula);
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: -0.025em;
+  line-height: 0.98;
+}
+.adon-theme .adon-auth-story h2 em,
+.adon-theme .adon-footer-callout em {
+  font: inherit;
+  color: var(--theme);
+}
+.adon-theme .sitefooter {
+  background: var(--paper);
+  color: var(--ink);
+  border-top: 1px solid var(--line);
+}
+.adon-theme .sitefooter .adon-footer-callout {
+  color: var(--ink);
+  border-bottom-color: var(--line);
+}
+.adon-theme .sitefooter .adon-footer-callout > span:last-child {
+  background: var(--theme);
+  color: var(--ink);
+  border-radius: 0;
+  border: 0;
+}
+.adon-theme .sitefooter .logo {
+  color: var(--ink) !important;
+}
+.adon-theme .sitefooter__brand p {
+  color: var(--muted) !important;
+}
+.adon-theme .sitefooter a,
+.adon-theme .sitefooter__title {
+  color: var(--ink);
+}
+.adon-theme .sitefooter__base {
+  color: var(--muted);
+  border-top-color: var(--line);
+}
+.adon-theme .sitefooter__grid {
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0;
+  padding-block: 0;
+}
+.adon-theme .sitefooter__grid > div {
+  padding: 40px 24px;
+  border-right: 1px solid var(--line);
+}
+.adon-theme .sitefooter__grid > div:first-child {
+  padding-left: 0;
+}
+.adon-auth {
+  background: var(--paper);
+}
+.adon-auth-story {
+  border-right: 1px solid var(--line);
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(25% - 1px),
+    #1111110b calc(25% - 1px),
+    #1111110b 25%
+  );
+}
+.adon-auth-form .h2 {
+  font-family: var(--font_astronebula);
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+.adon-auth-meta {
+  border-top-color: var(--line);
+}
+.adon-workspace .workspace-intro h1 {
+  font-family: var(--font_astronebula);
+  text-transform: uppercase;
+  line-height: 1.05;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+}
+.adon-theme .plan__price {
+  font-family: var(--font_astronebula);
+  font-weight: 300;
+}
+.adon-theme .plan__head {
+  align-items: flex-start;
+}
+.adon-theme .plan--featured .plan__price {
+  color: var(--theme);
+}
+.adon-workspace .capture-panel {
+  border-top: 1px solid var(--line);
+}
+.adon-workspace .tabbar__brand {
+  padding-inline: 0;
+}
+@media (min-width: 900px) {
+  .adon-workspace .shell--app > .tabbar {
+    background: var(--paper);
+    border-right: 1px solid var(--line);
+  }
+  .adon-workspace .tabbar .logo {
+    color: var(--ink);
+  }
+  .adon-workspace .shell--app > .tabbar .tabbar__item {
+    color: var(--ink);
+    border-radius: 0;
+  }
+  .adon-workspace .shell--app > .tabbar .tabbar__item:hover {
+    background: #e8e8e5;
+    color: var(--ink);
+  }
+  .adon-workspace .rail-note {
+    color: var(--muted);
+    border-top-color: var(--line);
+  }
+  .adon-workspace .rail-note a {
+    color: var(--green);
+  }
+}
+@media (max-width: 680px) {
+  .adon-theme .sitefooter__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .adon-theme .sitefooter__grid > div {
+    padding: 28px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .adon-theme .sitefooter__grid > div:first-child {
+    grid-column: 1/-1;
+  }
+  .adon-theme .sitefooter__base {
+    padding-block: 22px;
+  }
+}
+
+.adon-auth-layout > * {
+  min-width: 0;
+}
+.adon-theme .adon-auth-story h2 {
+  font-size: clamp(42px, 5.2vw, 78px);
+}
+@media (max-width: 899px) {
+  .adon-theme .adon-auth-story h2 {
+    font-size: clamp(30px, 10vw, 52px);
+  }
+  .adon-auth-form .h2 {
+    font-size: clamp(25px, 7.4vw, 34px);
+  }
+}
+
+/* Camera mark and compact wordmark share the hero's angular geometry. */
+.adon-theme .logo {
+  gap: 10px;
+}
+.adon-theme .logo__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 0;
+  background: transparent;
+}
+.adon-theme .logo__word {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.adon-theme .logo__eyebrow {
+  font: 600 9px/1 var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.adon-theme .logo__name {
+  font: 300 22px/1 var(--font_astronebula);
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+
+/* Cards, panels, lists, notices and code are square everywhere, as in the
+ * AI Agency demo; only dots, avatars and toggles stay round. */
+.adon-theme
+  :is(
+    .card,
+    .panel-dark,
+    .rows,
+    .deflist,
+    .code,
+    .shot,
+    .shot__badge,
+    .shot__strip-item,
+    .stat,
+    .notice,
+    .feature,
+    .feature__icon,
+    .upgrade,
+    .icon-btn,
+    .urlbar,
+    .urlbar button,
+    .compare__side img,
+    .diff-line,
+    .skeleton,
+    .mode-card,
+    .size-card,
+    .workflow-card,
+    .capture-summary,
+    .panel-heading > span,
+    .health-grid article,
+    .monitor-budget,
+    .project-panel,
+    .project-item,
+    .pill,
+    .meter,
+    .meter__fill,
+    .upgrade__tag
+  ) {
+  border-radius: 0;
+}
+body.adon-theme .shell,
+body.adon-theme .shell--app,
+body.adon-theme .shell--app > .tabbar {
+  border-radius: 0;
+}
+.adon-theme .code {
+  background: #1b1c1c;
+}
+.adon-theme .code--light {
+  background: white;
+  border-color: var(--line);
+}
+.adon-theme .code__copy {
+  font: 500 10px var(--mono);
+  text-transform: uppercase;
+  color: var(--theme);
+}
+.adon-theme .notice--info {
+  border-color: var(--line);
+}
+.adon-theme .notice--ok {
+  border-color: #edcbb7;
+}

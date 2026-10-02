@@ -1,4 +1,8 @@
 ---
+import MonitorThreshold from '../../../components/MonitorThreshold.astro';
+import MonitorRuleFields from '../../../components/MonitorRuleFields.astro';
+import { getMonitorRule, workflowsReady } from '../../../lib/monitor-rule-store';
+import { canSendEmail } from '../../../lib/mailer';
 import MonitorBudget from '../../../components/MonitorBudget.astro';
 import { monitorDashboard } from '../../../lib/monitor-dashboard';
 import { runLabel, deliveryLabel } from '../../../lib/monitor-health';
@@ -23,13 +27,15 @@ const [runs, schedules, usage, health] = await Promise.all([
   getUsage(user),
   monitorDashboard(user.id),
 ]);
+const rule = await getMonitorRule(watch.id);
+const rulesReady = await workflowsReady();
 const frequencies = FREQUENCIES.filter((entry) => allowedFrequencies(user.plan).includes(entry.id));
 const origin = Astro.url.origin;
 const latestAlert = health.alerts.get(watch.id);
 
 /** The images for the most recent comparison, when there is one to show. */
 const lastComparison = runs.find(
-  (run) => run.status === 'done' && run.change_pct !== null && run.capture_id && run.baseline_capture_id,
+  (run) => run.status === 'done' && run.capture_id && run.baseline_capture_id,
 );
 
 async function capture(id: string | null): Promise<CaptureRow | null> {
@@ -92,8 +98,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           {watch.url}
         </a>
         <p class="xs muted-2">
-          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · alerts over{' '}
-          {watch.threshold}% change
+          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? (watch.threshold === 0 ? 'alerts for any detected visual change' : `visual alerts at ${watch.threshold}% or more`) : `${rule.kind} alert rule`}
           {watch.webhook_url && ' · webhook on'}
         </p>
         <div class="rows" style="margin-top: 4px">
@@ -140,8 +145,21 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           </p>
         </section>
       )}
+      {watch.notify_email === 1 && !canSendEmail() && <p class="notice">Email alerts are unavailable. Configure email sending before relying on this monitor.</p>}
+      {rulesReady && <form id="rules-form" class="card card--pad stack gap-12" data-watch={watch.id}>
+        <h2 class="h4">What should trigger an alert?</h2>
+        <MonitorRuleFields rule={rule} />
+        <button class="btn btn--ink" type="submit">Save alert rule</button>
+        <p role="status"></p>
+      </form>}
+      <form id="threshold-form" class="card card--pad stack gap-12" data-watch={watch.id}>
+        <h2 class="h4">Change sensitivity</h2>
+        <MonitorThreshold value={watch.threshold} />
+        <button class="btn btn--ink" type="submit">Save threshold</button>
+        <p role="status" aria-live="polite"></p>
+      </form>
       {beforeUrl && afterUrl && (
-        <section class="stack gap-8">
+      <section class="stack gap-8">
           <div class="row-between">
             <h2 class="h4">Latest comparison</h2>
             {changedPct !== null && <span class="pill">{changedPct}% different</span>}
@@ -225,9 +243,10 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
       </form>
       <section class="stack gap-8">
         <h2 class="h4">History &amp; alert status</h2>
+        <a class="btn btn--outline" href={`/app/library?collection=monitors&watch=${encodeURIComponent(watch.id)}`}>View this monitor’s screenshots →</a>
         <p class="xs muted">
           Accepted means the provider accepted the request, not confirmed inbox delivery. Older runs show “Not
-          confirmed.” Failed alerts are not automatically retried.
+          confirmed.” Explicit failures get up to two automatic retries on later hourly runs. Unconfirmed sends are not retried to avoid duplicates.
         </p>
         {runs.length === 0 ? (
           <div class="empty">
@@ -259,7 +278,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
                 </span>
                 <span class="row__note" style="max-width: 55%">
                   {run.change_pct !== null && run.status === 'done'
-                    ? `${run.change_pct}% different`
+                    ? (run.detail || `${run.change_pct}% different · ${run.changed ? 'Alert rule met' : 'No alert triggered'}`)
                     : (run.detail ?? '')}
                 </span>
               </div>
@@ -306,6 +325,33 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
   </div>
 </AppShell>
 <script>
+  document.querySelector<HTMLFormElement>('#threshold-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const state = form.querySelector('[role="status"]')!;
+    if (button.disabled || !form.reportValidity()) return;
+    button.disabled = true;
+    state.textContent = 'Saving…';
+    try {
+      const body = new FormData(form); body.set('action', 'threshold');
+      const response = await fetch(`/api/watches/${form.dataset.watch}`, { method: 'POST', body });
+      const result = await response.json() as { error?: { message: string } };
+      if (!response.ok) throw new Error(result.error?.message || 'Could not save threshold.');
+      window.location.reload();
+    } catch (error) { state.textContent = error instanceof Error ? error.message : 'Could not save threshold.'; }
+    finally { button.disabled = false; }
+  });
+
+  document.querySelector<HTMLFormElement>('#rules-form')?.addEventListener('submit', async e => {
+    e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
+    const state = form.querySelector('[role="status"]')!;
+    const button = form.querySelector('button')!; button.disabled = true;
+    try { const response = await fetch(`/api/watches/${form.dataset.watch}/rules`, { method:'POST', body:new FormData(form) });
+      const result = await response.json() as { error?: { message: string }; message: string }; if (!response.ok) throw Error(result.error?.message || 'Could not save.'); state.textContent = result.message;
+    } catch (error) { state.textContent = error instanceof Error ? error.message : 'Could not save.'; }
+    finally { button.disabled = false; }
+  });
   document.querySelector<HTMLButtonElement>('#test-notification')?.addEventListener('click', async (e) => {
     const button = e.currentTarget as HTMLButtonElement;
     button.disabled = true;

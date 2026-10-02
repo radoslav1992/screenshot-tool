@@ -1,17 +1,21 @@
 ---
 import Base from '../layouts/Base.astro';
-import Icon from '../components/Icon.astro';
+import AiPage from '../components/AiPage.astro';
+import AiPageHead from '../components/AiPageHead.astro';
 
 export const prerender = true;
 ---
 
 <Base title="Not found">
-  <div class="shell">
-    <div class="empty" style="margin: auto">
-      <div class="empty__icon"><Icon name="search" size={34} /></div>
-      <h1 class="h3" style="margin-top: 12px">Nothing here</h1>
-      <p class="small muted" style="margin-top: 8px">That page does not exist — or the link has expired.</p>
-      <a class="btn btn--ink" href="/" style="max-width: 220px; margin: 20px auto 0">Back to Easy Screen Capture</a>
-    </div>
-  </div>
+  <AiPage>
+    <AiPageHead label="404" meta="PAGE NOT FOUND" aside="Error 404">
+      <Fragment slot="title">Nothing <span>here</span></Fragment>
+      <p>That page does not exist — or the link has expired.</p>
+      <div class="ai-actions">
+        <a class="rr-btn-classic" href="/">
+          Back to Easy Screen Capture <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </AiPageHead>
+  </AiPage>
 </Base>

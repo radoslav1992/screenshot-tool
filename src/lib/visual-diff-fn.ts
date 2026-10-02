@@ -10,6 +10,8 @@
 export interface DiffResult {
   /** Share of pixels that differ, 0–100. */
   changedPct: number;
+  /** Count before percentage rounding, after tolerance and downsampling. */
+  changedPixels: number;
   /** True when the two images are not the same size — itself a change. */
   resized: boolean;
   width: number;
@@ -35,6 +37,7 @@ export async function compareInPage(
   after: string,
   tolerance: number,
   maxPixels: number,
+  region?: { x: number; y: number; width: number; height: number },
 ): Promise<DiffResult> {
   const load = (src: string): Promise<HTMLImageElement> =>
     new Promise((resolve, reject) => {
@@ -47,13 +50,15 @@ export async function compareInPage(
 
   const [a, b] = await Promise.all([load(before), load(after)]);
 
-  const resized = a.naturalWidth !== b.naturalWidth || a.naturalHeight !== b.naturalHeight;
+  const resized = !region && (a.naturalWidth !== b.naturalWidth || a.naturalHeight !== b.naturalHeight);
 
   // Compare over the shared area. A page that grew taller has already changed;
   // this still measures how much of the part they have in common moved.
-  const width = Math.min(a.naturalWidth, b.naturalWidth);
-  const height = Math.min(a.naturalHeight, b.naturalHeight);
-  if (!width || !height) return { changedPct: 100, resized, width, height };
+  const x = region?.x ?? 0, y = region?.y ?? 0;
+  const width = Math.min(region?.width ?? Infinity, a.naturalWidth - x, b.naturalWidth - x);
+  const height = Math.min(region?.height ?? Infinity, a.naturalHeight - y, b.naturalHeight - y);
+  if (region && (width < region.width || height < region.height)) throw new Error("Watched region is outside the captured page.");
+  if (!width || !height) return { changedPct: 100, changedPixels: 0, resized, width, height };
 
   const scale = Math.min(1, Math.sqrt(maxPixels / (width * height)));
   const w = Math.max(1, Math.round(width * scale));
@@ -64,7 +69,7 @@ export async function compareInPage(
     canvas.width = w;
     canvas.height = h;
     const context = canvas.getContext('2d', { willReadFrequently: true })!;
-    context.drawImage(image, 0, 0, width, height, 0, 0, w, h);
+    context.drawImage(image, x, y, width, height, 0, 0, w, h);
     return context.getImageData(0, 0, w, h).data;
   };
 
@@ -82,5 +87,5 @@ export async function compareInPage(
     }
   }
 
-  return { changedPct: (changed / (w * h)) * 100, resized, width, height };
+  return { changedPct: (changed / (w * h)) * 100, changedPixels: changed, resized, width, height };
 }

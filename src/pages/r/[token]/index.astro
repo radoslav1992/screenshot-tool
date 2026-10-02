@@ -20,10 +20,42 @@ Astro.response.headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
 ---
 
 <Base title="Shared website review" description="A private, time-limited website review.">
-  <div class="report-page">
-    <p class="small muted">
-      Shared review · Anyone with this link can view until {expiresAt.slice(0, 16)} UTC, unless revoked earlier.
+  <main class="wrap shared-report">
+    <p class="shared-report__notice">
+      <strong>Shared review</strong> · Anyone with this link can view until {expiresAt.slice(0, 16)} UTC, unless revoked
+      earlier.
     </p>
-  </div>
-  <ReviewReport project={project} report={report} captures={captures} token={Astro.params.token} />
+    <ReviewReport project={project} report={report} captures={captures} token={Astro.params.token} />
+  </main>
 </Base>
+<style>
+  .shared-report {
+    padding-block: 32px 64px;
+  }
+  .shared-report__notice {
+    padding: 14px 22px;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    background: var(--lime-tint);
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .shared-report__notice strong {
+    font-weight: 600;
+  }
+  @media (max-width: 767px) {
+    .shared-report {
+      padding-block: 16px 40px;
+    }
+    .shared-report__notice {
+      padding: 14px;
+    }
+  }
+  @media print {
+    .shared-report {
+      padding: 0;
+      width: auto;
+    }
+  }
+</style>

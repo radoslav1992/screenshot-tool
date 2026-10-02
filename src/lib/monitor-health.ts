@@ -98,8 +98,9 @@ export function runLabel(run: {
   if (run.status === 'error') return 'Check failed';
   if (run.status === 'skipped') return 'Check skipped';
   if (!run.baseline_capture_id) return 'Baseline saved';
-  if (run.change_pct === null) return 'Comparison unavailable';
-  return run.changed ? 'Change detected' : 'No significant change';
+  if (run.changed) return 'Change detected';
+  if (run.change_pct === null) return 'Check completed';
+  return 'No significant change';
 }
 /** A timed-out request may have reached the provider; never report it as delivered or retry it automatically. */
 export async function observeDelivery(send: () => Promise<boolean>, timeoutMs = 15000): Promise<DeliveryState> {

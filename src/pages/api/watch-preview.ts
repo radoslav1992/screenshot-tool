@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
       !(await checkRateLimit(`app:${locals.user.id}`, APP_RATE_LIMIT[locals.user.plan] ?? APP_RATE_LIMIT.free, 3600)).ok
     )
       throw new HttpError(429, 'rate_limited', 'Capture rate limit reached. Try again later.');
-    const row = await runCapture(await createCaptureRow(locals.user, options, 'app'), options);
+    const row = await runCapture(await createCaptureRow(locals.user, options, 'watch'), options);
     if (row.status !== 'done') throw new HttpError(502, 'capture_failed', row.error ?? 'Preview failed.');
     const token = randomToken();
     await env.RATE.put(
@@ -37,7 +37,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
     return toHttpError(
       e,
       'watch.preview',
-      'Preview failed. Check the library before recapturing an interrupted request.',
+      'Preview failed. Check Monitor screenshots → Unassigned before recapturing an interrupted request.',
     ).toResponse();
   }
 };

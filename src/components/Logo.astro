@@ -1,17 +1,27 @@
 ---
-import Mark from './Mark.astro';
+import Mark from "./Mark.astro";
 
 interface Props {
-  variant?: 'ink' | 'lime';
+  variant?: "ink" | "lime";
   href?: string;
   wordColor?: string;
 }
 
-const { variant = 'ink', href = '/', wordColor } = Astro.props;
-const markClass = variant === 'lime' ? 'logo__mark logo__mark--lime' : 'logo__mark';
+const { variant = "ink", href = "/", wordColor } = Astro.props;
+const markClass =
+  variant === "lime" ? "logo__mark logo__mark--lime" : "logo__mark";
 ---
 
-<a class="logo" href={href} style={wordColor ? `color: ${wordColor}` : undefined}>
-  <span class={markClass}><Mark size={16} tone={variant === 'lime' ? 'lime' : 'ink'} /></span>
-  <span class="logo__word">Easy Screen Capture</span>
+<a
+  class="logo"
+  href={href}
+  style={wordColor ? `color: ${wordColor}` : undefined}
+>
+  <span class={markClass}>
+    <Mark size={40} />
+  </span>
+  <span class="logo__word">
+    <span class="logo__eyebrow">Easy Screen</span>
+    <span class="logo__name">Capture</span>
+  </span>
 </a>

@@ -23,7 +23,11 @@ const source = readFileSync(new URL('../src/lib/visual-diff-fn.ts', import.meta.
 const body = transformSync(source, { loader: 'ts' }).code.replace(/^export\s+/gm, '');
 
 const cases = [
-  { name: 'identical', mutate: () => {}, expect: (r) => r.changedPct === 0 && !r.resized },
+  { name: 'single pixel below rounding precision', flat: true,
+    mutate: (ctx) => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1, 1); },
+    expect: (r) => r.changedPixels === 1 && r.changedPct > 0 && Math.round(r.changedPct * 100) === 0 },
+
+  { name: 'identical', mutate: () => {}, expect: (r) => r.changedPct === 0 && r.changedPixels === 0 && !r.resized },
   {
     name: 'one tenth painted over',
     mutate: (ctx, w, h) => ctx.fillRect(0, 0, w, Math.round(h / 10)),

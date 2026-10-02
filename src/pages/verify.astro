@@ -1,7 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
-import Logo from '../components/Logo.astro';
-import Icon from '../components/Icon.astro';
+import AiPage from '../components/AiPage.astro';
+import AiPageHead from '../components/AiPageHead.astro';
 import { consumeVerificationToken } from '../lib/verification';
 
 const token = Astro.url.searchParams.get('token') ?? '';
@@ -11,25 +11,33 @@ const signedInAsSameUser = ok && Astro.locals.user?.id === userId;
 ---
 
 <Base title={ok ? 'Email confirmed' : 'Link not valid'}>
-  <div class="shell">
-    <div style="padding: 24px">
-      <Logo />
-    </div>
-
-    <div class="empty" style="margin: auto">
-      <div class="empty__icon"><Icon name={ok ? 'check' : 'alert'} size={34} /></div>
-      <h1 class="h3" style="margin-top: 12px">{ok ? 'Email confirmed' : 'That link did not work'}</h1>
-      <p class="small muted" style="margin-top: 8px; max-width: 34ch; margin-inline: auto">
+  <AiPage user={Astro.locals.user}>
+    <AiPageHead label="ACCOUNT / EMAIL" meta={ok ? 'VERIFIED' : 'LINK NOT VALID'} aside={ok ? 'Email verified' : 'Verification link'}>
+      <Fragment slot="title">
+        {
+          ok ? (
+            <>
+              Email <span>confirmed</span>
+            </>
+          ) : (
+            <>
+              That link did <span>not work</span>
+            </>
+          )
+        }
+      </Fragment>
+      <p>
         {
           ok
             ? 'Your account is verified. You can start capturing right away.'
             : 'The link has expired or was already used. Request a new one from your account page.'
         }
       </p>
-
-      <a class="btn btn--ink" href={signedInAsSameUser || ok ? '/app' : '/login'} style="max-width: 220px; margin: 20px auto 0">
-        {ok ? 'Start capturing' : 'Log in'}
-      </a>
-    </div>
-  </div>
+      <div class="ai-actions">
+        <a class="rr-btn-classic" href={signedInAsSameUser || ok ? '/app' : '/login'}>
+          {ok ? 'Start capturing' : 'Log in'} <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </AiPageHead>
+  </AiPage>
 </Base>

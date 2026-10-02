@@ -1,110 +1,127 @@
 ---
-import Base from '../layouts/Base.astro';
-import Logo from '../components/Logo.astro';
-import Icon from '../components/Icon.astro';
-import { PLANS } from '../lib/plans';
+import Base from "../layouts/Base.astro";
+import AdonAuthStory from "../components/AdonAuthStory.astro";
+import Logo from "../components/Logo.astro";
+import Icon from "../components/Icon.astro";
+import { PLANS } from "../lib/plans";
 
-const next = Astro.url.searchParams.get('next') ?? '/app';
-const url = Astro.url.searchParams.get('url') ?? '';
-const initialError = Astro.url.searchParams.get('error') ?? '';
+const next = Astro.url.searchParams.get("next") ?? "/app";
+const url = Astro.url.searchParams.get("url") ?? "";
+const initialError = Astro.url.searchParams.get("error") ?? "";
 const target = url ? `/app?url=${encodeURIComponent(url)}` : next;
 ---
 
 <Base title="Create your account">
-  <div class="shell">
-    <div style="padding: 24px 24px 32px; display: flex; flex-direction: column">
-      <div style="padding: 8px 0 36px">
-        <Logo />
-      </div>
-
-      <h1 class="h2">Create your account</h1>
-      <p class="small muted" style="margin-top: 8px">
-        Free plan, no card needed. {PLANS.free.quota} screenshots a month on us.
-      </p>
-
-      <form
-        id="signup-form"
-        method="post"
-        action="/api/auth/signup"
-        class="stack gap-12"
-        style="margin-top: 28px"
-        novalidate
-      >
-        <input type="hidden" name="next" value={target} />
-
-        <div class="notice notice--error" id="form-error" hidden={!initialError}>
-          {initialError}
-        </div>
-
-        <div class="field">
-          <label class="field__label" for="name">
-            Name
-          </label>
-          <input class="input" id="name" name="name" autocomplete="name" placeholder="Mia Torres" />
-        </div>
-
-        <div class="field">
-          <label class="field__label" for="email">
-            Email
-          </label>
-          <input
-            class="input"
-            id="email"
-            name="email"
-            type="email"
-            required
-            autocomplete="email"
-            inputmode="email"
-            placeholder="you@studio.co"
-          />
-        </div>
-
-        <div class="field">
-          <label class="field__label" for="password">
-            Password
-          </label>
-          <div class="input-affix">
-            <input
-              class="input"
-              id="password"
-              name="password"
-              type="password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-              placeholder="At least 8 characters"
-            />
-            <button
-              type="button"
-              class="input-affix__button"
-              data-toggle-password="#password"
-              data-showing="false"
-              aria-label="Show password"
-            >
-              <Icon name="eye" size={16} class="pw-on" />
-              <Icon name="eye-off" size={16} class="pw-off" />
-            </button>
+  <main class="adon-auth-layout">
+    <AdonAuthStory />
+    <div class="adon-auth-form">
+      <div class="shell">
+        <div style="padding: 24px 24px 32px; display: flex; flex-direction: column">
+          <div style="padding: 8px 0 36px">
+            <Logo />
           </div>
+
+          <h1 class="h2">Create your account</h1>
+          <p class="small muted" style="margin-top: 8px">
+            Free plan, no card needed. {PLANS.free.quota} screenshots a month on
+            us.
+          </p>
+
+          <form
+            id="signup-form"
+            method="post"
+            action="/api/auth/signup"
+            class="stack gap-12"
+            style="margin-top: 28px"
+            novalidate
+          >
+            <input type="hidden" name="next" value={target} />
+
+            <div
+              class="notice notice--error"
+              id="form-error"
+              hidden={!initialError}
+            >
+              {initialError}
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="name">
+                Name
+              </label>
+              <input
+                class="input"
+                id="name"
+                name="name"
+                autocomplete="name"
+                placeholder="Mia Torres"
+              />
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="email">
+                Email
+              </label>
+              <input
+                class="input"
+                id="email"
+                name="email"
+                type="email"
+                required
+                autocomplete="email"
+                inputmode="email"
+                placeholder="you@studio.co"
+              />
+            </div>
+
+            <div class="field">
+              <label class="field__label" for="password">
+                Password
+              </label>
+              <div class="input-affix">
+                <input
+                  class="input"
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  minlength="8"
+                  autocomplete="new-password"
+                  placeholder="At least 8 characters"
+                />
+                <button
+                  type="button"
+                  class="input-affix__button"
+                  data-toggle-password="#password"
+                  data-showing="false"
+                  aria-label="Show password"
+                >
+                  <Icon name="eye" size={16} class="pw-on" />
+                  <Icon name="eye-off" size={16} class="pw-off" />
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn--ink" style="margin-top: 8px">
+              Create account
+            </button>
+          </form>
+
+          <p class="small muted center" style="margin-top: 16px">
+            Already have an account?{" "}
+            <a href="/login" style="font-weight: 600">
+              Log in
+            </a>
+          </p>
         </div>
-
-        <button type="submit" class="btn btn--ink" style="margin-top: 8px">
-          Create account
-        </button>
-      </form>
-
-      <p class="small muted center" style="margin-top: 16px">
-        Already have an account?{' '}
-        <a href="/login" style="font-weight: 600">
-          Log in
-        </a>
-      </p>
+      </div>
     </div>
-  </div>
+  </main>
 </Base>
 
 <script>
-  import { wireAuthForm, wirePasswordToggles } from '../scripts/auth';
+  import { wireAuthForm, wirePasswordToggles } from "../scripts/auth";
 
-  wireAuthForm('#signup-form', '#form-error');
+  wireAuthForm("#signup-form", "#form-error");
   wirePasswordToggles();
 </script>

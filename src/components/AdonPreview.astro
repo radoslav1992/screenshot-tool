@@ -1,0 +1,108 @@
+---
+interface Props {
+  variant?: "capture" | "monitor" | "report" | "devices";
+}
+const { variant = "capture" } = Astro.props;
+---
+
+<div
+  class:list={["adon-preview", `adon-preview--${variant}`]}
+  aria-label={`Illustrated ${variant} preview`}
+>
+  <div class="adon-browser-bar">
+    <span class="adon-preview-dots" aria-hidden="true">
+      <i></i>
+      <i></i>
+      <i></i>
+    </span>
+    <span>
+      {variant === "monitor"
+        ? "monitor / pricing page"
+        : variant === "report"
+          ? "project / launch review"
+          : "studio.example / home"}
+    </span>
+    <span>↗</span>
+  </div>
+  {variant === "monitor" ? (
+    <div class="adon-compare-art">
+      <div>
+        <span class="adon-mini-label">BEFORE</span>
+        <div class="adon-price-art">
+          <span>Studio plan</span>
+          <strong>
+            $29<small>/mo</small>
+          </strong>
+          <i>Start creating ↗</i>
+        </div>
+      </div>
+      <div>
+        <span class="adon-mini-label">AFTER</span>
+        <div class="adon-price-art changed">
+          <span>Studio plan</span>
+          <strong>
+            $39<small>/mo</small>
+          </strong>
+          <i>Start creating ↗</i>
+        </div>
+      </div>
+      <p>
+        <span class="adon-status-dot"></span> Change detected · ready to review
+      </p>
+    </div>
+  ) : variant === "report" ? (
+    <div class="adon-report-art">
+      <span class="adon-mini-label">LAUNCH REVIEW / EXAMPLE</span>
+      <h3>
+        Every detail.
+        <br />
+        All in one place.
+      </h3>
+      <div class="adon-report-row">
+        <span>01 &nbsp; Homepage / desktop</span>
+        <b>Reviewed ✓</b>
+      </div>
+      <div class="adon-report-row">
+        <span>02 &nbsp; Homepage / mobile</span>
+        <b>Reviewed ✓</b>
+      </div>
+      <div class="adon-report-row">
+        <span>03 &nbsp; Pricing / desktop</span>
+        <b>Needs review ↗</b>
+      </div>
+      <div class="adon-report-sign">
+        Your next handoff, sorted. <span>↗</span>
+      </div>
+    </div>
+  ) : (
+    <div class="adon-site-art">
+      <div class="adon-site-nav">
+        <strong>form &amp; field®</strong>
+        <span>Objects &nbsp; Studio &nbsp; ↗</span>
+      </div>
+      <div class="adon-site-body">
+        <div>
+          <span class="adon-mini-label">THOUGHTFULLY MADE.</span>
+          <h3>
+            Space for
+            <br />
+            <em>something</em>
+            <br />
+            beautiful.
+          </h3>
+          <span class="adon-art-link">Explore the collection ↗</span>
+        </div>
+        <div class="adon-sculpture" aria-hidden="true">
+          <div></div>
+          <div></div>
+          <div></div>
+        </div>
+      </div>
+      <div class="adon-site-bottom">
+        <span>Objects for everyday living.</span>
+        <span>01 — 03</span>
+      </div>
+    </div>
+  )}
+  <span class="adon-preview-caption">Illustrative preview</span>
+</div>

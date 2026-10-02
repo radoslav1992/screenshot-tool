@@ -1,0 +1,45 @@
+---
+import AppShell from '../../../layouts/AppShell.astro';
+import { allowedFrequencies, frequencyLabel, watchLimit } from '../../../lib/plans';
+import { getUsage } from '../../../lib/captures';
+import { listWatches } from '../../../lib/watches';
+import { forecast } from '../../../lib/monitor-health';
+import { canSendEmail } from '../../../lib/mailer';
+const user = Astro.locals.user!;
+const [usage,existing] = await Promise.all([getUsage(user),listWatches(user.id)]);
+const current = forecast(existing,usage);
+---
+<AppShell title="Import monitors" tab="watches">
+<header class="appbar" slot="appbar"><a href="/app/watches">← Monitors</a></header>
+<div class="app-wrap stack gap-20">
+<h1>Monitor a client website in one go.</h1>
+<p>Paste up to 20 page URLs or load a page sitemap. Existing monitors for the same URL and device are skipped.</p>
+<p>{existing.length} of {watchLimit(user.plan)} monitor slots used · {usage.remaining} screenshots remaining.</p>
+{!canSendEmail() && <p class="notice">Email sending is unavailable. Imported monitors will record changes, but email alerts require the email service to be configured.</p>}
+<form id="sitemap-form" class="stack gap-12"><label>Page sitemap URL<input class="input" name="sitemap" type="url" placeholder="https://example.com/page-sitemap.xml" required /></label><button class="btn btn--outline">Load first 20 URLs</button></form>
+<form id="import-form" class="stack gap-12" data-current={current.monthly} data-quota={usage.quota}>
+<label>One page URL per line<textarea class="input" name="urls" rows="10" maxlength="30000" required></textarea></label>
+<label>Device<select class="input" name="device"><option value="desktop">Desktop</option><option value="mobile">Mobile</option><option value="tablet">Tablet</option></select></label>
+<label>Schedule<select class="input" name="frequency">{allowedFrequencies(user.plan).map(f=><option value={f} selected={f==='daily'}>{frequencyLabel(f)}</option>)}</select></label>
+<p id="import-budget" aria-live="polite"></p>
+<p>Each monitor saves its first baseline on the next hourly scheduler run. Following runs compare for visual changes at 1% sensitivity. You can edit rules and test alerts from each monitor.</p>
+<button class="btn btn--ink" disabled={!allowedFrequencies(user.plan).length}>Create monitors</button>
+</form><p id="import-status" role="status"></p>
+</div></AppShell>
+<script>
+const form = document.querySelector<HTMLFormElement>('#import-form')!;
+const status = document.querySelector('#import-status')! as unknown as HTMLElement;
+const update = () => { const data = new FormData(form); const count = new Set(String(data.get('urls')).split(/\r?\n/).map(s=>s.trim()).filter(Boolean)).size; const per = {hourly:720,daily:30,weekly:5}[String(data.get('frequency'))] || 0; document.querySelector('#import-budget')!.textContent = `Up to ${count*per} additional screenshots per 30 days · ${Number(form.dataset.current)+count*per} total scheduled / ${form.dataset.quota} included. Manual captures share this allowance.`; };
+form.addEventListener('input',update); update();
+let busy = false;
+for (const current of [form,document.querySelector<HTMLFormElement>('#sitemap-form')!]) current.onsubmit=async(e)=>{
+ e.preventDefault(); if(busy) return; busy=true;
+ const buttons = document.querySelectorAll<HTMLButtonElement>('form button'); buttons.forEach(b=>b.disabled=true);
+ const body = new FormData(current); if(current!==form) body.set('action','sitemap'); status.textContent='Working…';
+ try { const response = await fetch('/api/watches/import',{method:'POST',body}); const result = await response.json() as { error?: {message:string}; urls?: string[]; created: string[]; skipped: number; failed: string[] }; if(!response.ok) throw Error(result.error?.message || 'Request failed.');
+ if(result.urls) { form.querySelector<HTMLTextAreaElement>('textarea')!.value=result.urls.join('\n'); update(); status.textContent='Review these URLs, then create monitors.'; }
+ else { status.textContent=`Created ${result.created.length} monitors. Skipped ${result.skipped} existing monitors. ${result.failed.length} failed.`; form.querySelector<HTMLTextAreaElement>('textarea')!.value=result.failed.join('\n'); if(result.failed.length) status.textContent+=' Only failed URLs remain in the list.'; else { const link=document.createElement('a');link.href='/app/watches';link.textContent=' Open monitors →';status.appendChild(link); } }
+ } catch(error) { status.textContent=error instanceof Error?error.message:'Import failed.'; }
+ finally {busy=false;buttons.forEach(b=>b.disabled=false);}
+};
+</script>

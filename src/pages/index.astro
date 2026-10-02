@@ -1,263 +1,445 @@
 ---
-import Base from '../layouts/Base.astro';
-import Icon from '../components/Icon.astro';
-import SiteHeader from '../components/SiteHeader.astro';
-import SiteFooter from '../components/SiteFooter.astro';
-import HeroVisual from '../components/HeroVisual.astro';
-import CodeBlock from '../components/CodeBlock.astro';
-import { FRAME_LIST, MODES } from '../lib/capture-options';
-import { PLANS, WATCH_LIMIT } from '../lib/plans';
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import AdonPreview from "../components/AdonPreview.astro";
+import ConceptArt from "../components/ConceptArt.astro";
+import CodeBlock from "../components/CodeBlock.astro";
+import { FRAME_LIST, MODES } from "../lib/capture-options";
+import { PLANS, WATCH_LIMIT } from "../lib/plans";
+import "../styles/adon/ai-source.css";
+import "../styles/adon/previews.css";
+import "../styles/adon/ai-landing.css";
 const user = Astro.locals.user;
-const captureHref = user ? '/app' : '/signup';
-const monitorHref = user ? '/app/watches' : '/signup?next=%2Fapp%2Fwatches';
-const justDeleted = Astro.url.searchParams.get('deleted') === '1';
-const curl = `curl https://easyscreencapture.com/v1/capture \\
-  -H "Authorization: Bearer $KEY" \\
-  -d url="yoursite.com" \\
-  -d device="desktop" \\
-  -d mode="fullpage"`;
-const workflows = [
+const captureHref = user ? "/app" : "/signup";
+const monitorHref = user ? "/app/watches" : "/signup?next=%2Fapp%2Fwatches";
+const justDeleted = Astro.url.searchParams.get("deleted") === "1";
+const curl = `curl https://easyscreencapture.com/v1/capture \\\n  -H "Authorization: Bearer $KEY" \\\n  -d url="yoursite.com" \\\n  -d device="desktop" \\\n  -d mode="fullpage"`;
+const projects = [
   {
-    number: '01',
-    icon: 'desktop' as const,
-    title: 'Deliver with confidence',
-    text: 'Capture a client site on desktop and mobile. Keep a visual record before and after your changes.',
-    tag: 'FOR AGENCIES',
+    number: "01",
+    title: "The whole page. In one take.",
+    text: "Capture the viewport, the full page, or a scroll series. Keep the details that matter.",
+    tag: "WEBSITE CAPTURE",
+    variant: "capture",
+    art: "capture",
+    href: captureHref,
   },
   {
-    number: '02',
-    icon: 'eye' as const,
-    title: 'Stop checking by hand',
-    text: 'Watch pricing, landing pages, and other public pages. Get an email when a visual change crosses your threshold.',
-    tag: 'FOR BUSY TEAMS',
+    number: "02",
+    title: "A change you won’t miss.",
+    text: "Schedule a check. Compare it with the last capture. Get an alert when your threshold is met.",
+    tag: "VISUAL MONITORING",
+    variant: "monitor",
+    art: "monitor",
+    href: monitorHref,
   },
   {
-    number: '03',
-    icon: 'frame-square' as const,
-    title: 'Make your work shareable',
-    text: 'Turn a live page into a full-page image, a scroll series, or a ready-sized social capture.',
-    tag: 'FOR CREATORS',
+    number: "03",
+    title: "Made for the next handoff.",
+    text: "Bring captures together in a project and share a before-and-after report with an expiring link.",
+    tag: "CLIENT REPORTS",
+    variant: "report",
+    art: "report",
+    href: "/sample-report",
+  },
+  {
+    number: "04",
+    title: "Every screen, considered.",
+    text: "Check desktop and mobile, or choose a ready-made size for your next social post.",
+    tag: "RESPONSIVE CAPTURE",
+    variant: "devices",
+    art: "devices",
+    href: "#sizes",
+  },
+] as const;
+const faqs = [
+  {
+    q: "Can I start without a subscription?",
+    a: `Yes. Create a free account with ${PLANS.free.quota} screenshots per calendar month. No credit card is needed. You can upgrade when your workflow grows.`,
+  },
+  {
+    q: "How does website monitoring work?",
+    a: `Save a page, choose a device and a schedule, then set your change threshold. We compare new captures with the previous capture and send alerts when it is met. Plus includes ${WATCH_LIMIT.plus} monitor slots; scheduled checks use your screenshot allowance.`,
+  },
+  {
+    q: "Can I capture through an API?",
+    a: "Yes. API access starts on Pro. Generate an API key in your workspace and use the same capture engine in your own tools. See the API documentation for supported options.",
+  },
+  {
+    q: "How do I share my work?",
+    a: "Download a capture, organise images into projects, or create a web report with an expiring review link. PDF report exports are available on plans that include PDF.",
   },
 ];
 ---
 
 <Base
   title="Easy Screen Capture"
-  themeColor="#f7f8fa"
-  description="Capture websites, monitor visual changes, and share the evidence. A simple workspace for agencies, creators, and product teams."
+  themeColor="#F5F5F5"
+  bodyClass="body-ai-agency"
+  description="Capture websites, monitor visual changes, and share clear visual reports. Your website workflow, connected."
 >
-  <div class="page landing">
+  <a class="adon-skip-link" href="#main-content">
+    Skip to content
+  </a>
+  <div class="page ai-landing">
     <SiteHeader user={user} />
-    <main>
+    <main id="main-content" class="ai-grid wrap">
       {justDeleted && (
-        <div class="wrap">
-          <div class="notice notice--info">
-            Your account and everything in it have been deleted. Thanks for trying Easy Screen Capture.
-          </div>
+        <div class="notice notice--info">
+          Your account and everything in it have been deleted. Thanks for trying
+          Easy Screen Capture.
         </div>
       )}
-      <section class="studio-hero">
-        <div class="wrap studio-hero-grid">
-          <div class="studio-hero-copy">
-            <span class="hero-kicker">
-              <span></span> YOUR WEBSITE, IN FOCUS
+      <section class="hero-area-17" aria-labelledby="hero-title">
+        <div class="ai-hero-label">
+          <span>[ YOUR WEBSITE, IN FOCUS ]</span>
+          <span>CAPTURE / MONITOR / SHARE</span>
+        </div>
+        <div class="hero-17-header">
+          <h1 id="hero-title" class="hero-17-title" data-adon-title>
+            CAPTURE THE WEB.
+            <br />
+            CATCH THE CHANGE.
+            <br />
+            <span>STAY AHEAD.</span>
+          </h1>
+        </div>
+        <div class="hero-17-content">
+          <div class="location-wrapper">
+            <div class="ai-camera-art" aria-hidden="true">
+              <img
+                src="/images/capture-camera.webp"
+                alt=""
+                width="1254"
+                height="1254"
+                fetchpriority="high"
+                decoding="async"
+              />
+              <span class="ai-cross ai-cross--one">+</span>
+              <span class="ai-cross ai-cross--two">+</span>
+              <span class="ai-cross ai-cross--three">+</span>
+              <span class="ai-cross ai-cross--four">+</span>
+            </div>
+            <span class="ai-art-label">[ THE WEB, THROUGH YOUR LENS ]</span>
+          </div>
+          <div class="experience-wrapper">
+            <span class="experience">FREE CAPTURES / MONTH</span>
+            <span class="year" data-adon-count={PLANS.free.quota}>
+              {PLANS.free.quota}
             </span>
-            <h1>
-              Capture it.
-              <br />
-              Watch it.
-              <br />
-              <em>Stay a step ahead.</em>
-            </h1>
-            <p>
-              Beautiful screenshots are just the start. Keep an eye on the pages that matter, spot visual changes, and
-              share exactly what you see.
+            <span class="ai-art-label">NO CREDIT CARD NEEDED</span>
+          </div>
+          <div class="text-wrapper">
+            <p class="text">
+              Turn a live page into a clear picture. Capture websites, catch
+              updates, and keep every review in one place.
             </p>
             <form class="hero-capture" method="get" action={captureHref}>
-              <label class="sr-only" for="hero-url">
-                Website to capture
-              </label>
-              <Icon name="link" size={18} />
+              <label for="hero-url">YOUR FIRST CAPTURE STARTS HERE</label>
               <input
                 id="hero-url"
                 name="url"
                 inputmode="url"
                 autocomplete="url"
-                spellcheck="false"
                 placeholder="Paste a website URL"
                 required
               />
-              <button class="btn btn--ink" type="submit">
+              <button class="rr-btn-classic" type="submit">
                 Capture page <span aria-hidden="true">↗</span>
               </button>
             </form>
-            <div class="hero-trust">
-              <span>
-                <Icon name="check" size={14} /> {PLANS.free.quota} free screenshots / month
-              </span>
-              <span>No credit card</span>
-            </div>
-            <a class="hero-secondary" href="#monitoring">
-              Looking for website monitoring? <span aria-hidden="true">↓</span>
-            </a>
           </div>
-          <HeroVisual />
         </div>
-      </section>
-      <div class="capability-strip">
-        <div class="wrap">
-          <span>ONE WORKSPACE. LESS MANUAL WORK.</span>
-          <span>
-            <Icon name="camera" size={17} /> Capture
-          </span>
-          <span>
-            <Icon name="eye" size={17} /> Monitor
-          </span>
-          <span>
-            <Icon name="mode-series" size={17} /> Compare
-          </span>
-          <span>
-            <Icon name="link" size={17} /> Share
-          </span>
-        </div>
-      </div>
-      <section class="section" id="workflows">
-        <div class="wrap">
-          <div class="section__head">
-            <span class="eyebrow">BUILT AROUND YOUR WORK</span>
-            <h2 class="section__title">
-              Less busywork.
+        <div class="hero-17-image ai-hero-showcase">
+          <div class="ai-showcase-caption">
+            <span>[ THE BIG PICTURE ]</span>
+            <span>ILLUSTRATIVE PREVIEW / 01</span>
+          </div>
+          <div class="ai-showcase-main" data-adon-parallax>
+            <AdonPreview />
+          </div>
+          <div class="ai-showcase-monitor" data-adon-reveal>
+            <AdonPreview variant="monitor" />
+          </div>
+          <div class="ai-showcase-bottom">
+            <span>
+              EVERY SCREEN.
               <br />
-              More useful screenshots.
-            </h2>
-            <p class="section__sub">From the first design review to the next competitor update.</p>
-          </div>
-          <div class="workflow-grid">
-            {workflows.map((item) => (
-              <article class="workflow-card">
-                <div class="workflow-top">
-                  <Icon name={item.icon} size={24} />
-                  <span>{item.number}</span>
-                </div>
-                <span class="eyebrow">{item.tag}</span>
-                <h3>{item.title}</h3>
-                <p>{item.text}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-      <section class="section monitor-section" id="monitoring">
-        <div class="wrap monitor-grid">
-          <div>
-            <span class="eyebrow">YOUR SECOND PAIR OF EYES</span>
-            <h2 class="section__title">
-              The page changed.
-              <br />
-              You’re already on it.
-            </h2>
-            <p class="section__sub">
-              Save a baseline, set a schedule, and let your monitor check back. When a visual change crosses your
-              threshold, you get the before and after.
-            </p>
-            <div class="cta-row">
-              <a class="btn btn--ink" href={monitorHref}>
-                Set up a monitor <span aria-hidden="true">↗</span>
-              </a>
-            </div>
-            <p class="small muted">
-              From ${PLANS.plus.priceMonthly}/month · {WATCH_LIMIT.plus} watched pages on Plus.
-              <br />
-              Each scheduled check uses your screenshot allowance.
-            </p>
-          </div>
-          <ol class="monitor-steps">
-            <li>
-              <span>01</span>
-              <div>
-                <h3>Pick a page that matters</h3>
-                <p>A client homepage, competitor pricing, or your latest landing page.</p>
-              </div>
-            </li>
-            <li>
-              <span>02</span>
-              <div>
-                <h3>Decide what deserves your attention</h3>
-                <p>Choose the device, schedule, and visual change threshold.</p>
-              </div>
-            </li>
-            <li>
-              <span>03</span>
-              <div>
-                <h3>Get the evidence, then act</h3>
-                <p>Review the comparison. Send change alerts to email, Slack, Discord, or your webhook.</p>
-              </div>
-            </li>
-          </ol>
-        </div>
-      </section>
-      <section class="section" id="modes">
-        <div class="wrap">
-          <div class="section__head section__head--center">
-            <span class="eyebrow">THE RIGHT FRAME FOR THE JOB</span>
-            <h2 class="section__title">One screen. The whole page. Every detail.</h2>
-          </div>
-          <div class="cards-3">
-            {MODES.map((mode) => (
-              <article class="mode-card">
-                <div class="mode-card__icon">
-                  <Icon name={mode.icon} size={24} />
-                </div>
-                <h3 class="mode-card__title">{mode.label}</h3>
-                <p class="mode-card__body">{mode.longHint}</p>
-              </article>
-            ))}
-          </div>
-          <div class="output-sizes" id="sizes">
-            <span class="small muted">Ready-made output sizes</span>
-            {FRAME_LIST.map((frame) => (
-              <span>
-                <Icon name={frame.icon} size={16} /> {frame.label} <small>{frame.output}</small>
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-      <section class="section section--ink">
-        <div class="wrap split">
-          <div>
-            <span class="eyebrow" style="color: var(--lime)">
-              FITS INTO YOUR WORKFLOW
+              EVERY DETAIL.
             </span>
-            <h2 class="section__title">
-              Your app.
-              <br />
-              Our capture engine.
-            </h2>
-            <p class="section__sub">
-              Automate captures, process URL lists and sitemaps, and connect screenshots to the tools you already use.
-              API access starts on Pro.
-            </p>
-            <div class="cta-row">
-              <a class="btn btn--lime" href="/docs">
-                Explore the API <span aria-hidden="true">↗</span>
-              </a>
-            </div>
+            <a href="#workflows">EXPLORE YOUR WORKFLOW ↓</a>
           </div>
-          <CodeBlock tag="POST /v1/capture" code={curl} />
         </div>
       </section>
-      <section class="section">
-        <div class="wrap final-cta">
-          <span class="hero-kicker">LESS CHECKING. MORE DOING.</span>
-          <h2 class="section__title">Start with one page.</h2>
-          <p class="section__sub">Get your first capture free. Build your workflow from there.</p>
-          <div class="cta-row">
-            <a class="btn btn--ink" href={captureHref}>
-              {user ? 'Open your workspace' : 'Create your free account'} <span aria-hidden="true">↗</span>
+      <section class="service-area-17" id="workflows">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ CAPABILITIES ]</span>
+          <h2 data-adon-title>
+            YOUR VISUAL
+            <br />
+            WORKFLOW.
+            <br />
+            CONNECTED.
+          </h2>
+        </div>
+        <div class="ai-capabilities" data-ai-tabs>
+          <div class="ai-tab-list" aria-label="Workspace capabilities">
+            {projects.map((_project, index) => (
+              <button
+                type="button"
+                id={`capability-${index}`}
+                data-ai-tab={index}
+                aria-controls={`capability-panel-${index}`}
+              >
+                <span>[ 0{index + 1} ]</span>
+                {
+                  [
+                    "Website capture",
+                    "Visual monitoring",
+                    "Client reports",
+                    "Every screen",
+                  ][index]
+                }
+                <span aria-hidden="true">↗</span>
+              </button>
+            ))}
+          </div>
+          <div class="ai-tab-panels">
+            {projects.map((project, index) => (
+              <article
+                id={`capability-panel-${index}`}
+                data-ai-panel={index}
+                aria-labelledby={`capability-${index}`}
+              >
+                <div class="ai-capability-copy">
+                  <span class="ai-eyebrow">{project.tag}</span>
+                  <h3>{project.title}</h3>
+                  <p>{project.text}</p>
+                  <a class="rr-btn-classic" href={project.href}>
+                    Explore this workflow <span aria-hidden="true">↗</span>
+                  </a>
+                </div>
+                <div class="ai-capability-art">
+                  <ConceptArt variant={project.art} size={140} />
+                  <span>[ 0{index + 1} / CONNECTED ]</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+      <section class="portfolio-area-17">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ OUTPUT, NOT BUSYWORK ]</span>
+          <h2 data-adon-title>
+            SEE IT.
+            <br />
+            SAVE IT.
+            <br />
+            SHARE IT.
+          </h2>
+        </div>
+        <div class="ai-gallery-toolbar">
+          <p>A better view of your work.</p>
+          <div>
+            <button type="button" data-ai-prev aria-label="Previous example">
+              ←
+            </button>
+            <button type="button" data-ai-next aria-label="Next example">
+              →
+            </button>
+          </div>
+        </div>
+        <div
+          class="ai-gallery"
+          data-ai-gallery
+          tabindex="0"
+          role="region"
+          aria-label="Capture examples, scroll horizontally"
+        >
+          {projects.map((project) => (
+            <article class="ai-gallery-card">
+              <a href={project.href} aria-label={project.title}>
+                <AdonPreview variant={project.variant} />
+              </a>
+              <div>
+                <span>{project.tag}</span>
+                <span>/{project.number}</span>
+              </div>
+              <h3>
+                <a href={project.href}>{project.title}</a>
+              </h3>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section class="feature-area-17" id="modes">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ CORE FEATURES ]</span>
+          <h2 data-adon-title>
+            THE RIGHT FRAME.
+            <br />
+            EVERY TIME.
+          </h2>
+        </div>
+        <div class="ai-features">
+          {MODES.map((mode, index) => (
+            <article data-adon-reveal>
+              <div class="ai-feature-top">
+                <ConceptArt variant={mode.id} size={116} />
+                <span>[ 0{index + 1} ]</span>
+              </div>
+              <h3>{mode.label}</h3>
+              <p>{mode.longHint}</p>
+              <Icon name={mode.icon} size={28} />
+            </article>
+          ))}
+        </div>
+        <div class="output-sizes" id="sizes">
+          <span>READY-MADE SIZES</span>
+          {FRAME_LIST.map((frame) => (
+            <span>
+              <Icon name={frame.icon} size={16} />
+              {frame.label}
+              <small>{frame.output}</small>
+            </span>
+          ))}
+        </div>
+      </section>
+      <section class="funfact-area-17" id="monitoring">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ ALWAYS IN THE PICTURE ]</span>
+          <h2 data-adon-title>
+            THE PAGE CHANGED.
+            <br />
+            YOU’RE ALREADY
+            <br />
+            ON IT.
+          </h2>
+        </div>
+        <div class="ai-monitor-grid">
+          <div class="growth-cube-wrapper">
+            <h3>[ YOUR WORKFLOW, IN MOTION ]</h3>
+            <div class="cubes-wrapper" data-ai-cubes aria-hidden="true">
+              <img
+                class="cube-one"
+                src="/vendor/adon/shapes/shape-s-10.webp"
+                alt=""
+                width="225"
+                height="204"
+              />
+              <img
+                class="cube-two"
+                src="/vendor/adon/shapes/shape-s-11.webp"
+                alt=""
+                width="200"
+                height="183"
+              />
+              <img
+                class="cube-three"
+                src="/vendor/adon/shapes/shape-s-12.webp"
+                alt=""
+                width="200"
+                height="184"
+              />
+            </div>
+            <button
+              class="adon-motion-toggle"
+              type="button"
+              aria-pressed="false"
+            >
+              Pause motion
+            </button>
+          </div>
+          <div class="ai-monitor-copy">
+            <h3>A SECOND PAIR OF EYES.</h3>
+            <p>
+              Pick a page, choose a schedule, and set your change threshold.
+              Review the before and after, then send alerts to email, Slack,
+              Discord, or your webhook.
+            </p>
+            <p>
+              Use “any change” when every detected pixel matters. Each scheduled
+              check uses your screenshot allowance.
+            </p>
+            <a class="rr-btn-classic" href={monitorHref}>
+              Set up a monitor <span aria-hidden="true">↗</span>
             </a>
-            <a class="btn btn--outline" href="/pricing">
-              Compare plans
+            <div class="ai-stats">
+              <div>
+                <span>PLUS MONITOR SLOTS</span>
+                <strong data-adon-count={WATCH_LIMIT.plus}>
+                  {WATCH_LIMIT.plus}
+                </strong>
+              </div>
+              <div>
+                <span>PLUS / MONTH</span>
+                <strong>${PLANS.plus.priceMonthly}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="ai-api">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ FOR THE BUILDERS ]</span>
+          <h2 data-adon-title>
+            YOUR APP.
+            <br />
+            OUR CAPTURE ENGINE.
+          </h2>
+        </div>
+        <div class="ai-api-grid">
+          <div>
+            <p>
+              Capture through an API, process URL lists and sitemaps, and
+              connect the tools you already use. API access starts on Pro.
+            </p>
+            <a class="rr-btn-classic" href="/docs">
+              Explore the API <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <div data-adon-reveal>
+            <CodeBlock tag="POST /v1/capture" code={curl} />
+          </div>
+        </div>
+      </section>
+      <section class="ai-faq">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ GOOD QUESTIONS ]</span>
+          <h2 data-adon-title>
+            A LITTLE
+            <br />
+            MORE CLARITY.
+          </h2>
+        </div>
+        <div class="ai-faq-list">
+          {faqs.map((faq, index) => (
+            <details>
+              <summary>
+                <span>[ 0{index + 1} ]</span>
+                {faq.q}
+                <i aria-hidden="true">+</i>
+              </summary>
+              <p>{faq.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+      <section class="cta-area-17">
+        <div class="ai-section-head">
+          <span class="section-subtitle-5">[ YOUR NEXT MOVE ]</span>
+          <div>
+            <h2 data-adon-title>
+              LET’S
+              <br />
+              <span class="ai-orange-text">CAPTURE.</span>
+            </h2>
+            <a class="rr-btn-classic" href={captureHref}>
+              {user ? "Open your workspace" : "Start capturing free"}
+              <span aria-hidden="true">↗</span>
             </a>
           </div>
         </div>
@@ -267,8 +449,9 @@ const workflows = [
   </div>
 </Base>
 <script>
-  const form = document.querySelector<HTMLFormElement>('.hero-capture');
-  form?.addEventListener('submit', (event) => {
+  import "../scripts/adon-ai";
+  const form = document.querySelector<HTMLFormElement>(".hero-capture");
+  form?.addEventListener("submit", (event) => {
     const input = form.querySelector<HTMLInputElement>('input[name="url"]')!;
     const value = input.value.trim();
     if (!value) {

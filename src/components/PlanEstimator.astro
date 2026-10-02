@@ -1,0 +1,103 @@
+---
+import { PLANS, PLAN_ORDER, WATCH_LIMIT, WATCH_FREQUENCIES } from '../lib/plans';
+const catalog = PLAN_ORDER.map(id => ({
+  id, name: PLANS[id].name, quota: PLANS[id].quota, priceMonthly: PLANS[id].priceMonthly,
+  monitorLimit: WATCH_LIMIT[id], frequencies: WATCH_FREQUENCIES[id],
+  pdf: PLANS[id].formats.includes('pdf'), api: PLANS[id].api, team: id === 'business',
+}));
+---
+<section class="estimator" aria-labelledby="estimator-title" data-plan-estimator data-plans={JSON.stringify(catalog)}>
+  <div class="ai-section-head">
+    <span class="section-subtitle-5">[ PLAN YOUR CLIENT WORK ]</span>
+    <div>
+      <h2 id="estimator-title" data-adon-title>How much room do you need?</h2>
+      <p class="ai-section-lede">Estimate your captures and recurring checks before choosing a plan.</p>
+    </div>
+  </div>
+  <div class="estimator__grid">
+    <form class="estimator__inputs">
+      <label>Pages captured manually per month
+        <input class="input" type="number" name="pages" min="0" max="100000" step="1" value="100" required />
+      </label>
+      <label>Sizes per manual page
+        <select class="input" name="sizes"><option value="1">One size</option><option value="2">Desktop + mobile</option><option value="3">Desktop + tablet + mobile</option></select>
+      </label>
+      <label>Pages monitored automatically
+        <input class="input" type="number" name="monitors" min="0" max="10000" step="1" value="0" required />
+      </label>
+      <label>Monitor schedule
+        <select class="input" name="frequency"><option value="daily">Daily</option><option value="hourly">Hourly</option><option value="weekly">Weekly</option></select>
+      </label>
+      <fieldset>
+        <legend>What else do you need?</legend>
+        <label><input type="checkbox" name="pdf" /> Branded PDF reports</label>
+        <label><input type="checkbox" name="api" /> API access</label>
+        <label><input type="checkbox" name="team" /> Project collaborators</label>
+        <label><input type="checkbox" name="baselines" checked /> Include a first baseline for each new monitor</label>
+      </fieldset>
+    </form>
+    <div class="estimator__result" role="status" aria-live="polite" aria-atomic="true">
+      <span class="estimator__label">[ ESTIMATED SCREENSHOTS / 30 DAYS ]</span>
+      <p class="estimator__total" data-estimate-total>100</p>
+      <p data-estimate-breakdown>100 manual · 0 scheduled · 0 baselines</p>
+      <h3 data-estimate-plan>Free fits this workload</h3>
+      <p data-estimate-room>100 screenshots of remaining capacity.</p>
+      <a class="rr-btn-classic" data-estimate-link href="#plan-free">See Free plan</a>
+    </div>
+  </div>
+  <p class="estimator__note">An estimate, not a reservation. Monitor checks use one size; weekly estimates allow five runs.
+    Scroll series, retries and additional manual work use more. Months vary in length.
+    All capture sources share the monthly quota. A report does not extend image retention.</p>
+  <noscript><p class="estimator__note">Enable JavaScript to adjust the estimate, or compare quotas in the plan table below.</p></noscript>
+</section>
+<script>
+  import { estimatePlan } from '../lib/plan-estimator.mjs';
+  for (const root of document.querySelectorAll<HTMLElement>('[data-plan-estimator]')) {
+    const form = root.querySelector<HTMLFormElement>('form')!;
+    const plans = JSON.parse(root.dataset.plans || '[]');
+    const set = (selector: string, value: string) => { const node = root.querySelector(selector); if (node) node.textContent = value; };
+    const update = () => {
+      if (!form.checkValidity()) {
+        set('[data-estimate-plan]', 'Enter whole numbers within the shown limits.');
+        root.querySelector<HTMLAnchorElement>('[data-estimate-link]')!.hidden = true;
+        return;
+      }
+      const values = new FormData(form);
+      const result = estimatePlan({
+        pages: values.get('pages'), sizes: values.get('sizes'), monitors: values.get('monitors'),
+        frequency: values.get('frequency'), pdf: values.has('pdf'), api: values.has('api'),
+        team: values.has('team'), baselines: values.has('baselines'),
+      }, plans);
+      set('[data-estimate-total]', result.total.toLocaleString());
+      set('[data-estimate-breakdown]', result.manual.toLocaleString() + ' manual · ' + result.scheduled.toLocaleString() + ' scheduled · ' + result.baselines.toLocaleString() + ' baselines');
+      set('[data-estimate-plan]', result.plan ? result.plan.name + ' fits this workload' : 'This exceeds the available plans');
+      set('[data-estimate-room]', result.plan ? (result.remaining ?? 0).toLocaleString() + ' screenshots of remaining capacity. Review retention and features below.' : 'Reduce the schedule or contact us about your volume.');
+      const link = root.querySelector<HTMLAnchorElement>('[data-estimate-link]')!;
+      link.hidden = false;
+      link.href = result.plan ? '#plan-' + result.plan.id : 'mailto:hello@easyscreencapture.com';
+      link.textContent = result.plan ? 'See ' + result.plan.name + ' plan' : 'Discuss your workload';
+    };
+    form.addEventListener('submit', event => event.preventDefault());
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    update();
+  }
+</script>
+<style>
+  .estimator__grid { display: grid; grid-template-columns: 1.3fr 1fr; background: var(--paper); }
+  .estimator__inputs { padding: 32px 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-content: start; border-right: 1px solid var(--line); }
+  .estimator__inputs > label { display: grid; gap: 8px; font-size: 14px; font-weight: 500; }
+  fieldset { grid-column: 1 / -1; border: 0; border-top: 1px solid var(--line); padding: 20px 0 0; margin: 4px 0 0; display: grid; gap: 12px; }
+  legend { float: left; width: 100%; margin-bottom: 14px; font: 10px/1.5 var(--mono); text-transform: uppercase; }
+  fieldset label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .estimator__result { padding: 36px 30px; background-color: #1b1c1c; background-image: linear-gradient(90deg, #ffffff08 1px, transparent 1px), linear-gradient(#ffffff08 1px, transparent 1px); background-size: 60px 60px; color: var(--paper); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; justify-content: center; }
+  .estimator__label { font: 10px/1.5 var(--mono); color: var(--theme); }
+  .estimator__total { font: 300 clamp(70px, 9vw, 130px) / 1 var(--font_astronebula); margin: 6px 0; }
+  .estimator__result h3 { font: 300 clamp(24px, 2.4vw, 32px) / 1.05 var(--font_astronebula); text-transform: uppercase; margin-top: 8px; }
+  .estimator__result p:not(.estimator__total) { max-width: 38ch; font-size: 14px; line-height: 1.7; color: #d6d5d0; }
+  .estimator__result .rr-btn-classic { width: auto; min-width: 260px; margin-top: 10px; }
+  .estimator__note { padding: 18px 25px; border-top: 1px solid var(--line); background: var(--paper); font-size: 13px; line-height: 1.7; color: var(--muted); }
+  @media (max-width: 900px) { .estimator__grid { grid-template-columns: 1fr; } .estimator__inputs { border-right: 0; border-bottom: 1px solid var(--line); } }
+  @media (max-width: 767px) { .estimator__inputs { padding: 22px 15px; } .estimator__result { padding: 30px 15px; } .estimator__result .rr-btn-classic { width: 100%; min-width: 0; } .estimator__note { padding: 16px 15px; } }
+  @media (max-width: 400px) { .estimator__inputs { grid-template-columns: 1fr; } }
+</style>

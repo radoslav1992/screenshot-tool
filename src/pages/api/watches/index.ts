@@ -1,3 +1,5 @@
+import { parseMonitorRule } from '../../../lib/monitor-rules';
+import { workflowsReady } from '../../../lib/monitor-rule-store';
 import { env } from 'cloudflare:workers';
 import { previewFingerprint } from '../../../lib/watch-settings';
 import { frequencyHours } from '../../../lib/plans';
@@ -34,6 +36,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
      * watch cannot be pointed anywhere a one-off capture could not go — the SSRF
      * and denylist checks come along with it.
      */
+    const rule = parseMonitorRule(body);
+    if (rule.kind !== 'visual' && !env.BROWSER) throw new HttpError(503,'setup_required','Text and element rules require Browser Rendering.');
+    if ((rule.kind !== 'visual' || rule.region) && !await workflowsReady()) throw new HttpError(503,'setup_required','Monitor rules are being prepared.');
     const options = parseCaptureOptions({ ...body, mode: body.mode ?? 'fullpage' });
 
     if (options.mode === 'series') {
@@ -49,8 +54,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
 
     const threshold = body.threshold === undefined || body.threshold === '' ? 1 : Number(body.threshold);
-    if (!Number.isFinite(threshold) || threshold < 0.1 || threshold > 100) {
-      throw badRequest('`threshold` is a percentage between 0.1 and 100.', 'threshold');
+    if (!Number.isFinite(threshold) || (threshold !== 0 && threshold < 0.1) || threshold > 100) {
+      throw badRequest('`threshold` must be 0 for any detected change, or between 0.1 and 100.', 'threshold');
     }
 
     let webhookUrl = (body.webhook_url ?? '').trim();
@@ -74,6 +79,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
     const watch = await createWatch(user, {
       options,
+      rule,
       label: (body.label ?? '').trim(),
       frequency,
       threshold,

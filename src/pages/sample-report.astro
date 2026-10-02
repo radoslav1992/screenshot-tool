@@ -1,136 +1,238 @@
 ---
 import Base from '../layouts/Base.astro';
-import SiteHeader from '../components/SiteHeader.astro';
-import SiteFooter from '../components/SiteFooter.astro';
-import '../styles/projects.css';
+import AiPage from '../components/AiPage.astro';
+import '../styles/adon/ai-report.css';
 const user = Astro.locals.user;
+const startHref = user ? '/app/start' : '/signup?next=%2Fapp%2Fstart';
+const notes = [
+  'The headline now names the service and audience.',
+  'The booking action is visible in the first screen.',
+  'Before approval, test the booking form and check the mobile layout.',
+];
 ---
 
 <Base
   title="Sample client review report"
+  bodyClass="body-ai-agency"
   description="See how a before-and-after website report explains a change and gives clients clear next steps."
 >
-  <SiteHeader user={user} />
-  <main class="report-page">
-    <p class="notice">
-      Illustrative example · Fictional client and page layouts. These are not captured websites or measured results.
-    </p>
-    <header>
-      <span class="eyebrow">NORTH STUDIO · CLIENT WEBSITE REVIEW</span>
-      <h1>A clearer path to booking.</h1>
-      <p>Example client: Fieldwork Studio · Desktop homepage review</p>
-    </header>
-    <section>
-      <h2>What changed</h2>
-      <p>
-        The revised page puts the service and booking action first. The review notes explain what to check before
-        approving the update.
-      </p>
-    </section>
-    <div class="review-images">
-      <figure>
-        <h2>Before · baseline</h2>
-        <p class="report-meta">
-          Illustrative desktop layout · example.com · 1440 × 900 CSS px
-          <br />
-          Example baseline: 10 September 2026, 09:00 UTC
-        </p>
-        <div
-          class="sample-frame before"
-          role="img"
-          aria-label="Fictional baseline homepage with a vague headline and a low-contrast contact button"
-        >
-          <div class="sample-nav">
-            FIELDWORK <small>About · Work · Contact</small>
-          </div>
-          <div class="sample-body">
-            <span>WELCOME TO OUR WEBSITE</span>
-            <h3>
-              Ideas for
-              <br />
-              what comes next.
-            </h3>
-            <p>We bring creativity and experience to every project.</p>
-            <span class="sample-button">Learn more</span>
-          </div>
-        </div>
-      </figure>
-      <figure>
-        <h2>After · ready for review</h2>
-        <p class="report-meta">
-          Illustrative desktop layout · example.com · 1440 × 900 CSS px
-          <br />
-          Example update: 11 September 2026, 14:00 UTC
-        </p>
-        <div
-          class="sample-frame after"
-          role="img"
-          aria-label="Fictional updated homepage with a specific service headline and a prominent booking button"
-        >
-          <div class="sample-nav">
-            FIELDWORK <small>Services · Work · Book a call</small>
-          </div>
-          <div class="sample-body">
-            <span>WEB DESIGN FOR SMALL BUSINESSES</span>
-            <h3>
-              Your next client
-              <br />
-              starts here.
-            </h3>
-            <p>A clear website. A simple way to get in touch.</p>
-            <span class="sample-button">Book a discovery call ↗</span>
-          </div>
-        </div>
-      </figure>
-    </div>
-    <section class="project-panel" style="margin-top:24px">
-      <h2>Review notes</h2>
-      <ol>
-        <li>The headline now names the service and audience.</li>
-        <li>The booking action is visible in the first screen.</li>
-        <li>Before approval, test the booking form and check the mobile layout.</li>
-      </ol>
-      <p>
-        <strong>Review status: Needs review.</strong> Screenshots document appearance; they do not prove the form works
-        or that conversion improved.
-      </p>
-    </section>
-    <section class="project-panel" style="margin-top:24px">
-      <h2>Make this workflow yours</h2>
-      <p>
-        Create a project, capture a baseline and an updated page, then add your notes. Share a web report with an
-        expiring link or export a branded PDF on a paid plan.
-      </p>
-      <div class="project-links">
-        <a class="btn btn--ink" href={user ? '/app/start' : '/signup?next=%2Fapp%2Fstart'}>
-          Create your first report
-        </a>
-        <a class="btn btn--outline" href="/pricing">
-          Compare plans
-        </a>
+  <AiPage user={user}>
+    <section class="sr-intro" aria-labelledby="report-title">
+      <div class="ai-hero-label">
+        <span>[ SAMPLE REPORT ]</span>
+        <span>CLIENT WEBSITE REVIEW / ILLUSTRATIVE</span>
       </div>
-      <p class="small muted">
-        This example uses no screenshot quota. Real reports keep their source images’ original retention period.
+      <p class="ai-strip">
+        <strong>Illustrative example</strong> · Fictional client and page layouts. These are not captured websites or
+        measured results.
       </p>
+      <header class="ai-page-head__body">
+        <span class="ai-eyebrow">NORTH STUDIO · CLIENT WEBSITE REVIEW</span>
+        <h1 id="report-title" class="ai-page-title" data-adon-title>
+          A clearer path
+          <br />
+          <span>to booking.</span>
+        </h1>
+      </header>
+      <dl class="ai-report-facts">
+        <div>
+          <dt>EXAMPLE CLIENT</dt>
+          <dd>Fieldwork Studio</dd>
+        </div>
+        <div>
+          <dt>REVIEW</dt>
+          <dd>Desktop homepage</dd>
+        </div>
+        <div>
+          <dt>COMPARISON</dt>
+          <dd>10 → 11 Sep 2026</dd>
+        </div>
+        <div>
+          <dt>STATUS</dt>
+          <dd><span class="ai-dot" aria-hidden="true"></span>Needs review</dd>
+        </div>
+      </dl>
     </section>
-  </main>
-  <SiteFooter />
+
+    <section class="sr-changes" aria-labelledby="what-changed">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 01 / WHAT CHANGED ]</span>
+        <div>
+          <h2 id="what-changed" data-adon-title>What changed</h2>
+          <p class="ai-section-lede">
+            The revised page puts the service and booking action first. The review notes explain what to check
+            before approving the update.
+          </p>
+        </div>
+      </div>
+      <div class="ai-report-compare">
+        <figure class="ai-report-shot">
+          <figcaption>
+            <div class="ai-report-shot-label">
+              <span>[ BEFORE ]</span>
+              <span>BASELINE / 01</span>
+            </div>
+            <h3>Before · baseline</h3>
+            <p class="ai-report-meta">
+              Illustrative desktop layout · example.com · 1440 × 900 CSS px
+              <br />
+              Example baseline: 10 September 2026, 09:00 UTC
+            </p>
+          </figcaption>
+          <div class="ai-report-stage" data-adon-reveal>
+            <div
+              class="sample-frame before"
+              role="img"
+              aria-label="Fictional baseline homepage with a vague headline and a low-contrast contact button"
+            >
+              <div class="sample-bar" aria-hidden="true">
+                <span class="adon-preview-dots"><i></i><i></i><i></i></span>
+                <span>example.com / home</span>
+                <span>↗</span>
+              </div>
+              <div class="sample-nav">
+                FIELDWORK <small>About · Work · Contact</small>
+              </div>
+              <div class="sample-body">
+                <span>WELCOME TO OUR WEBSITE</span>
+                <h4>
+                  Ideas for
+                  <br />
+                  what comes next.
+                </h4>
+                <p>We bring creativity and experience to every project.</p>
+                <span class="sample-button">Learn more</span>
+              </div>
+            </div>
+          </div>
+        </figure>
+        <figure class="ai-report-shot ai-report-shot--after">
+          <figcaption>
+            <div class="ai-report-shot-label">
+              <span>[ AFTER ]</span>
+              <span>READY FOR REVIEW / 02</span>
+            </div>
+            <h3>After · ready for review</h3>
+            <p class="ai-report-meta">
+              Illustrative desktop layout · example.com · 1440 × 900 CSS px
+              <br />
+              Example update: 11 September 2026, 14:00 UTC
+            </p>
+          </figcaption>
+          <div class="ai-report-stage" data-adon-reveal>
+            <div
+              class="sample-frame after"
+              role="img"
+              aria-label="Fictional updated homepage with a specific service headline and a prominent booking button"
+            >
+              <div class="sample-bar" aria-hidden="true">
+                <span class="adon-preview-dots"><i></i><i></i><i></i></span>
+                <span>example.com / home</span>
+                <span>↗</span>
+              </div>
+              <div class="sample-nav">
+                FIELDWORK <small>Services · Work · Book a call</small>
+              </div>
+              <div class="sample-body">
+                <span>WEB DESIGN FOR SMALL BUSINESSES</span>
+                <h4>
+                  Your next client
+                  <br />
+                  starts here.
+                </h4>
+                <p>A clear website. A simple way to get in touch.</p>
+                <span class="sample-button">Book a discovery call ↗</span>
+              </div>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="sr-notes" aria-labelledby="review-notes">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 02 / REVIEW NOTES ]</span>
+        <h2 id="review-notes" data-adon-title>Review notes</h2>
+      </div>
+      <ol class="sr-note-list">
+        {
+          notes.map((note, index) => (
+            <li>
+              <span aria-hidden="true">[ 0{index + 1} ]</span>
+              {note}
+            </li>
+          ))
+        }
+      </ol>
+      <div class="sr-status">
+        <span class="sr-status-badge">
+          <span class="ai-dot" aria-hidden="true"></span>
+          NEEDS REVIEW
+        </span>
+        <p>
+          <strong>Review status: Needs review.</strong> Screenshots document appearance; they do not prove the form
+          works or that conversion improved.
+        </p>
+      </div>
+    </section>
+
+    <section class="sr-cta" aria-labelledby="make-it-yours">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ YOUR NEXT MOVE ]</span>
+        <div>
+          <h2 id="make-it-yours" data-adon-title>
+            Make this
+            <br />
+            <span class="ai-orange-text">workflow yours.</span>
+          </h2>
+          <p class="ai-section-lede">
+            Create a project, capture a baseline and an updated page, then add your notes. Share a web report with an
+            expiring link or export a branded PDF on a paid plan.
+          </p>
+          <div class="ai-actions">
+            <a class="rr-btn-classic" href={startHref}>
+              Create your first report <span aria-hidden="true">↗</span>
+            </a>
+            <a class="rr-btn-classic ai-btn-outline" href="/pricing">
+              Compare plans <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <p class="sr-fineprint">
+            This example uses no screenshot quota. Real reports keep their source images’ original retention period.
+          </p>
+        </div>
+      </div>
+    </section>
+  </AiPage>
 </Base>
 <style>
   .sample-frame {
-    border: 1px solid var(--line-2);
-    border-radius: 16px;
     overflow: hidden;
     min-height: 350px;
+    box-shadow:
+      12px 25px 0 #11111112,
+      0 35px 60px #68321e1f;
+  }
+  .sample-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #11111120;
+    background: white;
+    font: 8px var(--mono);
+    color: #666;
   }
   .sample-nav {
     padding: 20px;
     font-size: 15px;
-    font-weight: 800;
+    font-weight: 600;
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 12px;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid #d8d3c8;
   }
   .sample-nav small {
     font-size: 10px;
@@ -140,12 +242,14 @@ const user = Astro.locals.user;
     padding: 32px 24px;
   }
   .sample-body > span:first-child {
-    font-size: 10px;
+    font: 9px var(--mono);
     letter-spacing: 0.08em;
   }
-  .sample-body h3 {
-    font-size: clamp(26px, 3vw, 38px);
-    line-height: 1.15;
+  .sample-body h4 {
+    font-size: clamp(26px, 3vw, 40px);
+    font-weight: 500;
+    letter-spacing: -0.05em;
+    line-height: 1.05;
     margin: 20px 0;
   }
   .sample-body p {
@@ -156,7 +260,6 @@ const user = Astro.locals.user;
     display: inline-block;
     padding: 12px 15px;
     font-size: 12px;
-    border-radius: 7px;
   }
   .before {
     background: #eeeae2;
@@ -166,15 +269,103 @@ const user = Astro.locals.user;
     border: 1px solid #8d887c;
   }
   .after {
-    background: #20251e;
-    color: #fff;
+    background-color: #1b1c1c;
+    background-image:
+      linear-gradient(90deg, #ffffff08 1px, transparent 1px), linear-gradient(#ffffff08 1px, transparent 1px);
+    background-size: 40px 40px;
+    color: white;
   }
   .after .sample-nav {
-    border-color: #465041;
+    border-color: #ffffff26;
   }
   .after .sample-button {
-    background: #d6ed8c;
-    color: #20251e;
-    font-weight: 700;
+    background: var(--theme);
+    color: var(--ink);
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .sr-note-list {
+    margin: 0 0 0 25%;
+    padding: 0;
+    list-style: none;
+    background: var(--paper);
+  }
+  .sr-note-list li {
+    display: flex;
+    gap: 25px;
+    align-items: baseline;
+    padding: 27px 25px;
+    border-bottom: 1px solid var(--line);
+    font-size: 19px;
+    line-height: 1.4;
+  }
+  .sr-note-list li > span {
+    font: 10px var(--mono);
+    white-space: nowrap;
+  }
+  .sr-status {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    background: var(--paper);
+  }
+  .sr-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 27px 20px;
+    border-right: 1px solid var(--line);
+    font: 10px var(--mono);
+  }
+  .sr-status p {
+    padding: 27px 25px;
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--muted);
+    max-width: 75ch;
+  }
+  .sr-status strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .sr-cta .ai-section-head {
+    border-bottom: 0;
+  }
+  .sr-cta .ai-actions {
+    margin-top: 35px;
+  }
+  .sr-fineprint {
+    margin-top: 22px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  @media (max-width: 767px) {
+    .sample-frame {
+      min-height: 0;
+    }
+    .sample-nav {
+      flex-wrap: wrap;
+    }
+    .sr-note-list {
+      margin-left: 0;
+    }
+    .sr-note-list li {
+      gap: 12px;
+      padding: 23px 15px;
+      font-size: 16px;
+    }
+    .sr-note-list li > span {
+      font-size: 8px;
+    }
+    .sr-status {
+      grid-template-columns: 1fr;
+    }
+    .sr-status-badge {
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 15px;
+    }
+    .sr-status p {
+      padding: 20px 15px 24px;
+    }
   }
 </style>

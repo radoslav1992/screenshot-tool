@@ -1,16 +1,40 @@
 ---
 import { PLANS, PLAN_ORDER, watchLimit } from '../lib/plans';
+
+const notes = [
+  {
+    title: 'What uses a screenshot?',
+    text: 'One generated image counts as one screenshot. Desktop + mobile counts as two. Scroll series counts per frame. Manual captures, batches, API calls and monitor checks share the same monthly allowance, resetting on the first day of each UTC calendar month—even on annual billing.',
+  },
+  {
+    title: 'Monitor slots are not extra quota',
+    text: 'One daily monitor needs about 30 screenshots per 30 days; one hourly monitor needs about 720. For example, 25 hourly monitors would need about 18,000 screenshots, exceeding Pro’s 2,000 allowance. The app forecasts usage before you save a schedule.',
+  },
+  {
+    title: 'Reports and sharing',
+    text: 'Web reports reuse existing captures without using screenshot quota. Paid PDF report exports allow six exports/hour and up to 16 MB of source images. Review links expire after 1, 7 or 30 days and can be revoked. Downloaded copies cannot be recalled.',
+  },
+  {
+    title: 'Retention and teams',
+    text: 'Reports do not extend source image retention. Missing images become unavailable. Business includes three collaborators per project, including pending invitations: viewers read reports and editors can comment. Only the owner manages captures, monitors and billing.',
+  },
+];
 ---
 
-<section class="workspace-features wrap" aria-label="Workspace features and usage">
-  <h2>From a capture to a client deliverable</h2>
-  <p>
-    Every plan includes private projects, saved batch settings, URL-list and sitemap capture, manual launch review
-    status, and before-and-after web reports with expiring links.
-  </p>
+<section class="workspace-features" aria-labelledby="workspace-features-title">
+  <div class="ai-section-head">
+    <span class="section-subtitle-5">[ WHAT EACH PLAN INCLUDES ]</span>
+    <div>
+      <h2 id="workspace-features-title" data-adon-title>From a capture to a client deliverable</h2>
+      <p class="ai-section-lede">
+        Every plan includes private projects, saved batch settings, URL-list and sitemap capture, manual launch review
+        status, and before-and-after web reports with expiring links.
+      </p>
+    </div>
+  </div>
   <div class="feature-table" tabindex="0" role="region" aria-label="Scroll to compare plan features">
     <table>
-      <caption>What each plan includes</caption>
+      <caption class="sr-only">What each plan includes</caption>
       <thead>
         <tr>
           <th scope="col">Feature</th>
@@ -66,66 +90,32 @@ import { PLANS, PLAN_ORDER, watchLimit } from '../lib/plans';
     </table>
   </div>
   <div class="feature-grid">
-    <article>
-      <h3>What uses a screenshot?</h3>
-      <p>
-        One generated image counts as one screenshot. Desktop + mobile counts as two. Scroll series counts per frame.
-        Manual captures, batches, API calls and monitor checks share the same monthly allowance, resetting on the first
-        day of each UTC calendar month—even on annual billing.
-      </p>
-    </article>
-    <article>
-      <h3>Monitor slots are not extra quota</h3>
-      <p>
-        One daily monitor needs about 30 screenshots per 30 days; one hourly monitor needs about 720. For example, 25
-        hourly monitors would need about 18,000 screenshots, exceeding Pro’s 2,000 allowance. The app forecasts usage
-        before you save a schedule.
-      </p>
-    </article>
-    <article>
-      <h3>Reports and sharing</h3>
-      <p>
-        Web reports reuse existing captures without using screenshot quota. Paid PDF report exports allow six
-        exports/hour and up to 16 MB of source images. Review links expire after 1, 7 or 30 days and can be revoked.
-        Downloaded copies cannot be recalled.
-      </p>
-    </article>
-    <article>
-      <h3>Retention and teams</h3>
-      <p>
-        Reports do not extend source image retention. Missing images become unavailable. Business includes three
-        collaborators per project, including pending invitations: viewers read reports and editors can comment. Only the
-        owner manages captures, monitors and billing.
-      </p>
-    </article>
+    {
+      notes.map((note, index) => (
+        <article>
+          <span class="feature-grid__num">[ 0{index + 1} ]</span>
+          <h3>{note.title}</h3>
+          <p>{note.text}</p>
+        </article>
+      ))
+    }
   </div>
-  <p>
-    Workspace limits: 100 projects/account, 30 saved settings and 100 reports/project. Batch queues support 25
-    screenshots; desktop/mobile launch checks support 12 URLs. Weekly digests are opt-in and sent to each recipient’s
-    verified account email.
-  </p>
-  <p>
-    <a href="/sample-report">See an illustrative client report →</a>
-  </p>
+  <div class="feature-foot">
+    <p>
+      Workspace limits: 100 projects/account, 30 saved settings and 100 reports/project. Batch queues support 25
+      screenshots; desktop/mobile launch checks support 12 URLs. Weekly digests are opt-in and sent to each recipient’s
+      verified account email.
+    </p>
+    <a class="rr-btn-classic ai-btn-outline" href="/sample-report">
+      See an illustrative client report <span aria-hidden="true">↗</span>
+    </a>
+  </div>
 </section>
 <style>
-  .workspace-features {
-    padding-block: 32px 64px;
-  }
-  .workspace-features h2 {
-    font-size: clamp(26px, 4vw, 38px);
-    margin-bottom: 16px;
-  }
-  .workspace-features p {
-    line-height: 1.7;
-    margin: 12px 0;
-    color: var(--muted);
-  }
   .feature-table {
     overflow: auto;
-    border: 1px solid var(--line-2);
-    border-radius: 16px;
-    margin: 24px 0;
+    background: white;
+    border-bottom: 1px solid var(--line);
   }
   .feature-table table {
     width: 100%;
@@ -135,23 +125,109 @@ import { PLANS, PLAN_ORDER, watchLimit } from '../lib/plans';
   }
   .feature-table th,
   .feature-table td {
-    padding: 14px;
+    padding: 16px 20px;
     border-bottom: 1px solid var(--line-2);
+    border-right: 1px solid var(--line-2);
+    font-size: 14px;
   }
-  .feature-table caption {
-    text-align: left;
-    padding: 14px;
-    font-weight: 700;
+  .feature-table tr > :last-child {
+    border-right: 0;
+  }
+  .feature-table tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+  .feature-table thead th {
+    font: 10px/1.5 var(--mono);
+    text-transform: uppercase;
+    background: var(--paper);
+    border-bottom-color: var(--line);
+  }
+  .feature-table tbody th {
+    font-weight: 500;
   }
   .feature-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    background: var(--paper);
   }
   .feature-grid article {
-    padding: 22px;
+    padding: 32px 25px;
+    border-right: 1px solid var(--line);
+  }
+  .feature-grid article:last-child {
+    border-right: 0;
+  }
+  .feature-grid__num {
+    display: block;
+    margin-bottom: 30px;
+    font: 10px var(--mono);
+  }
+  .feature-grid h3 {
+    font: 300 clamp(24px, 2.2vw, 30px) / 1 var(--font_astronebula);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .feature-grid p {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--muted);
+  }
+  .feature-foot {
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    align-items: center;
+    gap: 25px;
+    padding: 26px 25px;
+    border-top: 1px solid var(--line);
     background: var(--paper);
-    border: 1px solid var(--line-2);
-    border-radius: 16px;
+  }
+  .feature-foot p {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--muted);
+    max-width: 90ch;
+  }
+  @media (max-width: 1100px) {
+    .feature-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .feature-grid article:nth-child(2) {
+      border-right: 0;
+    }
+    .feature-grid article:nth-child(-n + 2) {
+      border-bottom: 1px solid var(--line);
+    }
+    .feature-foot {
+      grid-template-columns: 1fr;
+    }
+    .feature-foot .rr-btn-classic {
+      max-width: 360px;
+    }
+  }
+  @media (max-width: 767px) {
+    .feature-table th,
+    .feature-table td {
+      padding: 14px 15px;
+    }
+    .feature-grid {
+      grid-template-columns: 1fr;
+    }
+    .feature-grid article {
+      padding: 26px 15px;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .feature-grid article:last-child {
+      border-bottom: 0;
+    }
+    .feature-grid__num {
+      margin-bottom: 18px;
+    }
+    .feature-foot {
+      padding: 22px 15px;
+    }
+    .feature-foot .rr-btn-classic {
+      max-width: none;
+    }
   }
 </style>

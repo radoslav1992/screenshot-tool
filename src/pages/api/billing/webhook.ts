@@ -41,10 +41,10 @@ export const POST: APIRoute = async ({ request }) => {
     const outcome = await handleWebhookEvent(event as any);
     return json(outcome);
   } catch (error) {
-    // Answer 500 so Stripe retries; the event id was claimed, so log loudly and
-    // release it, otherwise the retry would be swallowed as a duplicate.
+    // Answer 500 so Stripe retries. The event is only recorded once it has been
+    // applied, so the retry is processed rather than swallowed as a duplicate —
+    // including when the Worker died before reaching this line.
     console.error(`[billing.webhook] ${event.type} (${event.id}) failed`, error);
-    await env.DB.prepare(`DELETE FROM billing_events WHERE id = ?`).bind(event.id).run().catch(() => undefined);
     return apiError(500, 'server_error', 'Could not process the event.');
   }
 };

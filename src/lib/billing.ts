@@ -28,6 +28,18 @@ const WEBHOOK_TOLERANCE_SECONDS = 300;
  */
 const ENTITLED_STATUSES = new Set(['active', 'trialing', 'past_due']);
 
+/**
+ * Statuses Stripe never bills from again. Everything else — `unpaid`,
+ * `incomplete` and `paused` included — can still turn into a charge.
+ */
+const FINAL_STATUSES = new Set(['canceled', 'incomplete_expired']);
+
+/**
+ * How long one Stripe call may take. Stripe gives a webhook about 20 seconds
+ * before calling it failed, and a handler makes at most a couple of calls.
+ */
+const STRIPE_TIMEOUT_MS = 8_000;
+
 export type BillingInterval = 'monthly' | 'yearly';
 
 export function billingEnabled(): boolean {
@@ -135,7 +147,15 @@ async function stripe<T = any>(
     url += `?${encodeForm(init.body).toString()}`;
   }
 
-  const response = await fetch(url, { method, headers, body });
+  let response: Response;
+  try {
+    response = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(STRIPE_TIMEOUT_MS) });
+  } catch (error) {
+    // A timeout or a dropped connection: nothing was answered, so say so the
+    // same way a Stripe 5xx would rather than surfacing a bare 500.
+    console.error(`[billing] stripe ${method} ${path} → no answer:`, error instanceof Error ? error.message : error);
+    throw new HttpError(502, 'billing_error', 'Payments are temporarily unavailable. Try again in a moment.');
+  }
   const payload = (await response.json().catch(() => null)) as any;
 
   if (!response.ok) {
@@ -258,6 +278,10 @@ export async function createCheckoutSession(input: {
 
   const customer = await ensureCustomer(input.user);
 
+  // A checkout left open in another tab would otherwise still be payable, and
+  // paying both makes two subscriptions billed side by side.
+  await expireOpenCheckouts(customer);
+
   /*
    * Stripe Tax needs somewhere to tax: it works the rate out from the
    * customer's address, so collecting one is not optional once it is on.
@@ -331,7 +355,81 @@ export async function createCheckoutSession(input: {
  * they thought they had closed.
  */
 export async function cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
-  await stripe(`/subscriptions/${subscriptionId}`, { method: 'DELETE' });
+  await stripe(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE' });
+}
+
+/**
+ * Expires every open Checkout session for a customer. Returns how many went.
+ *
+ * Listing failures are thrown — a checkout that cannot tell whether another is
+ * open should not start a second. A session that cannot be expired has usually
+ * just completed or lapsed on its own, which the webhook handles, so those are
+ * logged and passed over.
+ */
+export async function expireOpenCheckouts(customer: string): Promise<number> {
+  const open = await stripe<{ data?: Array<{ id: string }> }>('/checkout/sessions', {
+    method: 'GET',
+    body: { customer, status: 'open', limit: 100 },
+  });
+  let expired = 0;
+  for (const session of open.data ?? []) {
+    try {
+      await stripe(`/checkout/sessions/${encodeURIComponent(session.id)}/expire`, {});
+      expired++;
+    } catch (error) {
+      console.error(
+        `[billing] could not expire checkout session ${session.id}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  if (expired) console.log(`[billing] expired ${expired} open checkout session(s) for ${customer}`);
+  return expired;
+}
+
+/**
+ * Stops everything Stripe could still bill an account for, ahead of deleting
+ * it: every subscription not in a final state — not only the one recorded
+ * here, and not only the entitled statuses, since `unpaid` and `incomplete`
+ * subscriptions can still charge — and any checkout left open, which could
+ * otherwise be paid for an account that no longer exists.
+ *
+ * Throws if Stripe cannot be asked, so the deletion stops with the account
+ * intact and can be retried.
+ */
+export async function cancelBillingForDeletion(userId: string): Promise<{ cancelled: string[] }> {
+  // Without migration 0003's columns there was never anything to bill. Any
+  // other failure stops the deletion: going ahead blind is how a subscription
+  // ends up outliving its account.
+  const row = await getBillingRow(userId).catch((error) => {
+    if (/no such (column|table)/i.test(error instanceof Error ? error.message : String(error))) return null;
+    throw error;
+  });
+  const cancelled: string[] = [];
+  if (!row) return { cancelled };
+
+  const live: string[] = [];
+  if (row.stripe_customer_id) {
+    await expireOpenCheckouts(row.stripe_customer_id);
+    const list = await stripe<{ data?: StripeSubscription[] }>('/subscriptions', {
+      method: 'GET',
+      body: { customer: row.stripe_customer_id, status: 'all', limit: 100 },
+    });
+    for (const subscription of list.data ?? []) if (!FINAL_STATUSES.has(subscription.status)) live.push(subscription.id);
+  } else if (row.stripe_subscription_id && !FINAL_STATUSES.has(row.plan_status)) {
+    live.push(row.stripe_subscription_id);
+  }
+
+  for (const id of live) {
+    try {
+      await cancelSubscriptionImmediately(id);
+      cancelled.push(id);
+    } catch (error) {
+      // Already gone is as good as cancelled; anything else stops the deletion.
+      if ((error as StripeCallError).stripeStatus !== 404) throw error;
+    }
+  }
+  return { cancelled };
 }
 
 /**
@@ -559,15 +657,30 @@ export async function verifyWebhookSignature(
   return signatures.some((signature) => timingSafeEqual(signature, expected));
 }
 
-/** Records an event id. Returns false when it was already handled. */
-async function claimEvent(id: string, type: string, userId: string | null): Promise<boolean> {
-  const result = await env.DB.prepare(
-    `INSERT OR IGNORE INTO billing_events (id, type, user_id, received_at) VALUES (?, ?, ?, ?)`,
+/**
+ * Whether an event has already been applied.
+ *
+ * An event is recorded only once its handler has finished, so a Worker that
+ * dies halfway leaves nothing behind and Stripe's retry runs it again. The
+ * handlers make that safe: each reads the subscription's current state from
+ * Stripe and writes it, so running one again changes nothing.
+ */
+async function eventProcessed(id: string): Promise<boolean> {
+  return Boolean(await env.DB.prepare(`SELECT 1 FROM billing_events WHERE id = ?`).bind(id).first());
+}
+
+/**
+ * The user id is looked up in the same statement, so an event that finishes
+ * just after its account was deleted — the cancellation that deletion itself
+ * set off — is recorded against nobody instead of the id that is gone.
+ */
+async function recordEvent(id: string, type: string, userId: string | null): Promise<void> {
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO billing_events (id, type, user_id, received_at)
+     VALUES (?, ?, (SELECT id FROM users WHERE id = ?), ?)`,
   )
     .bind(id, type, userId, new Date().toISOString())
     .run();
-  // D1 reports 0 changes when the OR IGNORE swallowed a duplicate.
-  return (result.meta?.changes ?? 0) > 0;
 }
 
 interface StripeSubscription {
@@ -586,21 +699,46 @@ interface StripeSubscription {
   };
 }
 
-function subscriptionPlan(subscription: StripeSubscription): { plan: PlanId; interval: BillingInterval } | null {
-  const priceId = subscription.items?.data?.[0]?.price?.id;
-  if (priceId) {
-    const match = planForPrice(priceId);
+/** What the account had on record before an event was applied. */
+interface RecordedPlan {
+  plan: string;
+  plan_status: string;
+  stripe_subscription_id: string | null;
+}
+
+/**
+ * Which plan a subscription pays for.
+ *
+ * The price is the authority. When it is not one this deployment knows —
+ * usually a price rotated out in the dashboard that existing subscribers stay
+ * on — the plan already recorded for this same subscription comes next: it was
+ * resolved from a known price when it was written. The checkout metadata comes
+ * last, because it only says what was bought at checkout; a later switch in
+ * the portal does not change it, so trusting it first would quietly downgrade
+ * someone who upgraded and whose new price was then rotated.
+ *
+ * The period comes off the price itself either way — guessing "monthly" would
+ * record a yearly subscriber as monthly, and every later plan change would then
+ * look for the wrong price.
+ */
+export function subscriptionPlan(
+  subscription: StripeSubscription,
+  recorded?: Pick<RecordedPlan, 'plan' | 'stripe_subscription_id'> | null,
+): { plan: PlanId; interval: BillingInterval } | null {
+  const price = subscription.items?.data?.[0]?.price;
+  if (price?.id) {
+    const match = planForPrice(price.id);
     if (match) return match;
   }
-  // Fall back to the metadata we stamped at checkout, so a price rotated in the
-  // Stripe dashboard downgrades nobody. The period still comes off the price
-  // itself — guessing "monthly" here would record a yearly subscriber as
-  // monthly, and every later plan change would then look for the wrong price.
-  const fromMetadata = subscription.metadata?.plan as PlanId | undefined;
-  if (fromMetadata && PAID_PLANS.includes(fromMetadata)) {
-    const recurring = subscription.items?.data?.[0]?.price?.recurring?.interval;
-    return { plan: fromMetadata, interval: recurring === 'year' ? 'yearly' : 'monthly' };
+  const interval: BillingInterval = price?.recurring?.interval === 'year' ? 'yearly' : 'monthly';
+
+  const kept = recorded?.plan as PlanId | undefined;
+  if (recorded?.stripe_subscription_id === subscription.id && kept && PAID_PLANS.includes(kept)) {
+    return { plan: kept, interval };
   }
+
+  const fromMetadata = subscription.metadata?.plan as PlanId | undefined;
+  if (fromMetadata && PAID_PLANS.includes(fromMetadata)) return { plan: fromMetadata, interval };
   return null;
 }
 
@@ -611,29 +749,101 @@ function periodEnd(subscription: StripeSubscription): string | null {
   return typeof seconds === 'number' ? new Date(seconds * 1000).toISOString() : null;
 }
 
+/**
+ * The account a subscription belongs to — only if it still exists. The
+ * metadata keeps naming an account after it is deleted, and the cancellation
+ * that deletion triggers must not be filed against an id that is gone.
+ */
 async function findUserId(subscription: StripeSubscription): Promise<string | null> {
   const fromMetadata = subscription.metadata?.user_id;
-  if (fromMetadata) return fromMetadata;
+  if (fromMetadata) {
+    const row = await env.DB.prepare(`SELECT id FROM users WHERE id = ?`).bind(fromMetadata).first<{ id: string }>();
+    if (row) return row.id;
+  }
   const row = await env.DB.prepare(`SELECT id FROM users WHERE stripe_customer_id = ?`)
     .bind(subscription.customer)
     .first<{ id: string }>();
   return row?.id ?? null;
 }
 
-/** Writes a subscription's current state onto the account. */
-async function applySubscription(subscription: StripeSubscription): Promise<string | null> {
+/** Reads a subscription as Stripe has it now. Null if Stripe no longer has it. */
+async function fetchSubscription(id: string): Promise<StripeSubscription | null> {
+  try {
+    return await stripe<StripeSubscription>(`/subscriptions/${encodeURIComponent(id)}`, { method: 'GET' });
+  } catch (error) {
+    if ((error as StripeCallError).stripeStatus === 404) return null;
+    throw error;
+  }
+}
+
+export interface ApplyResult {
+  userId: string | null;
+  applied: boolean;
+  reason?: string;
+}
+
+/**
+ * Pure decision for one subscription against what the account has on record:
+ * apply it, or leave the record alone. Separate from the I/O so the ordering
+ * rules can be checked without Stripe.
+ *
+ * - The recorded subscription, or none recorded: apply.
+ * - A different subscription while the recorded one still grants the plan:
+ *   if the newcomer does not grant anything (an old subscription's late
+ *   cancellation, an expired attempt), it must not take the plan away; if it
+ *   does, there are two live subscriptions — `needsCheck` asks the caller to
+ *   confirm with Stripe that the recorded one really is still live.
+ */
+export function subscriptionDecision(
+  subscription: Pick<StripeSubscription, 'id' | 'status'>,
+  recorded: Pick<RecordedPlan, 'plan_status' | 'stripe_subscription_id'> | null,
+): 'apply' | 'ignore' | 'needsCheck' {
+  if (!recorded?.stripe_subscription_id || recorded.stripe_subscription_id === subscription.id) return 'apply';
+  if (!ENTITLED_STATUSES.has(recorded.plan_status)) return 'apply';
+  return ENTITLED_STATUSES.has(subscription.status) ? 'needsCheck' : 'ignore';
+}
+
+/** Writes a subscription's current state onto the account, unless it should not win. */
+async function applySubscription(subscription: StripeSubscription): Promise<ApplyResult> {
   const userId = await findUserId(subscription);
   if (!userId) {
     console.error(`[billing] no account matches customer ${subscription.customer}`);
-    return null;
+    return { userId: null, applied: false, reason: 'no_account' };
+  }
+
+  const recorded = await env.DB.prepare(
+    `SELECT plan, plan_status, stripe_subscription_id FROM users WHERE id = ?`,
+  )
+    .bind(userId)
+    .first<RecordedPlan>();
+
+  const decision = subscriptionDecision(subscription, recorded);
+  if (decision === 'ignore') {
+    console.log(
+      `[billing] ${userId}: ignored ${subscription.id} (${subscription.status}); ${recorded?.stripe_subscription_id} is the live subscription`,
+    );
+    return { userId, applied: false, reason: 'not_current_subscription' };
+  }
+  if (decision === 'needsCheck') {
+    // Our record may simply be behind — its cancellation could still be in
+    // flight — so ask Stripe before treating this as a duplicate.
+    const current = await fetchSubscription(recorded!.stripe_subscription_id!);
+    if (current && ENTITLED_STATUSES.has(current.status)) {
+      console.error(
+        `[billing] WARNING ${userId} has two live subscriptions: kept ${current.id} (${current.status}), ` +
+          `did not apply ${subscription.id} (${subscription.status}) for customer ${subscription.customer}. ` +
+          'Nothing was cancelled or refunded — resolve it in the Stripe dashboard.',
+      );
+      return { userId, applied: false, reason: 'duplicate_subscription' };
+    }
   }
 
   const entitled = ENTITLED_STATUSES.has(subscription.status);
-  const match = subscriptionPlan(subscription);
+  const match = subscriptionPlan(subscription, recorded);
   const plan: PlanId = entitled && match ? match.plan : 'free';
   const interval = entitled && match ? match.interval : '';
 
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `UPDATE users SET plan = ?, plan_status = ?, plan_interval = ?, plan_period_end = ?,
                       stripe_subscription_id = ?, stripe_customer_id = COALESCE(stripe_customer_id, ?), updated_at = ?
      WHERE id = ?`,
@@ -649,9 +859,26 @@ async function applySubscription(subscription: StripeSubscription): Promise<stri
       userId,
     )
     .run();
+  if ((result.meta?.changes ?? 0) === 0) {
+    // Deleted between the lookup and the write.
+    return { userId: null, applied: false, reason: 'no_account' };
+  }
 
   console.log(`[billing] ${userId} → ${plan} (${subscription.status})`);
-  return userId;
+
+  // Keep the checkout metadata in step with the price, so the fallback above
+  // never has a stale plan to fall back to. Best effort: the account is right
+  // either way, and the update's own webhook finds nothing left to change.
+  const priced = subscription.items?.data?.[0]?.price?.id ? planForPrice(subscription.items.data[0].price.id) : null;
+  if (entitled && priced && subscription.metadata?.plan !== priced.plan) {
+    await stripe(`/subscriptions/${encodeURIComponent(subscription.id)}`, {
+      body: { metadata: { plan: priced.plan } },
+    }).catch((error) =>
+      console.error(`[billing] could not update plan metadata on ${subscription.id}:`, error instanceof Error ? error.message : error),
+    );
+  }
+
+  return { userId, applied: true };
 }
 
 export interface WebhookOutcome {
@@ -662,44 +889,60 @@ export interface WebhookOutcome {
 
 /**
  * Applies a verified Stripe event. Idempotent: Stripe retries until it gets a
- * 2xx, and a retry must not be replayed as a second upgrade.
+ * 2xx, and delivers events in no particular order.
+ *
+ * So no event's own copy of a subscription is trusted — it may be older than
+ * one already applied. Each handler reads the subscription's current state
+ * from Stripe and applies that: an `updated` arriving after the `deleted`
+ * cannot bring a cancelled plan back, and a replay changes nothing.
  */
 export async function handleWebhookEvent(event: {
   id: string;
   type: string;
   data: { object: any };
 }): Promise<WebhookOutcome> {
-  if (!(await claimEvent(event.id, event.type, null))) {
+  if (await eventProcessed(event.id)) {
     return { handled: false, type: event.type, reason: 'duplicate' };
   }
 
+  const outcome = await processEvent(event);
+  // Only now, after it worked: a throw above leaves the event unrecorded and
+  // Stripe's retry runs it again.
+  await recordEvent(event.id, event.type, outcome.userId);
+  return { handled: outcome.applied, type: event.type, ...(outcome.reason ? { reason: outcome.reason } : {}) };
+}
+
+async function processEvent(event: { id: string; type: string; data: { object: any } }): Promise<ApplyResult> {
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as { subscription?: string | null };
-      if (!session.subscription) return { handled: false, type: event.type, reason: 'no_subscription' };
+      if (!session.subscription) return { userId: null, applied: false, reason: 'no_subscription' };
       // The session carries only the subscription id, so read the subscription
       // itself for the price and period.
-      const subscription = await stripe<StripeSubscription>(`/subscriptions/${session.subscription}`, {
-        method: 'GET',
-      });
-      const userId = await applySubscription(subscription);
-      if (userId) await env.DB.prepare(`UPDATE billing_events SET user_id = ? WHERE id = ?`).bind(userId, event.id).run();
-      return { handled: Boolean(userId), type: event.type };
+      const subscription = await fetchSubscription(session.subscription);
+      if (!subscription) return { userId: null, applied: false, reason: 'subscription_missing' };
+      return applySubscription(subscription);
     }
 
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted': {
-      const subscription = event.data.object as StripeSubscription;
-      // A deleted subscription arrives with whatever status it ended on; force
-      // the terminal one so entitlements drop.
-      if (event.type === 'customer.subscription.deleted') subscription.status = 'canceled';
-      const userId = await applySubscription(subscription);
-      if (userId) await env.DB.prepare(`UPDATE billing_events SET user_id = ? WHERE id = ?`).bind(userId, event.id).run();
-      return { handled: Boolean(userId), type: event.type };
+      const sent = event.data.object as StripeSubscription;
+      if (!sent?.id) return { userId: null, applied: false, reason: 'no_subscription' };
+      let subscription = await fetchSubscription(sent.id);
+      if (!subscription) {
+        // Stripe keeps cancelled subscriptions readable, so this is rare (test
+        // data cleared, say). A deletion still has to drop the plan; anything
+        // else has no current state to apply.
+        if (event.type !== 'customer.subscription.deleted') {
+          return { userId: null, applied: false, reason: 'subscription_missing' };
+        }
+        subscription = { ...sent, status: 'canceled' };
+      }
+      return applySubscription(subscription);
     }
 
     default:
-      return { handled: false, type: event.type, reason: 'ignored' };
+      return { userId: null, applied: false, reason: 'ignored' };
   }
 }

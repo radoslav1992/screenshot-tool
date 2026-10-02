@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../lib/http';
 import { toHttpError } from '../../lib/errors';
 import { clearedSessionCookie, isSecureRequest, verifyPassword } from '../../lib/auth';
-import { billingEnabled, cancelSubscriptionImmediately, getBillingRow, hasActiveSubscription } from '../../lib/billing';
+import { billingEnabled, cancelBillingForDeletion } from '../../lib/billing';
 import { deleteAccount } from '../../lib/account-deletion';
 
 export const prerender = false;
@@ -68,12 +68,13 @@ export const DELETE: APIRoute = async ({ request, locals }) => {
      * and the person can try again — whereas deleting the rows first would leave
      * a live subscription billing a customer with no account to show for it, and
      * nothing left here to reconcile it against.
+     *
+     * Every subscription Stripe could still bill goes, whatever its status, and
+     * any checkout left open is expired so it cannot be paid afterwards.
      */
     if (billingEnabled()) {
-      const billing = await getBillingRow(user.id).catch(() => null);
-      if (hasActiveSubscription(billing) && billing?.stripe_subscription_id) {
-        await cancelSubscriptionImmediately(billing.stripe_subscription_id);
-      }
+      const { cancelled } = await cancelBillingForDeletion(user.id);
+      if (cancelled.length) console.log(`[account] cancelled ${cancelled.join(', ')} for ${user.id}`);
     }
 
     const result = await deleteAccount(user.id);

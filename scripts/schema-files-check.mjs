@@ -8,15 +8,21 @@
  *   from the one before it to the one after it, ledger row included.
  * - All of those files survive the D1 console, which flattens a paste onto one
  *   line: no `--` or `/*` comments, and each is run here flattened.
+ * - src/lib/schema-manifest.ts lists every migration and exactly what each one
+ *   creates, and /api/health reports from it.
  *
  * New migrations are picked up from the directory, so adding 0013 without its
- * upgrade file or apply-manually.sql change fails here.
+ * upgrade file, manifest entry or apply-manually.sql change fails here.
  *
  *   node scripts/schema-files-check.mjs
  */
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { build } from 'esbuild';
+import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
@@ -163,7 +169,144 @@ for (const [index, file] of migrations.entries()) {
   before.close();
 }
 
-console.log(
-  `Schema file checks passed: apply-manually.sql matches ${migrations.length} migrations and re-runs cleanly, ` +
-    `and ${upgrades.length} comment-free upgrade files each match their migration flattened onto one line.`,
-);
+/* ----------------------------------------------------------- the manifest */
+
+const directory = mkdtempSync(join(tmpdir(), 'schema-files-check-'));
+const fixture = { env: {} };
+globalThis.__schemaFiles = fixture;
+const plugin = {
+  name: 'fixtures',
+  setup(b) {
+    b.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: 'cf', namespace: 'fixture' }));
+    b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const env=globalThis.__schemaFiles.env;', loader: 'js' }));
+  },
+};
+
+/** Just enough of D1 for the probes. */
+const d1 = (db) => {
+  const statement = (sql, args = []) => ({
+    bind: (...values) => statement(sql, values),
+    all: async () => ({ results: db.prepare(sql).all(...args) }),
+    first: async () => db.prepare(sql).get(...args) ?? null,
+  });
+  return { prepare: (sql) => statement(sql) };
+};
+
+try {
+  for (const [name, entry] of Object.entries({ manifest: 'src/lib/schema-manifest.ts', health: 'src/pages/api/health.ts' }))
+    await build({
+      entryPoints: [new URL(entry, root).pathname],
+      outfile: join(directory, `${name}.mjs`),
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      plugins: [plugin],
+      logLevel: 'silent',
+    });
+  const { MIGRATIONS, CORE_TABLES, migrationStatus, upgradeFileFor } = await import(pathToFileURL(join(directory, 'manifest.mjs')));
+  const { GET } = await import(pathToFileURL(join(directory, 'health.mjs')));
+
+  assert.deepEqual(
+    MIGRATIONS.map((entry) => entry.name),
+    migrations,
+    'src/lib/schema-manifest.ts has one entry per migration, in order',
+  );
+  assert.deepEqual(
+    CORE_TABLES,
+    ['users', 'sessions', 'api_keys', 'captures', 'usage_counters', 'email_verifications', 'billing_events', 'watches', 'watch_runs'],
+    'the core tables are the ones /api/health has always required',
+  );
+
+  // Each entry is exactly what its migration creates: applied one at a time,
+  // the objects that appear are the ones listed, no more and no fewer.
+  const objects = (db) => {
+    const found = new Set();
+    for (const { type, name } of db.prepare("SELECT type, name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%' AND name <> 'd1_migrations'").all()) {
+      found.add(`${type}:${name}`);
+      if (type === 'table') for (const column of db.prepare('SELECT name FROM pragma_table_info(?)').all(name)) found.add(`column:${name}.${column.name}`);
+    }
+    return found;
+  };
+  for (const [index, entry] of MIGRATIONS.entries()) {
+    const before = objects(migrated(index));
+    const after = objects(migrated(index + 1));
+    const tables = [...after].filter((o) => o.startsWith('table:') && !before.has(o)).map((o) => o.slice(6));
+    const added = [...after].filter((o) => !before.has(o) && !(o.startsWith('column:') && tables.includes(o.slice(7).split('.')[0])));
+    const listed = [
+      ...(entry.tables ?? []).map((t) => `table:${t}`),
+      ...(entry.columns ?? []).map((c) => `column:${c}`),
+      ...(entry.indexes ?? []).map((i) => `index:${i}`),
+    ];
+    assert.deepEqual(listed.sort(), added.sort(), `the manifest entry for ${entry.name} lists exactly what it creates`);
+  }
+
+  assert.equal(upgradeFileFor('0001_init.sql'), 'db/apply-manually.sql');
+  assert.equal(upgradeFileFor('0011_apple_lite.sql'), 'db/0011-upgrade.sql');
+  for (const entry of MIGRATIONS.slice(1)) assert.ok(existsSync(new URL(upgradeFileFor(entry.name), root)), `${upgradeFileFor(entry.name)} exists`);
+
+  /* ------------------------------------------------------- probes, health */
+
+  const complete = migrated();
+  assert.ok((await migrationStatus(d1(complete))).every((entry) => entry.applied), 'a migrated database has everything');
+
+  const empty = new DatabaseSync(':memory:');
+  const nothing = await migrationStatus(d1(empty));
+  assert.ok(nothing.every((entry) => !entry.applied));
+  assert.equal(nothing[0].upgrade, 'db/apply-manually.sql');
+
+  // Deployed ahead of 0011 and 0012: the two are named, with the files to paste.
+  const behind = migrated(migrations.indexOf('0011_apple_lite.sql'));
+  const status = await migrationStatus(d1(behind));
+  assert.deepEqual(
+    status.filter((entry) => !entry.applied).map((entry) => [entry.name, entry.upgrade]),
+    [
+      ['0011_apple_lite.sql', 'db/0011-upgrade.sql'],
+      ['0012_watch_runs_user_index.sql', 'db/0012-upgrade.sql'],
+    ],
+  );
+  assert.ok(status.find((entry) => entry.name === '0011_apple_lite.sql').missing.includes('users.free_quota'));
+
+  // A console paste that stopped after its first statement is not "applied".
+  behind.exec('ALTER TABLE users ADD COLUMN free_quota INTEGER NOT NULL DEFAULT 20');
+  const partial = (await migrationStatus(d1(behind))).find((entry) => entry.name === '0011_apple_lite.sql');
+  assert.equal(partial.applied, false);
+  assert.ok(!partial.missing.includes('users.free_quota') && partial.missing.includes('users.apple_expires_at'));
+
+  // The bundle holds on to this object, so it is filled in rather than replaced.
+  Object.assign(fixture.env, { SHOTS: { head: async () => null }, RATE: { get: async () => null }, BROWSER: {} });
+  const health = async (db) => {
+    fixture.env.DB = d1(db);
+    const response = await GET({});
+    return { status: response.status, body: await response.json() };
+  };
+
+  let r = await health(complete);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.checks.database.ok, true);
+  assert.deepEqual(r.body.checks.database.tables, CORE_TABLES, 'the existing tables field is kept');
+  assert.deepEqual(r.body.migrations.map((entry) => entry.name), migrations, 'every migration is reported');
+  assert.ok(r.body.migrations.every((entry) => entry.applied === true));
+
+  r = await health(behind);
+  assert.equal(r.status, 503, 'code that needs a missing migration is not a healthy deployment');
+  assert.equal(r.body.ok, false);
+  assert.equal(r.body.checks.database.missing, undefined, 'core tables are all there');
+  assert.match(r.body.checks.database.detail, /0011_apple_lite\.sql \([^)]*users\.apple_expires_at/);
+  assert.match(r.body.checks.database.detail, /paste db\/0011-upgrade\.sql, then db\/0012-upgrade\.sql/);
+
+  r = await health(empty);
+  assert.equal(r.status, 503);
+  assert.deepEqual(r.body.checks.database.missing, CORE_TABLES, 'an empty database still names the core tables');
+  assert.deepEqual(r.body.checks.database.tables, []);
+  assert.match(r.body.checks.database.detail, /apply-manually\.sql/);
+
+  console.log(
+    `Schema file checks passed: apply-manually.sql matches ${migrations.length} migrations and re-runs cleanly, ` +
+      `${upgrades.length} comment-free upgrade files each match their migration flattened onto one line, ` +
+      'and the health manifest lists exactly what every migration creates.',
+  );
+} finally {
+  delete globalThis.__schemaFiles;
+  rmSync(directory, { recursive: true, force: true });
+}

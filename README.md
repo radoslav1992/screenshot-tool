@@ -72,8 +72,8 @@ CI=1 npm run dev
 ```
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
-retention, push, Apple, commerce, capture engine, auth and billing) against SQLite and local Chromium; no
-real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
+retention, push, Apple, commerce, capture engine, auth and billing, D1 schema files) against SQLite and
+local Chromium; no real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
 shape the app decodes.
@@ -149,17 +149,23 @@ npx wrangler kv namespace create RATE
 
 ### Checking a deployment
 
-`GET /api/health` reports whether each binding is wired up and whether the D1 schema exists. It
-returns booleans and setup hints only — no data, no credentials.
+`GET /api/health` reports whether each binding is wired up and which D1 migrations the database
+has. It returns booleans, schema object names and setup hints only — no data, no credentials.
 
 ```bash
 curl https://your-domain/api/health
 # {"ok":true,"checks":{"database":{"ok":true,…},"storage":{"ok":true},"kv":{"ok":true},
-#  "renderer":{"ok":true,"engine":"binding"}}}
+#  "renderer":{"ok":true,"engine":"binding"}},
+#  "migrations":[{"name":"0001_init.sql","applied":true},…]}
 ```
 
 A deployment whose schema was never applied answers `503` with `missing: ["users", …]`, and signup
-fails with `schema_missing` rather than a generic error. Server-side causes are logged with a
+fails with `schema_missing` rather than a generic error. Because production deploys before anyone
+applies the migration that came with it, every later migration is checked too, by the tables,
+columns and indexes it creates (listed in `src/lib/schema-manifest.ts`). One that is missing, or
+only partly applied, also answers `503`, with an entry such as
+`{"name":"0011_apple_lite.sql","applied":false,"missing":["apple_accounts","users.free_quota",…],"upgrade":"db/0011-upgrade.sql"}`
+and a `database.detail` naming the upgrade files to paste, in order. Server-side causes are logged with a
 context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
 
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and

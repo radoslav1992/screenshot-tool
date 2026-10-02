@@ -18,6 +18,7 @@ globalThis.__fileAccess = {
           size: 4,
           ...(mode === 'conditional' ? {} : { body: 'test' }),
           ...(mode === 'range' ? { range: { offset: 0, length: 4 } } : {}),
+          ...(mode === 'suffix' ? { range: { suffix: 2 } } : {}),
         };
       },
     },
@@ -44,7 +45,7 @@ const get = (token = '', user, range = false) => {
     params: { id: 'capture', name: 'capture.png' },
     locals: { user: user ? { id: user } : null },
     url,
-    request: new Request(url, { headers: range ? { range: 'bytes=0-3' } : {} }),
+    request: new Request(url, { headers: range ? { range: range === true ? 'bytes=0-3' : range } : {} }),
   });
 };
 for (const [token, user] of [
@@ -58,16 +59,20 @@ for (const [token, user] of [
 }
 assert.equal(reads, 0, 'Unauthorized requests must never read storage');
 assert.equal((await get('', 'owner')).headers.get('access-control-allow-origin'), null);
-for (const [nextMode, expected] of [
-  ['body', 200],
-  ['conditional', 304],
-  ['range', 206],
+for (const [nextMode, expected, contentRange] of [
+  ['body', 200, null],
+  ['conditional', 304, null],
+  ['range', 206, 'bytes 0-3/4'],
+  // `bytes=-2`: the last two bytes are still a partial response.
+  ['suffix', 206, 'bytes 2-3/4'],
 ]) {
   mode = nextMode;
-  const response = await get('valid-token', undefined, mode === 'range');
+  const range = mode === 'range' ? true : mode === 'suffix' ? 'bytes=-2' : false;
+  const response = await get('valid-token', undefined, range);
   assert.equal(response.status, expected);
+  assert.equal(response.headers.get('content-range'), contentRange);
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
   assert.equal(response.headers.get('access-control-allow-credentials'), null);
 }
 delete globalThis.__fileAccess;
-console.log('File access checks passed: unauthorized requests, owner privacy, and token CORS for 200/206/304.');
+console.log('File access checks passed: unauthorized requests, owner privacy, and token CORS for 200/206/304, and suffix ranges.');

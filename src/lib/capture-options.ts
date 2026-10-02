@@ -113,7 +113,7 @@ export const FRAME_LIST = [
 export const PRESETS: Record<DeviceId | FrameId, ViewportPreset> = { ...DEVICES, ...FRAMES };
 
 export function isFrameId(id: string): id is FrameId {
-  return id in FRAMES;
+  return Object.hasOwn(FRAMES, id);
 }
 
 export const MODES: Array<{
@@ -230,6 +230,81 @@ const PRIVATE_HOST_PATTERNS: RegExp[] = [
   /^metadata\.google\.internal$/i,
 ];
 
+/** Eight 16-bit groups, or null when the text is not an IPv6 address. */
+function ipv6Groups(text: string): number[] | null {
+  let host = text;
+  // A dotted IPv4 tail (`::ffff:127.0.0.1`) is two groups spelled differently.
+  const tail = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (tail) {
+    const octets = tail.slice(2).map(Number);
+    if (octets.some((octet) => octet > 255)) return null;
+    host = `${tail[1]}${((octets[0]! << 8) | octets[1]!).toString(16)}:${((octets[2]! << 8) | octets[3]!).toString(16)}`;
+  }
+  const halves = host.split('::');
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (!part) return [];
+    const groups = part.split(':');
+    return groups.every((group) => /^[0-9a-f]{1,4}$/.test(group)) ? groups.map((group) => parseInt(group, 16)) : null;
+  };
+  const head = parse(halves[0]!);
+  const rest = halves.length === 2 ? parse(halves[1]!) : [];
+  if (!head || !rest) return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  const missing = 8 - head.length - rest.length;
+  return missing >= 1 ? [...head, ...new Array<number>(missing).fill(0), ...rest] : null;
+}
+
+/**
+ * The IPv4 address an IPv6 one stands for, when it embeds one: mapped
+ * (`::ffff:a.b.c.d`), the deprecated compatible form (`::a.b.c.d`), translated
+ * (`::ffff:0:a.b.c.d`) and NAT64 (`64:ff9b::a.b.c.d`). A loopback address in
+ * any of these spellings is still a loopback address.
+ */
+function embeddedIPv4(groups: number[]): string | null {
+  const zero = (from: number, to: number) => groups.slice(from, to).every((group) => group === 0);
+  const embeds =
+    (zero(0, 5) && (groups[5] === 0xffff || groups[5] === 0)) ||
+    (zero(0, 4) && groups[4] === 0xffff && groups[5] === 0) ||
+    (groups[0] === 0x64 && groups[1] === 0xff9b && zero(2, 6));
+  if (!embeds) return null;
+  const [high, low] = [groups[6]!, groups[7]!];
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
+/**
+ * Whether a hostname names somewhere a capture must not reach: loopback,
+ * private, link-local, CGNAT or a cloud metadata name.
+ *
+ * Hostnames are normalised before they are judged, because each of these is
+ * the same place as the plain spelling the patterns know: a trailing dot
+ * (`localhost.`, `metadata.google.internal.`), brackets, and IPv6 forms of an
+ * IPv4 address (`[::ffff:127.0.0.1]`, which the URL parser rewrites as
+ * `[::ffff:7f00:1]`). Shared with the renderer, which asks the same question
+ * of every subrequest a page makes.
+ */
+export function isPrivateHost(hostname: string): boolean {
+  let host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+  if (!host) return true;
+  const groups = host.includes(':') ? ipv6Groups(host) : null;
+  if (groups) {
+    const ipv4 = embeddedIPv4(groups);
+    if (ipv4) {
+      host = ipv4;
+    } else {
+      const first = groups[0]!;
+      return (
+        // The unspecified address reaches this machine on most stacks.
+        groups.every((group) => group === 0) ||
+        (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1) ||
+        (first & 0xfe00) === 0xfc00 || // unique-local fc00::/7
+        (first & 0xffc0) === 0xfe80 // link-local fe80::/10
+      );
+    }
+  }
+  return PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(host));
+}
+
 /** Public wrapper: the same validation a capture URL gets, for a sitemap. */
 export function assertPublicCaptureUrl(raw: string): URL {
   return assertPublicUrl(raw);
@@ -250,16 +325,17 @@ function assertPublicUrl(raw: string): URL {
     throw badRequest('That does not look like a valid hostname.', 'url');
   }
 
-  const host = parsed.hostname.replace(/^\[|\]$/g, '');
-  if (PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(host))) {
+  if (isPrivateHost(parsed.hostname)) {
     throw badRequest('Private and loopback addresses cannot be captured.', 'url');
   }
 
+  // `example.com.` is `example.com`, so it is compared without the dot.
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').replace(/\.+$/, '').toLowerCase();
   const denylist = (env.CAPTURE_HOST_DENYLIST ?? '')
     .split(',')
-    .map((entry) => entry.trim().toLowerCase())
+    .map((entry) => entry.trim().toLowerCase().replace(/\.+$/, ''))
     .filter(Boolean);
-  if (denylist.includes(host.toLowerCase())) {
+  if (denylist.includes(host)) {
     throw badRequest('That host is not allowed.', 'url');
   }
 
@@ -346,12 +422,14 @@ export function parseCaptureOptions(input: Record<string, string>): CaptureOptio
   let height: number;
   let scale: number;
 
-  if (deviceRaw === 'custom' || (hasCustomSize && !(deviceRaw in PRESETS))) {
+  // Own keys only: `in` would find `constructor` and `__proto__` on the prototype.
+  const isPreset = Object.hasOwn(PRESETS, deviceRaw);
+  if (deviceRaw === 'custom' || (hasCustomSize && !isPreset)) {
     device = 'custom';
     width = intInRange(input.width, 1280, LIMITS.minWidth, LIMITS.maxWidth, 'width');
     height = intInRange(input.height, 800, LIMITS.minHeight, LIMITS.maxHeight, 'height');
     scale = 2;
-  } else if (deviceRaw in PRESETS) {
+  } else if (isPreset) {
     const preset = PRESETS[deviceRaw as DeviceId | FrameId];
     device = preset.id;
     width = intInRange(input.width, preset.width, LIMITS.minWidth, LIMITS.maxWidth, 'width');

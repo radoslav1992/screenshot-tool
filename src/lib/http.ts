@@ -46,6 +46,22 @@ export function badRequest(message: string, param?: string): HttpError {
 }
 
 /**
+ * One JSON value as the string a form field would have carried.
+ *
+ * Numbers, booleans and lists of them read as they always have — `sizes:
+ * ["desktop","mobile"]` is `desktop,mobile`. Objects, and lists holding
+ * objects, become JSON text, which is what the parameters that take them parse:
+ * `headers: {…}` and `actions: [{…}]` used to arrive as "[object Object]".
+ */
+function flatten(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return String(value);
+  if (Array.isArray(value) && value.every((entry) => entry === null || typeof entry !== 'object')) {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+/**
  * Reads a request body as a plain object, accepting JSON, form-encoded and
  * multipart bodies so `curl -d url=…` works exactly like the docs promise.
  */
@@ -60,7 +76,7 @@ export async function readBody(request: Request): Promise<Record<string, string>
       const out: Record<string, string> = {};
       for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
         if (value === null || value === undefined) continue;
-        out[key] = typeof value === 'string' ? value : String(value);
+        out[key] = typeof value === 'string' ? value : flatten(value);
       }
       return out;
     }

@@ -8,6 +8,20 @@ export const prerender = false;
 
 export const OPTIONS: APIRoute = () => preflight();
 
+/** `urls` as a JSON array of strings. Anything else is the caller's mistake, not a 500. */
+function parseUrlList(raw: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw badRequest('`urls` looks like a JSON array but is not valid JSON.', 'urls');
+  }
+  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== 'string')) {
+    throw badRequest('`urls` must be a JSON array of strings.', 'urls');
+  }
+  return parsed as string[];
+}
+
 /**
  * POST /v1/batch
  *
@@ -36,7 +50,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     } else {
       const raw = (body.urls ?? '').trim();
       if (!raw) throw badRequest('Send `urls` or a `sitemap`.', 'urls');
-      urls = (raw.startsWith('[') ? (JSON.parse(raw) as string[]) : raw.split(/[\n,]/))
+      urls = (raw.startsWith('[') ? parseUrlList(raw) : raw.split(/[\n,]/))
         .map((entry) => String(entry).trim())
         .filter(Boolean);
     }

@@ -13,8 +13,11 @@ export interface GuardResult {
 /**
  * Authenticates a public API request, enforces the plan's API entitlement and
  * applies per-key rate limiting. Returns headers to merge into the response.
+ *
+ * `cost` is how many units of the rate limit the request draws — two for a
+ * comparison, which runs two captures.
  */
-export async function guardApiRequest(request: Request): Promise<GuardResult> {
+export async function guardApiRequest(request: Request, cost = 1): Promise<GuardResult> {
   const auth = await authenticateApiKey(request);
   const plan = getPlan(auth.user.plan);
 
@@ -35,7 +38,7 @@ export async function guardApiRequest(request: Request): Promise<GuardResult> {
   await assertVerified(auth.user);
 
   const limit = API_RATE_LIMIT[plan.id];
-  const rate = await checkRateLimit(`key:${auth.keyId}`, limit);
+  const rate = await checkRateLimit(`key:${auth.keyId}`, limit, 60, cost);
   const headers = { ...CORS_HEADERS, ...rateLimitHeaders(rate) };
 
   if (!rate.ok) {

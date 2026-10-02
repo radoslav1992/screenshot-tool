@@ -52,8 +52,8 @@ async function loadRenderer() {
     // Bindings the renderer reads at request time; none of them on this path.
     'cloudflare:workers': 'export const env = {};',
     // The pool owns the real browser. This check brings its own.
-    'browser-pool': `export const acquireBrowser = () => { throw new Error('not used'); };
-                     export const releaseBrowser = () => {};`,
+    'browser-pool': `export const openPage = () => { throw new Error('not used'); };
+                     export const closePage = () => {};`,
     // Only reachable through the Browser Rendering binding, which is not here.
     '@cloudflare/puppeteer': 'export default {};',
   };

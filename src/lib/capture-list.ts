@@ -9,9 +9,26 @@ export interface CaptureListOptions {
   cursor?: string;
   search?: string;
   offset?: number;
+  /** Fetch one row past the page, to learn whether another page follows. */
+  lookahead?: boolean;
 }
+/** The page size a list request gets: 1–100, 30 when unsaid. */
+export function listLimit(limit: number | undefined): number {
+  return Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit!), 1), 100) : 30;
+}
+
+/**
+ * Where the next page starts: the last row's timestamp and id. The id is what
+ * keeps rows created in the same millisecond from falling between two pages.
+ */
+export function captureCursor(row: { created_at: string; id: string }): string {
+  return `${row.created_at}~${row.id}`;
+}
+
 export function captureListQuery(userId: string, options: CaptureListOptions = {}) {
-  const limit = Number.isFinite(options.limit) ? Math.min(Math.max(Math.trunc(options.limit!), 1), 100) : 30;
+  // `lookahead` asks for one row more than the page, so the caller can tell
+  // whether there is a next page without fetching it.
+  const limit = listLimit(options.limit) + (options.lookahead ? 1 : 0);
   const offset = Number.isFinite(options.offset) ? Math.min(Math.max(Math.trunc(options.offset!), 0), 10000) : 0;
   const clauses = ['captures.user_id = ?'];
   const binds: Array<string | number> = [userId];
@@ -33,8 +50,16 @@ export function captureListQuery(userId: string, options: CaptureListOptions = {
     binds.push(options.mode);
   }
   if (options.cursor) {
-    clauses.push('created_at < ?');
-    binds.push(options.cursor);
+    // A bare timestamp is the cursor format before ids were added; it still
+    // works, it just cannot split rows that share a timestamp.
+    const at = options.cursor.lastIndexOf('~');
+    if (at > 0) {
+      clauses.push('(captures.created_at < ? OR (captures.created_at = ? AND captures.id < ?))');
+      binds.push(options.cursor.slice(0, at), options.cursor.slice(0, at), options.cursor.slice(at + 1));
+    } else {
+      clauses.push('created_at < ?');
+      binds.push(options.cursor);
+    }
   }
   const search = options.search?.trim().slice(0, 200);
   if (search) {

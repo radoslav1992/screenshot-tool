@@ -52,12 +52,23 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
 
   const range = object.range;
   let status = 200;
-  if (rangeRequested && range && 'offset' in range && object.size) {
-    const offset = range.offset ?? 0;
-    const length = ('length' in range ? range.length : undefined) ?? object.size - offset;
-    headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
-    headers.set('accept-ranges', 'bytes');
-    status = 206;
+  if (rangeRequested && range && object.size) {
+    // `bytes=-N` comes back from R2 as a suffix: the last N bytes, which is a
+    // partial body like any other and has to be labelled as one.
+    let offset: number;
+    let length: number;
+    if ('suffix' in range && range.suffix !== undefined) {
+      length = Math.min(range.suffix, object.size);
+      offset = object.size - length;
+    } else {
+      offset = ('offset' in range ? range.offset : undefined) ?? 0;
+      length = Math.min(('length' in range ? range.length : undefined) ?? object.size - offset, object.size - offset);
+    }
+    if (length > 0) {
+      headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
+      headers.set('accept-ranges', 'bytes');
+      status = 206;
+    }
   }
 
   return new Response(object.body as unknown as ReadableStream, { status, headers });

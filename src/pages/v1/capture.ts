@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { apiErrorResponse, guardApiRequest, preflight, touchApiKey } from '../../lib/api-guard';
 import { parseCaptureOptions } from '../../lib/capture-options';
-import { createCaptureRow, runCapture, toDTO } from '../../lib/captures';
+import { captureErrorStatus, createCaptureRow, runCapture, toDTO } from '../../lib/captures';
 import { HttpError, json, readBody } from '../../lib/http';
 
 export const prerender = false;
@@ -38,7 +38,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     const finished = await runCapture(row, options);
     if (finished.status === 'error') {
-      return json(toDTO(finished, origin), { status: 502, headers });
+      // Still the capture as the body, now with `error_type`; the status says
+      // which kind of failure it was — 400 for a page that would not load, 504
+      // for one that took too long — instead of 502 for all of them.
+      return json(toDTO(finished, origin), { status: captureErrorStatus(finished), headers });
     }
     return json(toDTO(finished, origin), { status: 201, headers });
   } catch (error) {

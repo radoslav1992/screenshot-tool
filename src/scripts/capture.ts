@@ -25,6 +25,7 @@ export function wireCaptureForm(): void {
 
   const urlInput = form.querySelector<HTMLInputElement>('#url')!;
   const urlState = form.querySelector<HTMLElement>('#url-state')!;
+  const urlError = form.querySelector<HTMLElement>('#url-error');
   const errorBox = form.querySelector<HTMLElement>('#capture-error')!;
   const submit = form.querySelector<HTMLButtonElement>('#capture-submit')!;
   const customToggle = form.querySelector<HTMLButtonElement>('#custom-toggle');
@@ -35,14 +36,32 @@ export function wireCaptureForm(): void {
     errorBox.hidden = false;
   };
 
+  const URL_HINT = 'Enter a full web address, like stripe.com/pricing.';
+  // Say what is wrong only once someone has left the field or tried to submit,
+  // not while they are still typing the first characters.
+  let urlTouched = false;
+  const setUrlError = (message: string) => {
+    if (message) urlInput.setAttribute('aria-invalid', 'true');
+    else urlInput.removeAttribute('aria-invalid');
+    if (urlError) {
+      urlError.textContent = message;
+      urlError.hidden = !message;
+    }
+  };
   const validateUrl = () => {
     const candidate = normaliseUrl(urlInput.value);
-    urlState.hidden = !(candidate && URL_PATTERN.test(candidate) && candidate.includes('.'));
+    const wellFormed = !!candidate && URL_PATTERN.test(candidate);
+    urlState.hidden = !(wellFormed && candidate.includes('.'));
+    if (wellFormed || !urlTouched) setUrlError('');
+    else setUrlError(candidate ? URL_HINT : 'Enter a page URL to capture.');
   };
 
   urlInput.addEventListener('input', validateUrl);
   urlInput.addEventListener('blur', () => {
-    if (urlInput.value.trim()) urlInput.value = normaliseUrl(urlInput.value);
+    if (urlInput.value.trim()) {
+      urlInput.value = normaliseUrl(urlInput.value);
+      urlTouched = true;
+    }
     validateUrl();
   });
   validateUrl();
@@ -158,7 +177,9 @@ export function wireCaptureForm(): void {
     errorBox.hidden = true;
 
     const url = normaliseUrl(urlInput.value);
+    urlTouched = true;
     if (!url || !URL_PATTERN.test(url)) {
+      validateUrl();
       showError('Enter a page URL to capture, like stripe.com/pricing');
       urlInput.focus();
       return;

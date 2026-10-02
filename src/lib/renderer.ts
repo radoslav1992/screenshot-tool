@@ -2,12 +2,12 @@ import { env } from 'cloudflare:workers';
 import { HttpError } from './http';
 import { buildFacts, type PageFacts } from './page-facts';
 import { readFactsInPage } from './page-facts-fn';
-import { LIMITS, type CaptureOptions } from './capture-options';
-import { acquireBrowser, releaseBrowser } from './browser-pool';
-import { applyWatermark, watermarkScript } from './watermark';
+import { LIMITS, isPrivateHost, type CaptureOptions } from './capture-options';
+import { closePage, openPage, type PageLease } from './browser-pool';
+import { applyWatermark, watermarkId, watermarkScript } from './watermark';
 import { PII_PATTERNS, redactInPage } from './redact-fn';
 import { CONSENT_SELECTORS, CONSENT_TEXTS, dismissConsentInPage } from './actions';
-import { hasRequestAuth } from './request-auth';
+import { hasRequestAuth, type RequestAuth } from './request-auth';
 import { DEVICES } from './capture-options';
 
 export interface RenderedFile {
@@ -34,6 +34,14 @@ export interface RenderResult {
   durationMs: number;
 }
 
+/**
+ * Takes each `sizes` file the moment it is shot. Several full-page images at
+ * 2–3x come to tens of megabytes together, and a Worker has 128 MB; handing
+ * each one on as it is made means only one is held at a time. Files given to
+ * the sink are not repeated in `RenderResult.files`.
+ */
+export type FileSink = (file: RenderedFile) => Promise<void>;
+
 const NAV_TIMEOUT_MS = 30_000;
 /** How long a single action may take before it counts as failed. */
 const ACTION_TIMEOUT_MS = 10_000;
@@ -46,6 +54,17 @@ const SETTLE_MS = 250;
  * short enough that a page which never stops talking still returns quickly.
  */
 const NETWORK_IDLE_BUDGET_MS = 6_000;
+
+/**
+ * The most a capture may hold its browser, from the open page to the last file.
+ *
+ * Navigation (30 s), settling (6 s) and the longest `delay` (15 s) leave a slow
+ * but healthy capture well inside it, with room for actions and a multi-size
+ * scroll. A page still busy after this is hung rather than slow — a script in a
+ * loop, a screenshot that never returns — and closing it gives the slot back.
+ * It also stays under the two minutes a synchronous client waits for an answer.
+ */
+const CAPTURE_DEADLINE_MS = 100_000;
 
 /** Best effort: a page that will not go quiet is still worth photographing. */
 async function settleNetwork(page: any): Promise<void> {
@@ -62,6 +81,11 @@ async function settleNetwork(page: any): Promise<void> {
   }
 }
 
+/**
+ * Ad and analytics hosts, matched against a request's hostname and its parent
+ * domains. An entry ending in a dot (`criteo.`) stands for that name under any
+ * suffix — `criteo.com`, `static.criteo.net`.
+ */
 const AD_HOST_FRAGMENTS = [
   'doubleclick.net',
   'googlesyndication.com',
@@ -78,6 +102,25 @@ const AD_HOST_FRAGMENTS = [
   'criteo.',
   'adnxs.com',
 ];
+
+/**
+ * Whether a request goes to an ad host. The hostname, not the whole URL: a
+ * first-party page whose path or query happens to mention `facebook.net` is
+ * not an advert.
+ */
+export function isAdHost(raw: string): boolean {
+  let host: string;
+  try {
+    host = new URL(raw).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return AD_HOST_FRAGMENTS.some((entry) =>
+    entry.endsWith('.')
+      ? host.startsWith(entry) || host.includes(`.${entry}`)
+      : host === entry || host.endsWith(`.${entry}`),
+  );
+}
 
 function contentTypeFor(format: CaptureOptions['format']): { contentType: string; ext: string } {
   if (format === 'pdf') return { contentType: 'application/pdf', ext: 'pdf' };
@@ -107,20 +150,86 @@ function hasRestCredentials(): boolean {
 }
 
 /**
+ * The browser could not be reached at all — launched, connected to, or given a
+ * page. The one failure the REST API may stand in for: nothing about the
+ * capture itself has been tried yet.
+ */
+class BindingUnavailable extends Error {
+  readonly reason: unknown;
+
+  constructor(reason: unknown) {
+    super(reason instanceof Error ? reason.message : String(reason));
+    this.reason = reason;
+  }
+
+  /** What the caller is told when there is nothing to fall back to. Worth retrying. */
+  toHttpError(): HttpError {
+    if (this.reason instanceof HttpError) return this.reason;
+    return new HttpError(503, 'browser_unavailable', 'The rendering browser could not be reached. Try again in a moment.');
+  }
+}
+
+/**
+ * What a capture asks for that the REST endpoint cannot do, by parameter.
+ *
+ * The REST path sends a URL, a viewport, a delay and the mark, and nothing else.
+ * Whatever protects the caller — redaction, hiding, masks, credentials — or
+ * changes what the file is made of must never be silently dropped, on any
+ * deployment.
+ *
+ * Standing in for a binding that failed is held to a stricter standard: the
+ * picture must also be the one the binding would have taken, ads and consent
+ * dialog included. Otherwise a watch, compared against a baseline the binding
+ * took, reports a change that is only the renderer. A deployment that has
+ * nothing but REST is consistent with itself, so there those stay best-effort.
+ */
+export function restUnsupported(options: CaptureOptions, standingIn: boolean): string[] {
+  const out: string[] = [];
+  if (options.sizes.length) out.push('sizes');
+  if (options.hide.length) out.push('hide');
+  if (options.blur.length) out.push('blur');
+  if (options.redactPii) out.push('redact_pii');
+  if (options.ignoreRegions?.length) out.push('ignore_regions');
+  if (hasRequestAuth(options.auth)) out.push('headers, cookies and basic_auth');
+  if (options.actions.length) out.push('actions');
+  if (options.darkMode) out.push('dark_mode');
+  if (standingIn) {
+    if (options.html) out.push('html');
+    if (options.mode === 'series') out.push('mode=series');
+    if (options.blockAds) out.push('block_ads');
+    if (options.dismissConsent) out.push('dismiss_consent');
+    if (options.facts || options.monitorSelector) out.push('facts');
+  }
+  return out;
+}
+
+/**
  * Renders a capture. Prefers the Browser Rendering binding (supports every
  * mode); falls back to the REST Browser Rendering API when only credentials
- * are configured, which covers everything except scroll series.
+ * are configured, or when the binding cannot be reached and the capture asks
+ * for nothing REST cannot do.
  */
-export async function render(options: CaptureOptions): Promise<RenderResult> {
+export async function render(options: CaptureOptions, onFile?: FileSink): Promise<RenderResult> {
   const started = Date.now();
 
   if (hasBrowserBinding()) {
     try {
-      const outcome = await renderWithBinding(options);
+      const outcome = await renderWithBinding(options, onFile);
       return { ...outcome, engine: 'binding', durationMs: Date.now() - started };
     } catch (error) {
-      if (!hasRestCredentials()) throw asRenderError(error);
-      // Binding unavailable in this environment — try the REST API instead.
+      /*
+       * Only a browser that could not be reached is a reason to try REST.
+       * Anything that failed inside the page — a redaction, an action, a
+       * timeout — is the capture's answer, and REST would only load the same
+       * page again without what the caller asked for.
+       */
+      if (!(error instanceof BindingUnavailable)) throw asRenderError(error);
+      console.error('[render] browser binding unavailable', error.reason);
+      const unsupported = restUnsupported(options, true);
+      if (!hasRestCredentials() || unsupported.length) {
+        if (hasRestCredentials()) console.log(`[render] not falling back to REST: ${unsupported.join(', ')}`);
+        throw error.toHttpError();
+      }
     }
   }
 
@@ -132,6 +241,14 @@ export async function render(options: CaptureOptions): Promise<RenderResult> {
         503,
         'renderer_unavailable',
         'Rendering your own HTML needs the Browser Rendering binding, which this deployment does not have.',
+      );
+    }
+    const unsupported = restUnsupported(options, false);
+    if (unsupported.length) {
+      throw new HttpError(
+        501,
+        'unsupported_option',
+        `This capture uses ${unsupported.join(', ')}, which only the Browser Rendering binding can honour, and this deployment does not have it.`,
       );
     }
     const files = await renderWithRest(options);
@@ -171,7 +288,7 @@ function asRenderError(error: unknown): HttpError {
  * bargain `assertPublicUrl` makes for capture URLs, and the same limits — a
  * public hostname pointing at a private address is not caught here either.
  */
-function isPublicResource(raw: string): boolean {
+export function isPublicResource(raw: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -182,49 +299,93 @@ function isPublicResource(raw: string): boolean {
   if (parsed.protocol === 'data:' || parsed.protocol === 'blob:') return true;
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
 
-  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  return !PRIVATE_RESOURCE_PATTERNS.some((pattern) => pattern.test(host));
+  return !isPrivateHost(parsed.hostname);
 }
 
-const PRIVATE_RESOURCE_PATTERNS: RegExp[] = [
-  /^localhost$/,
-  /\.localhost$/,
-  /^127\./,
-  /^0\./,
-  /^10\./,
-  /^192\.168\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^169\.254\./,
-  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
-  /^::1$/,
-  /^f[cd][0-9a-f]{2}:/,
-  /^fe80:/,
-  /\.local$/,
-  /\.internal$/,
-];
+/**
+ * The origins that are the page being captured. Credentials go to these and
+ * nowhere else; the same host's upgrade to https is still the page asked for.
+ */
+export function targetOrigins(url: string): Set<string> {
+  const target = new URL(url);
+  const origins = new Set([target.origin]);
+  if (target.protocol === 'http:' && !target.port) origins.add(`https://${target.hostname}`);
+  return origins;
+}
 
-async function renderWithBinding(options: CaptureOptions): Promise<PageOutcome> {
-  const puppeteer = (await import('@cloudflare/puppeteer')).default;
-  const lease = await acquireBrowser(puppeteer);
-  let succeeded = false;
-  let page: any;
-
+function isTarget(raw: string, origins: Set<string>): boolean {
   try {
-    page = await lease.browser.newPage();
-    const outcome = await capturePage(page, options);
+    return origins.has(new URL(raw).origin);
+  } catch {
+    return false;
+  }
+}
+
+/** The headers a capture's credentials amount to. */
+function credentialHeaders(auth: RequestAuth): Record<string, string> {
+  const headers = { ...auth.headers };
+  if (auth.basic) {
+    // Puppeteer's authenticate() answers a 401 challenge; sending the header
+    // outright also covers servers that never issue one.
+    headers.authorization = `Basic ${btoa(`${auth.basic.username}:${auth.basic.password}`)}`;
+  }
+  return headers;
+}
+
+function isMainFrameNavigation(page: any, request: any): boolean {
+  try {
+    return Boolean(request.isNavigationRequest()) && request.frame() === page.mainFrame();
+  } catch {
+    return false;
+  }
+}
+
+/** Page calls that reject once the page is gone are not worth a log line. */
+function quietly(result: unknown): void {
+  if (result && typeof (result as Promise<unknown>).catch === 'function') {
+    (result as Promise<unknown>).catch(() => undefined);
+  }
+}
+
+/**
+ * Races a capture against its deadline. On expiry `onExpire` closes the page,
+ * which fails whatever is still waiting on it, so the browser is released
+ * rather than held by a page that will never finish.
+ */
+export function withDeadline<T>(work: Promise<T>, ms: number, onExpire: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onExpire();
+      reject(new HttpError(504, 'render_timeout', 'The page took too long to capture and was stopped.'));
+    }, ms);
+  });
+  // The loser of the race still settles later; that must not surface as an
+  // unhandled rejection.
+  work.catch(() => undefined);
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
+async function renderWithBinding(options: CaptureOptions, onFile?: FileSink): Promise<PageOutcome> {
+  let session: PageLease;
+  try {
+    const puppeteer = (await import('@cloudflare/puppeteer')).default;
+    session = await openPage(puppeteer);
+  } catch (error) {
+    throw new BindingUnavailable(error);
+  }
+
+  let succeeded = false;
+  try {
+    const outcome = await withDeadline(capturePage(session.page, options, onFile), CAPTURE_DEADLINE_MS, () => {
+      quietly(session.page.close());
+    });
     succeeded = true;
     return outcome;
   } finally {
-    // Always close the page. A reused session outlives the request, so a page
-    // left open would leak into the next capture.
-    if (page) {
-      try {
-        await page.close();
-      } catch {
-        /* the session may already be gone */
-      }
-    }
-    await releaseBrowser(lease, succeeded);
+    // Always close the page and its context. A reused session outlives the
+    // request, so anything left open would leak into the next capture.
+    await closePage(session, succeeded);
   }
 }
 
@@ -236,7 +397,60 @@ interface PageOutcome {
   redirects?: string[];
 }
 
-async function capturePage(page: any, options: CaptureOptions): Promise<PageOutcome> {
+/**
+ * Ignore-region masks, then hiding, blurring and redaction.
+ *
+ * Safe to run more than once: masks from an earlier pass are replaced, and
+ * what was already hidden or covered stays so. That is what lets each `sizes`
+ * viewport be masked against its own layout rather than the first one's — a
+ * responsive page can put different content on screen at a different width.
+ */
+async function applyMasks(page: any, options: CaptureOptions): Promise<void> {
+  if (options.ignoreRegions?.length) {
+    await page.evaluate((regions: Array<{ x: number; y: number; width: number; height: number }>) => {
+      document.querySelectorAll('[data-esc-mask]').forEach((node) => node.remove());
+      for (const region of regions) {
+        const mask = document.createElement('div');
+        mask.setAttribute('aria-hidden', 'true');
+        mask.setAttribute('data-esc-mask', '');
+        Object.assign(mask.style, {
+          position: 'absolute',
+          left: `${region.x}px`,
+          top: `${region.y}px`,
+          width: `${region.width}px`,
+          height: `${region.height}px`,
+          background: '#20251e',
+          zIndex: '2147483647',
+          pointerEvents: 'none',
+        });
+        document.documentElement.appendChild(mask);
+      }
+    }, options.ignoreRegions);
+  }
+
+  if (options.hide.length || options.blur.length || options.redactPii) {
+    try {
+      const applied = await page.evaluate(
+        redactInPage,
+        { hide: options.hide, blur: options.blur, redactPii: options.redactPii },
+        PII_PATTERNS,
+      );
+      if (applied?.unmatched?.length) {
+        console.log(`[render] selectors matched nothing: ${applied.unmatched.join(', ')}`);
+      }
+    } catch (error) {
+      // A capture that quietly skipped its redaction would be worse than no
+      // capture: the caller asked for something to be covered.
+      throw new HttpError(
+        502,
+        'redaction_failed',
+        `The page could not be redacted, so nothing was captured: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink): Promise<PageOutcome> {
   {
     await page.setViewport({
       width: options.width,
@@ -247,31 +461,50 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     });
 
     /*
-     * Interception does two jobs. Blocking ad hosts is a quality choice the
-     * caller makes. Blocking private destinations is not optional for inline
-     * markup: `html` never passes through assertPublicUrl, because there is no
-     * address to check, so `<img src="http://192.168.0.1/">` would otherwise
-     * make the renderer fetch something on a private network on request. Here
-     * every subrequest is judged on its own.
+     * Every request the page makes is judged on its own, for three reasons.
+     *
+     * Private destinations are blocked for every capture, not only inline
+     * markup. The capture URL was checked, but a public page can redirect to
+     * a private address, or point an <img> at one, and the browser would
+     * follow; each redirect hop arrives here as a request of its own. For
+     * `html` there is no address to check at all.
+     *
+     * Credentials go to the page being captured and nowhere else. Sent as
+     * extra headers on every request, a customer's Authorization header would
+     * reach every analytics host the page loads.
+     *
+     * Blocking ad hosts is a quality choice the caller makes — never for the
+     * page's own document, whatever its address looks like.
      */
-    const guardPrivate = Boolean(options.html);
-    if (options.blockAds || guardPrivate) {
-      try {
-        await page.setRequestInterception(true);
-        page.on('request', (request: any) => {
-          const url = String(request.url());
-          if (options.blockAds && AD_HOST_FRAGMENTS.some((fragment) => url.includes(fragment))) {
-            request.abort();
-          } else if (guardPrivate && !isPublicResource(url)) {
-            request.abort();
-          } else {
-            request.continue();
-          }
-        });
-      } catch {
-        // Interception is best-effort; carry on without it.
-      }
+    const origins = options.html ? null : targetOrigins(options.url);
+    const credentials = hasRequestAuth(options.auth) ? credentialHeaders(options.auth) : {};
+    const sendCredentials = origins !== null && Object.keys(credentials).length > 0;
+    let blockedNavigation = false;
+
+    try {
+      await page.setRequestInterception(true);
+    } catch (error) {
+      // Without interception none of the above holds, so nothing is captured.
+      throw new HttpError(
+        502,
+        'render_failed',
+        `The browser would not let requests be checked, so nothing was captured: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
+    page.on('request', (request: any) => {
+      const url = String(request.url());
+      const navigation = isMainFrameNavigation(page, request);
+      if (!isPublicResource(url)) {
+        if (navigation) blockedNavigation = true;
+        quietly(request.abort());
+      } else if (options.blockAds && !navigation && isAdHost(url)) {
+        quietly(request.abort());
+      } else if (sendCredentials && isTarget(url, origins)) {
+        quietly(request.continue({ headers: { ...request.headers(), ...credentials } }));
+      } else {
+        quietly(request.continue());
+      }
+    });
 
     if (options.darkMode) {
       try {
@@ -282,15 +515,10 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     }
 
     if (hasRequestAuth(options.auth)) {
-      const headers = { ...options.auth.headers };
       if (options.auth.basic) {
-        // Puppeteer's authenticate() answers a 401 challenge; sending the
-        // header outright also covers servers that never issue one.
         const { username, password } = options.auth.basic;
         await page.authenticate({ username, password }).catch(() => undefined);
-        headers.authorization = `Basic ${btoa(`${username}:${password}`)}`;
       }
-      if (Object.keys(headers).length) await page.setExtraHTTPHeaders(headers);
 
       if (options.auth.cookies.length && !options.html) {
         // Scoped to the page being captured. A cookie without a domain would
@@ -326,10 +554,22 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
        * long before then. So: wait for the document, then give the network a
        * bounded chance to settle, and shoot regardless.
        */
-      const response = await page.goto(options.url, {
-        waitUntil: 'domcontentloaded',
-        timeout: NAV_TIMEOUT_MS,
-      });
+      let response: any;
+      try {
+        response = await page.goto(options.url, {
+          waitUntil: 'domcontentloaded',
+          timeout: NAV_TIMEOUT_MS,
+        });
+      } catch (error) {
+        if (blockedNavigation) {
+          throw new HttpError(
+            400,
+            'unreachable_url',
+            'The page redirected to a private or loopback address, which cannot be captured.',
+          );
+        }
+        throw error;
+      }
       status = response ? Number(response.status()) : null;
       finalUrl = page.url() ?? options.url;
       await settleNetwork(page);
@@ -380,53 +620,19 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
      * replacing its text means the information was never in the file; a blur
      * applied to finished pixels can be undone by anyone patient.
      */
-    if (options.ignoreRegions?.length) {
-      await page.evaluate((regions: Array<{ x: number; y: number; width: number; height: number }>) => {
-        for (const region of regions) {
-          const mask = document.createElement('div');
-          mask.setAttribute('aria-hidden', 'true');
-          Object.assign(mask.style, {
-            position: 'absolute',
-            left: `${region.x}px`,
-            top: `${region.y}px`,
-            width: `${region.width}px`,
-            height: `${region.height}px`,
-            background: '#20251e',
-            zIndex: '2147483647',
-            pointerEvents: 'none',
-          });
-          document.documentElement.appendChild(mask);
-        }
-      }, options.ignoreRegions);
-    }
-
-    if (options.hide.length || options.blur.length || options.redactPii) {
-      try {
-        const applied = await page.evaluate(
-          redactInPage,
-          { hide: options.hide, blur: options.blur, redactPii: options.redactPii },
-          PII_PATTERNS,
-        );
-        if (applied?.unmatched?.length) {
-          console.log(`[render] selectors matched nothing: ${applied.unmatched.join(', ')}`);
-        }
-      } catch (error) {
-        // A capture that quietly skipped its redaction would be worse than no
-        // capture: the caller asked for something to be covered.
-        throw new HttpError(
-          502,
-          'redaction_failed',
-          `The page could not be redacted, so nothing was captured: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
+    await applyMasks(page, options);
 
     // Before the watermark, so the mark is not part of what the page appears to
     // say about itself.
     let facts: PageFacts | undefined;
     if (options.facts) {
       try {
-        const raw = await page.evaluate(readFactsInPage);
+        // The title and meta tags sit outside the redacted body, so the reader
+        // covers them itself; monitor phrases are answered against all the text.
+        const raw = await page.evaluate(readFactsInPage, {
+          phrases: options.monitorPhrases,
+          redact: options.redactPii ? PII_PATTERNS.map(({ source, flags }) => ({ source, flags })) : undefined,
+        });
         facts = buildFacts({ raw, finalUrl, status, redirects });
         if (options.monitorSelector) {
           facts.monitored_element = await page.evaluate((selector: string) => {
@@ -446,7 +652,8 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
     // After the page has settled, so nothing the site renders on load can paint
     // over the mark, and after auto-scroll, so the document height it anchors to
     // is the final one.
-    if (options.watermark && options.format !== 'pdf') await applyWatermark(page, options.mode);
+    const markId = watermarkId();
+    if (options.watermark && options.format !== 'pdf') await applyWatermark(page, options.mode, markId);
 
     const extras = { facts, finalUrl, status, redirects };
 
@@ -489,6 +696,18 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
           })),
       ];
 
+      /*
+       * Masks and the mark go on again for every viewport, right before its
+       * shot. Both were placed against the previous layout, and a responsive
+       * page can show content at this width — or in a viewport as tall as the
+       * page — that the last pass never saw. The mark goes last, so a `hide`
+       * selector cannot take it with it.
+       */
+      const prepare = async (): Promise<void> => {
+        await applyMasks(page, options);
+        if (options.watermark) await applyWatermark(page, options.mode, markId);
+      };
+
       const files: RenderedFile[] = [];
       for (const [i, preset] of shots.entries()) {
         const size = preset.id;
@@ -506,21 +725,18 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
         await page.evaluate(() => window.scrollTo(0, 0));
         await sleep(SETTLE_MS);
 
-        // The mark was anchored to the previous viewport and page height, so it
-        // is re-applied against this layout. The script removes any existing
-        // one first, so marks do not stack.
-        if (options.watermark) await applyWatermark(page, options.mode);
+        await prepare();
 
         const shot =
           options.mode === 'fullpage'
-            ? await captureTallViewport(page, preset, shotOptions)
+            ? await captureTallViewport(page, preset, shotOptions, prepare)
             : {
                 data: toUint8(
                   await page.screenshot({ ...shotOptions, fullPage: false, captureBeyondViewport: false }),
                 ),
                 height: preset.height,
               };
-        files.push({
+        const file: RenderedFile = {
           data: shot.data,
           contentType,
           ext,
@@ -528,7 +744,9 @@ async function capturePage(page: any, options: CaptureOptions): Promise<PageOutc
           name: `${size}.${ext}`,
           width: preset.width,
           height: shot.height,
-        });
+        };
+        if (onFile) await onFile(file);
+        else files.push(file);
       }
       return { files, ...extras };
     }
@@ -664,6 +882,10 @@ interface ViewportPreset {
  * that was asked for: the page is measured again after the resize, and a very
  * long page is clamped rather than refused.
  *
+ * `beforeShot` runs after the last resize, right before the shutter, for what
+ * has to be placed against the final layout. A failure there is the capture's,
+ * not the viewport's, and is not answered by stitching.
+ *
  * Exported so `scripts/fullpage-check.mjs` can run this exact function against
  * a scroll-reveal page in local Chromium.
  */
@@ -671,6 +893,7 @@ export async function captureTallViewport(
   page: any,
   preset: ViewportPreset,
   shotOptions: Record<string, unknown>,
+  beforeShot?: () => Promise<void>,
 ): Promise<{ data: Uint8Array; height: number }> {
   const tallest = LIMITS.maxFullPageHeight;
   let height = Math.min(await documentHeight(page), tallest) || preset.height;
@@ -688,6 +911,7 @@ export async function captureTallViewport(
     await sleep(SETTLE_MS * 3);
   };
 
+  let preparing = false;
   try {
     await resize(height);
 
@@ -703,6 +927,12 @@ export async function captureTallViewport(
       await resize(height);
     }
 
+    if (beforeShot) {
+      preparing = true;
+      await beforeShot();
+      preparing = false;
+    }
+
     const buffer = await page.screenshot({
       ...shotOptions,
       fullPage: false,
@@ -710,6 +940,7 @@ export async function captureTallViewport(
     });
     return { data: toUint8(buffer), height };
   } catch (error) {
+    if (preparing) throw error;
     // Chrome refuses a surface beyond its texture limit, which a long page at
     // a 2x scale factor can reach. Stitching is worse on animated sites and
     // better than no screenshot at all.
@@ -723,6 +954,7 @@ export async function captureTallViewport(
     });
     await page.evaluate(() => window.scrollTo(0, 0));
     await sleep(SETTLE_MS);
+    if (beforeShot) await beforeShot();
     const buffer = await page.screenshot({ ...shotOptions, fullPage: true });
     return { data: toUint8(buffer), height: Math.min(await documentHeight(page), tallest) };
   }

@@ -3,6 +3,8 @@ import AppShell from '../../layouts/AppShell.astro';
 import CodeBlock from '../../components/CodeBlock.astro';
 import { env } from 'cloudflare:workers';
 import { getPlan } from '../../lib/plans';
+import { formatDate } from '../../lib/dates';
+import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
 const plan = getPlan(user.plan);
@@ -42,8 +44,10 @@ const params = [
   { name: 'format', desc: 'png · jpg · pdf' },
 ];
 
-const monthLabel = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const keyMeta = (key: { label: string; environment: string; created_at: string; last_used_at: string | null }) =>
+  `${key.label} · ${key.environment === 'test' ? 'test' : 'live'} · created ${formatDate(key.created_at)} · ${
+    key.last_used_at ? `last used ${formatDate(key.last_used_at)}` : 'never used'
+  }`;
 ---
 
 <AppShell title="API" tab="api">
@@ -52,98 +56,179 @@ const monthLabel = (iso: string) =>
     <span class="pill pill--quota">{plan.name} plan</span>
   </header>
 
-  <div class="app-wrap app-split stack" style="gap: 18px">
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">DEVELOPER ACCESS</span>
+        <h1>Capture from your own code.</h1>
+        <p>Create a key, send a URL, get the screenshot back.</p>
+      </div>
+    </div>
+
     {
       !plan.api && (
         <div class="notice notice--info">
-          API access is available on the Pro and Business plans. You can still create keys here once you upgrade.
-          <a href="/pricing" style="font-weight: 600"> See plans →</a>
+          API access is available on the Pro and Business plans. You can still create keys here once you upgrade.{' '}
+          <a href="/pricing">See plans →</a>
         </div>
       )
     }
 
-    <div class="app-col">
-    <section>
-      <div class="row-between" style="margin-bottom: 8px">
-        <div class="label">Your keys</div>
-        <button type="button" class="label" style="color: var(--green)" id="new-key">+ New key</button>
-      </div>
+    <div class="app-split stack gap-20">
+      <section class="project-panel stack gap-16" aria-labelledby="keys-heading">
+        <h2 class="section-heading" id="keys-heading"><span>[ 01 ]</span> Your keys</h2>
 
-      <div class="notice notice--ok" id="new-key-box" hidden>
-        <div class="label" style="margin-bottom: 6px">Copy this key now — it is not shown again.</div>
-        <div class="mono truncate" id="new-key-value" style="font-size: 12px"></div>
-        <button type="button" class="btn btn--sm btn--outline" style="margin-top: 8px" data-copy id="new-key-copy">
-          Copy
-        </button>
-      </div>
-      <div class="notice notice--error" id="key-error" hidden></div>
+        <form id="new-key-form" class="new-key-form" novalidate>
+          <label>
+            Key name
+            <input class="input" id="key-label" name="label" maxlength="80" placeholder="Production" autocomplete="off" />
+          </label>
+          <label>
+            Environment
+            <select class="input" id="key-environment" name="environment">
+              <option value="live" selected>Live</option>
+              <option value="test">Test</option>
+            </select>
+          </label>
+          <button type="submit" class="btn btn--lime" id="new-key">Create key</button>
+        </form>
 
-      <div class="stack gap-8" id="key-list">
-        {
-          keys?.length ? (
-            keys.map((key) => (
-              <div class="card" style="border-color: var(--line); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px" data-key-row={key.id}>
-                <div style="min-width: 0">
-                  <div class="mono truncate" style="font-weight: 500; font-size: 13px">
+        <div class="notice notice--ok stack gap-10" id="new-key-box" role="region" aria-labelledby="new-key-title" hidden>
+          <strong id="new-key-title">Copy this key now — it is not shown again.</strong>
+          <code class="secret-value" id="new-key-value"></code>
+          <div class="btn-row">
+            <button type="button" class="btn btn--sm btn--outline-ink" data-copy id="new-key-copy">Copy key</button>
+            <button type="button" class="btn btn--sm btn--outline" id="new-key-done">I’ve copied it</button>
+          </div>
+        </div>
+        <div class="notice notice--error" id="key-error" role="alert" hidden></div>
+
+        <div class="rows" id="key-list" hidden={!keys?.length}>
+          {
+            keys?.map((key) => (
+              <div class="row key-row" data-key-row={key.id}>
+                <div class="key-row__body">
+                  <div class="mono truncate key-row__id">
                     {key.prefix}…{key.last4}
                   </div>
-                  <div class="xs muted" style="margin-top: 3px">
-                    {key.label} · created {monthLabel(key.created_at)}
-                    {key.last_used_at ? ' · used' : ' · never used'}
-                  </div>
+                  <div class="xs muted">{keyMeta(key)}</div>
                 </div>
-                <div style="display: flex; gap: 6px; flex: none">
-                  <button type="button" class="btn btn--sm btn--outline btn--danger-text" data-revoke={key.id}>
-                    Revoke
-                  </button>
-                </div>
+                <button type="button" class="btn btn--sm btn--danger-outline" data-revoke={key.id}>
+                  Revoke
+                </button>
               </div>
             ))
-          ) : (
-            <p class="small muted">No keys yet. Create one to start calling the API.</p>
-          )
-        }
+          }
+        </div>
+        <p class="small muted" id="no-keys" hidden={!!keys?.length}>
+          No keys yet. Create one to start calling the API.
+        </p>
+
+        <p class="xs muted-2">
+          Secrets are shown once, at creation. Only a hash is stored, so a lost key has to be revoked and replaced.
+        </p>
+      </section>
+
+      <div class="app-col">
+        <section class="project-panel stack gap-12" aria-labelledby="quickstart-heading">
+          <h2 class="section-heading" id="quickstart-heading"><span>[ 02 ]</span> Quick start</h2>
+          <CodeBlock tag="POST /v1/capture" code={curl} />
+          <CodeBlock tag="RESPONSE · 200" code={responseSample} light copyable={false} />
+        </section>
+
+        <section class="project-panel" aria-labelledby="params-heading">
+          <h2 class="section-heading" id="params-heading"><span>[ 03 ]</span> Parameters</h2>
+          {
+            params.map((param) => (
+              <div class="param-row">
+                <span class="param-row__name">{param.name}</span>
+                <span class="param-row__desc">{param.desc}</span>
+              </div>
+            ))
+          }
+          <p class="link-row"><a href="/docs">Full API reference →</a></p>
+        </section>
       </div>
-
-      <p class="xs muted-2" style="margin-top: 8px">
-        Secrets are shown once, at creation. Only a hash is stored, so a lost key has to be revoked and replaced.
-      </p>
-    </section>
-
-    </div>
-
-    <div class="app-col">
-    <section>
-      <div class="label" style="margin-bottom: 8px">Quick start</div>
-      <CodeBlock tag="POST /v1/capture" code={curl} />
-      <div style="margin-top: 8px">
-        <CodeBlock tag="RESPONSE · 200" code={responseSample} light copyable={false} />
-      </div>
-    </section>
-
-    <section class="stack gap-6">
-      <div class="label" style="margin-bottom: 2px">Parameters</div>
-      {
-        params.map((param) => (
-          <div class="param-row">
-            <span class="param-row__name">{param.name}</span>
-            <span class="param-row__desc">{param.desc}</span>
-          </div>
-        ))
-      }
-    </section>
-
-    <p class="center label"><a href="/docs">Full API reference →</a></p>
     </div>
   </div>
+
+  <template id="key-row-template">
+    <div class="row key-row">
+      <div class="key-row__body">
+        <div class="mono truncate key-row__id"></div>
+        <div class="xs muted"></div>
+      </div>
+      <button type="button" class="btn btn--sm btn--danger-outline">Revoke</button>
+    </div>
+  </template>
 </AppShell>
 
+<style>
+  .new-key-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 150px) auto;
+    gap: 12px;
+    align-items: end;
+  }
+  .new-key-form .btn {
+    width: auto;
+  }
+  .key-row {
+    gap: 12px;
+  }
+  .key-row:hover {
+    background: none;
+  }
+  .key-row__body {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+  }
+  .key-row__id {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .key-row .btn {
+    flex: none;
+    min-height: 44px;
+  }
+  .key-row.is-new {
+    background: var(--lime-tint);
+  }
+  @media (max-width: 600px) {
+    .new-key-form {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .new-key-form .btn {
+      width: 100%;
+    }
+  }
+</style>
+
 <script>
-  const list = document.getElementById('key-list');
+  import { formatDate } from '../../lib/dates';
+
+  const form = document.getElementById('new-key-form') as HTMLFormElement | null;
+  const list = document.getElementById('key-list') as HTMLElement | null;
+  const empty = document.getElementById('no-keys') as HTMLElement | null;
   const errorBox = document.getElementById('key-error') as HTMLElement | null;
   const box = document.getElementById('new-key-box') as HTMLElement | null;
   const value = document.getElementById('new-key-value');
   const copyButton = document.getElementById('new-key-copy');
+  const doneButton = document.getElementById('new-key-done') as HTMLButtonElement | null;
+  const template = document.getElementById('key-row-template') as HTMLTemplateElement | null;
+
+  type CreatedKey = {
+    id: string;
+    secret: string;
+    prefix: string;
+    last4: string;
+    label: string;
+    environment: string;
+    created_at: string;
+  };
+  let pending: CreatedKey | null = null;
+  let copied = false;
 
   function fail(message: string) {
     if (!errorBox) return;
@@ -151,31 +236,81 @@ const monthLabel = (iso: string) =>
     errorBox.hidden = false;
   }
 
-  document.getElementById('new-key')?.addEventListener('click', async () => {
-    if (errorBox) errorBox.hidden = true;
-    const label = window.prompt('Name this key', 'Production');
-    if (label === null) return;
+  function setFormDisabled(disabled: boolean) {
+    form?.querySelectorAll<HTMLInputElement>('input, select, button').forEach((control) => {
+      control.disabled = disabled;
+    });
+  }
 
+  function addRow(key: CreatedKey) {
+    if (!list || !template) return;
+    const row = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    row.dataset.keyRow = key.id;
+    row.classList.add('is-new');
+    row.querySelector('.key-row__id')!.textContent = `${key.prefix}…${key.last4}`;
+    row.querySelector('.key-row__body .xs')!.textContent =
+      `${key.label} · ${key.environment === 'test' ? 'test' : 'live'} · created ${formatDate(key.created_at)} · never used`;
+    row.querySelector<HTMLButtonElement>('button')!.dataset.revoke = key.id;
+    list.insertBefore(row, list.firstChild);
+    list.hidden = false;
+    if (empty) empty.hidden = true;
+  }
+
+  // The secret exists only on this page. Warn before it is lost uncopied.
+  window.addEventListener('beforeunload', (event) => {
+    if (pending && !copied) event.preventDefault();
+  });
+
+  copyButton?.addEventListener('click', () => {
+    copied = true;
+  });
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (pending) return;
+    if (errorBox) errorBox.hidden = true;
+    const data = new FormData(form);
+    const label = String(data.get('label') ?? '').trim();
+    const environment = data.get('environment') === 'test' ? 'test' : 'live';
+
+    setFormDisabled(true);
     const response = await fetch('/api/keys', {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ label, environment: label.toLowerCase().includes('test') ? 'test' : 'live' }),
-    });
+      body: JSON.stringify({ label, environment }),
+    }).catch(() => null);
 
-    const payload = (await response.json().catch(() => null)) as
-      | { secret?: string; error?: { message?: string } }
+    const payload = (await response?.json().catch(() => null)) as
+      | (Partial<CreatedKey> & { error?: { message?: string } })
       | null;
-    if (!response.ok || !payload?.secret) {
-      fail(payload?.error?.message ?? 'Could not create the key.');
+    if (!response?.ok || !payload?.secret) {
+      setFormDisabled(false);
+      fail(payload?.error?.message ?? 'Could not create the key. Check your connection and try again.');
       return;
     }
 
+    pending = payload as CreatedKey;
+    copied = false;
     if (box && value && copyButton) {
-      value.textContent = payload.secret;
-      copyButton.setAttribute('data-copy-value', payload.secret);
+      value.textContent = pending.secret;
+      copyButton.setAttribute('data-copy-value', pending.secret);
       box.hidden = false;
+      doneButton?.focus();
     }
-    window.setTimeout(() => window.location.reload(), 12000);
+  });
+
+  doneButton?.addEventListener('click', () => {
+    if (!pending) return;
+    addRow(pending);
+    pending = null;
+    if (box && value && copyButton) {
+      box.hidden = true;
+      value.textContent = '';
+      copyButton.removeAttribute('data-copy-value');
+    }
+    form?.reset();
+    setFormDisabled(false);
+    document.getElementById('key-label')?.focus();
   });
 
   list?.addEventListener('click', async (event) => {
@@ -183,13 +318,18 @@ const monthLabel = (iso: string) =>
     if (!button) return;
     if (!window.confirm('Revoke this key? Requests using it will stop working immediately.')) return;
 
+    if (errorBox) errorBox.hidden = true;
     button.disabled = true;
-    const response = await fetch(`/api/keys/${button.dataset.revoke}`, { method: 'DELETE' });
-    if (response.ok) {
+    const response = await fetch(`/api/keys/${button.dataset.revoke}`, { method: 'DELETE' }).catch(() => null);
+    if (response?.ok) {
       document.querySelector(`[data-key-row="${button.dataset.revoke}"]`)?.remove();
+      if (list && !list.children.length) {
+        list.hidden = true;
+        if (empty) empty.hidden = false;
+      }
     } else {
       button.disabled = false;
-      fail('Could not revoke that key.');
+      fail('Could not revoke that key. Try again.');
     }
   });
 </script>

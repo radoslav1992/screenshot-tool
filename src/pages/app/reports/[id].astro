@@ -5,6 +5,7 @@ import ProjectForms from '../../../components/ProjectForms.astro';
 import ReviewReport from '../../../components/ReviewReport.astro';
 import { projectsReady, ownReport, reportCaptures } from '../../../lib/projects';
 import { getPlan } from '../../../lib/plans';
+import { formatDateTime } from '../../../lib/dates';
 import '../../../styles/projects.css';
 if (!(await projectsReady())) return Astro.redirect('/app/projects');
 let data;
@@ -26,6 +27,10 @@ const [captures, link, comments] = await Promise.all([
 Astro.response.headers.set('cache-control', 'private, no-store');
 const fields = { project_id: project.id, report_id: report.id };
 const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
+const expired = !!link && Date.parse(link.expires_at) < Date.now();
+const replaceWarning =
+  'Replace the review link? The link you already sent will stop working, and its view count restarts.';
+const views = link ?`${link.access_count.toLocaleString()} page view${link.access_count === 1 ? '' : 's'}` : '';
 ---
 
 <AppShell title={report.title} tab="projects">
@@ -34,10 +39,10 @@ const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
     <div class="appbar__title">Review report</div>
   </header>
   <div class="app-wrap stack gap-20">
-    <div class="project-links no-print">
+    <div class="btn-row no-print">
       {pdf ? (
         <form method="post" action={`/api/reports/${report.id}/pdf`}>
-          <button class="btn btn--ink" type="submit">
+          <button class="btn btn--lime" type="submit">
             Download branded PDF
           </button>
         </form>
@@ -52,18 +57,28 @@ const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
     </div>
     <ReviewReport project={project} report={report} captures={captures} />
     <div class="project-grid no-print">
-      <section class="project-panel">
-        <h2>Client review link</h2>
+      <section class="project-panel" aria-labelledby="link-heading">
+        <h2 class="section-heading" id="link-heading"><span>[ 01 ]</span> Client review link</h2>
         <p class="small muted">
           Anyone with the link can view this report and its images until expiration or revocation. Downloaded copies
           cannot be recalled. Internal notes below stay private.
         </p>
-        <p>
-          {link
-            ? `Link expires ${link.expires_at.slice(0, 16)} UTC · ${link.access_count} page views${link.last_access_at ? ` · Last view ${link.last_access_at.slice(0, 16)} UTC` : ''}`
-            : 'No review link created.'}
+        <p class="link-state">
+          {link ? (
+            <>
+              {expired ? 'Link expired' : 'Link expires'} {formatDateTime(link.expires_at)} · {views}
+              {link.last_access_at && <> · Last view {formatDateTime(link.last_access_at)}</>}
+            </>
+          ) : (
+            'No review link created.'
+          )}
         </p>
-        <form data-project-form>
+        <form
+          data-project-form
+          data-pending={link ? 'Replacing link…' : 'Creating link…'}
+          data-confirm={link ? replaceWarning : undefined}
+          data-confirm-replace={replaceWarning}
+        >
           <input type="hidden" name="action" value="share" />
           {Object.entries(fields).map(([name, value]) => (
             <input type="hidden" name={name} value={value} />
@@ -78,31 +93,46 @@ const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
               <option value="30">30 days</option>
             </select>
           </label>
-          <button class="btn btn--ink" type="submit">
-            Create / replace link
-          </button>
-          <p role="status"></p>
-        </form>
-        <form data-project-form>
-          <input type="hidden" name="action" value="revoke" />
-          {Object.entries(fields).map(([name, value]) => (
-            <input type="hidden" name={name} value={value} />
-          ))}
-          <button class="btn btn--outline" type="submit">
-            Revoke review link
-          </button>
-          <p role="status"></p>
-        </form>
-      </section>
-      <section class="project-panel">
-        <h2>Internal review notes</h2>
-        <p class="small muted">Private to your account. Not included in PDF exports or shared reports.</p>
-        {comments.results.map((c) => (
-          <div class="project-item">
-            <p class="report-notes">{c.body}</p>
-            <small>{c.created_at.slice(0, 16)} UTC</small>
+          <div class="btn-row">
+            <button class="btn btn--outline-ink" type="submit">
+              {link ? 'Replace link' : 'Create review link'}
+            </button>
           </div>
-        ))}
+          <p role="status"></p>
+        </form>
+        {link && (
+          <form
+            data-project-form
+            class="danger-zone"
+            data-pending="Revoking…"
+            data-confirm="Revoke the review link? Anyone you sent it to loses access immediately."
+          >
+            <input type="hidden" name="action" value="revoke" />
+            {Object.entries(fields).map(([name, value]) => (
+              <input type="hidden" name={name} value={value} />
+            ))}
+            <div class="btn-row">
+              <button class="btn btn--danger-outline" type="submit">
+                Revoke review link
+              </button>
+            </div>
+            <p role="status"></p>
+          </form>
+        )}
+      </section>
+      <section class="project-panel" aria-labelledby="notes-heading">
+        <h2 class="section-heading" id="notes-heading"><span>[ 02 ]</span> Internal review notes</h2>
+        <p class="small muted">Private to your account. Not included in PDF exports or shared reports.</p>
+        <div class="project-items">
+          {comments.results.map((c) => (
+            <div class="project-item">
+              <p class="report-notes">{c.body}</p>
+              <small class="muted">
+                <time datetime={c.created_at}>{formatDateTime(c.created_at)}</time>
+              </small>
+            </div>
+          ))}
+        </div>
         <form data-project-form>
           <input type="hidden" name="action" value="comment" />
           {Object.entries(fields).map(([name, value]) => (
@@ -111,9 +141,11 @@ const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
           <label>
             New internal note<textarea class="input" name="body" required maxlength="2000" rows="3"></textarea>
           </label>
-          <button type="submit" class="btn btn--outline">
-            Add note
-          </button>
+          <div class="btn-row">
+            <button type="submit" class="btn btn--outline">
+              Add note
+            </button>
+          </div>
           <p role="status"></p>
         </form>
       </section>
@@ -134,22 +166,29 @@ const pdf = getPlan(Astro.locals.user!.plan).formats.includes('pdf');
               Client-facing notes
               <textarea class="input" name="notes" maxlength="4000" rows="5">{report.notes}</textarea>
             </label>
-            <button type="submit" class="btn btn--outline">
-              Save report
-            </button>
+            <div class="btn-row">
+              <button type="submit" class="btn btn--outline-ink">
+                Save report
+              </button>
+            </div>
             <p role="status"></p>
           </form>
           <form
             data-project-form
+            class="danger-zone"
+            data-pending="Deleting…"
             data-confirm="Delete this report and revoke its review link? Source captures will be kept."
           >
+            <span class="danger-zone__label">Danger zone</span>
             <input type="hidden" name="action" value="delete_report" />
             {Object.entries(fields).map(([name, value]) => (
               <input type="hidden" name={name} value={value} />
             ))}
-            <button type="submit" class="btn btn--outline">
-              Delete report
-            </button>
+            <div class="btn-row">
+              <button type="submit" class="btn btn--danger-outline">
+                Delete report
+              </button>
+            </div>
             <p role="status"></p>
           </form>
         </details>

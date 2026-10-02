@@ -30,6 +30,11 @@ export const DELETE: APIRoute = async ({ request, locals, params }) => {
     return new HttpError(404, 'not_found', 'No capture with that id.').toResponse();
   }
 
-  await deleteCapture(row);
+  try {
+    await deleteCapture(row);
+  } catch (error) {
+    if (error instanceof HttpError) return error.toResponse();
+    throw error;
+  }
   return json({ deleted: true, id: row.id });
 };

@@ -1,17 +1,31 @@
 import { env } from 'cloudflare:workers';
 import { pushConfigured, sendPush } from './apns';
 export { pushConfigured } from './apns';
+/** The tables are cached per isolate: a yes for good, a no for a minute. Configuration is read every time. */
+let pushTables: { ready: boolean; at: number } | undefined;
 export async function pushReady() {
   if (!pushConfigured(env)) return false;
+  if (pushTables && (pushTables.ready || Date.now() - pushTables.at < 60_000)) return pushTables.ready;
   const row = await env.DB.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('push_devices','push_deliveries')").first<{ n: number }>();
-  return row?.n === 2;
+  pushTables = { ready: row?.n === 2, at: Date.now() };
+  return pushTables.ready;
+}
+/**
+ * The queue insert on its own, so a monitor run can commit it in the same
+ * batch as the run it alerts for: a crash before delivery then leaves a queued
+ * push for the next sweep rather than none at all.
+ */
+export async function pushQueueStatement(runId: string, userId: string): Promise<D1PreparedStatement | null> {
+  if (!await pushReady()) return null;
+  const now = new Date().toISOString();
+  return env.DB.prepare(`INSERT OR IGNORE INTO push_deliveries(run_id,device_id,session_id,next_attempt_at,expires_at,updated_at)
+    SELECT ?,d.id,d.session_id,?,?,? FROM push_devices d JOIN sessions s ON s.id=d.session_id AND s.user_id=d.user_id
+    WHERE d.user_id=? AND s.expires_at>? AND EXISTS (SELECT 1 FROM watch_runs WHERE id=?)`).bind(runId, now, new Date(Date.now()+86400000).toISOString(), now, userId, now, runId);
 }
 export async function queuePush(runId: string, userId: string) {
-  if (!await pushReady()) return;
-  const now = new Date().toISOString();
-  await env.DB.prepare(`INSERT OR IGNORE INTO push_deliveries(run_id,device_id,session_id,next_attempt_at,expires_at,updated_at)
-    SELECT ?,d.id,d.session_id,?,?,? FROM push_devices d JOIN sessions s ON s.id=d.session_id AND s.user_id=d.user_id
-    WHERE d.user_id=? AND s.expires_at>?`).bind(runId, now, new Date(Date.now()+86400000).toISOString(), now, userId, now).run();
+  const statement = await pushQueueStatement(runId, userId);
+  if (!statement) return;
+  await statement.run();
   await drainPush(runId);
 }
 /** Per-device claims prevent overlapping cron/manual checks from resending accepted alerts. */
@@ -45,6 +59,10 @@ export async function drainPush(onlyRun?: string) {
       }
     } catch { /* Unknown transport outcome is not retried, to avoid duplicate notifications. */ }
     await env.DB.prepare('UPDATE push_deliveries SET status=?,reason=?,next_attempt_at=?,updated_at=? WHERE run_id=? AND device_id=? AND session_id=?')
-      .bind(status,reason,new Date(Date.now()+3600000).toISOString(),new Date().toISOString(),row.run_id,row.device_id,row.session_id).run();
+      .bind(status,reason,nextHour(),new Date().toISOString(),row.run_id,row.device_id,row.session_id).run();
   }
+}
+/** The start of the next hour: the sweep runs at hh:00 and reads the clock just after it, so "now + 1h" would wait two ticks. */
+function nextHour(now = Date.now()) {
+  return new Date(Math.floor((now + 3600000) / 3600000) * 3600000).toISOString();
 }

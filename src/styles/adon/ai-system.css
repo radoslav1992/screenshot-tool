@@ -7,6 +7,10 @@
 }
 :root {
   --theme: #fb7515;
+  /* Orange is a fill colour: as text on paper it is only 2.5:1. Text uses
+     these darker steps instead; fills, buttons and backgrounds keep --theme. */
+  --theme-text: #d95f00; /* large display text only, about 3.45:1 on paper */
+  --theme-text-sm: #b84f00; /* any small orange text, about 4.6:1 on paper */
   --lime: #fb7515;
   --lime-tint: #fff1e7;
   --paper: #f5f5f5;
@@ -14,6 +18,8 @@
   --font_astronebula: "Astro Nebula", var(--sans);
   --line: #d0d0ce;
   --line-2: #dededb;
+  /* 4.9:1 on paper; the previous #73736d fell just short of 4.5:1. */
+  --muted-2: #6b6b66;
   --green: #943c00;
   --green-deep: #793200;
 }
@@ -63,7 +69,7 @@
 .adon-theme .adon-auth-story h2 em,
 .adon-theme .adon-footer-callout em {
   font: inherit;
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .adon-theme .sitefooter {
   background: var(--paper);
@@ -294,4 +300,269 @@ body.adon-theme .shell--app > .tabbar {
 }
 .adon-theme .notice--ok {
   border-color: #edcbb7;
+}
+
+/* ---------------------------------------------------------------------------
+   Workspace patterns, shared by every /app screen.
+   --------------------------------------------------------------------------- */
+
+/* One section heading: an optional mono "[ 01 ]" label over a 22px title. */
+.adon-theme .section-heading,
+.adon-theme .panel-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 14px;
+  font: 500 22px/1.2 var(--sans);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.adon-theme .section-heading > span,
+.adon-theme .panel-heading > span {
+  display: block;
+  width: auto;
+  height: auto;
+  background: none;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+/* The page's one primary action can sit beside the intro heading. */
+.adon-workspace .workspace-intro > .btn {
+  width: auto;
+  flex: none;
+}
+
+/* Disclosures: a square +/− marker and a 44px row to tap. */
+.adon-workspace details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+.adon-workspace details > summary::-webkit-details-marker {
+  display: none;
+}
+.adon-workspace details > summary::before {
+  content: "+";
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  font: 500 12px/1 var(--mono);
+}
+.adon-workspace details[open] > summary::before {
+  content: "−";
+}
+
+/* Empty states. */
+.empty__title {
+  margin-top: 10px;
+}
+.empty__text {
+  max-width: 46ch;
+  margin: 6px auto 0;
+}
+.empty__action {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  margin: 18px auto 0;
+}
+.empty--panel {
+  padding: 32px 20px;
+  border: 1px dashed var(--line);
+  background: white;
+}
+
+/* In a column that already spaces its children, the heading adds no margin. */
+.adon-theme :is(.stack, .app-col) > :is(.section-heading, .panel-heading),
+.adon-theme .project-panel.stack > h2 {
+  margin-bottom: 2px;
+}
+
+/* A row of actions: buttons keep their own width and wrap. */
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.btn-row > .btn,
+.btn-row > form > .btn {
+  width: auto;
+}
+
+/* Secondary navigation that should not compete with the primary button. */
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 22px;
+  font-size: 13px;
+}
+.link-row a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+}
+
+/* A button that reads as an inline text link. */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-block: -12px;
+  padding: 0 4px;
+  font-weight: 600;
+  color: var(--green);
+}
+.link-button:hover {
+  color: var(--ink);
+}
+
+/* Small print directly under the capture button. */
+.capture-note {
+  margin-top: -10px;
+}
+.preset-hint {
+  margin-top: 10px;
+}
+
+/* Destructive actions: outlined in the danger colour and set apart from Save. */
+.adon-theme .btn--danger-outline {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: transparent;
+}
+.adon-theme .btn--danger-outline:hover {
+  border-color: #8b3823;
+  color: #8b3823;
+  background: #fbeae5;
+}
+.danger-zone {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+.danger-zone__label {
+  font: 500 11px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+
+/* Invalid input: the border says so, and a message says why. */
+.adon-theme .input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.field__error {
+  font-size: 12px;
+  color: #8b3823;
+}
+
+/* Touch targets: at least 44px to tap, without growing what is drawn. */
+.adon-theme .icon-btn {
+  position: relative;
+}
+.adon-theme .icon-btn::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+.adon-theme .shot__actions {
+  gap: 10px;
+}
+.adon-theme .code__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -14px -12px -14px 0;
+  padding: 0 12px;
+}
+.adon-theme .code--light .code__copy {
+  color: var(--green);
+}
+.adon-theme .chip,
+.adon-theme .preset-row button {
+  position: relative;
+}
+.adon-theme .chip::before,
+.adon-theme .preset-row button::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+/* The chip scroller clips overflow; room above and below keeps the larger
+   hit area inside it. */
+.adon-theme .chips:not(.chips--wrap) {
+  padding-block: 6px;
+  margin-block: -6px;
+}
+.adon-theme .chips--wrap,
+.adon-theme .frames,
+.adon-theme .preset-row {
+  row-gap: 12px;
+}
+.back-link,
+.appbar > a:not(.btn):not(.avatar):not(.logo):not(.icon-btn) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-block: -10px;
+}
+
+/* A clipped chip row fades at the edge it continues past (set by ui.ts). */
+.chips[data-overflow="end"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+.chips[data-overflow="start"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
+}
+.chips[data-overflow="both"] {
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+}
+
+/* Copy buttons confirm by changing state, never by replacing their contents. */
+.adon-theme .icon-btn.is-copied {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--theme);
+}
+.adon-theme [data-copy].is-copy-failed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* A one-time secret: whole, wrapping and selectable in one click. */
+.secret-value {
+  display: block;
+  padding: 12px 14px;
+  background: white;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 400 13px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* Region drawn on the monitor baseline preview. */
+.region-outline {
+  position: absolute;
+  border: 2px solid var(--theme);
+  background: color-mix(in srgb, var(--lime-tint) 55%, transparent);
+  pointer-events: none;
 }

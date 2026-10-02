@@ -1,5 +1,7 @@
 /** Shared behaviour for the login and signup forms. */
 
+import { safeNext } from '../lib/safe-next';
+
 function showError(selector: string, message: string): void {
   const box = document.querySelector<HTMLElement>(selector);
   if (!box) return;
@@ -52,7 +54,9 @@ export function wireAuthForm(formSelector: string, errorSelector: string): void 
         return;
       }
 
-      window.location.assign(payload?.redirect || '/app');
+      // The server already cleaned it; checking again costs nothing and means
+      // this line can never be the open redirect.
+      window.location.assign(safeNext(payload?.redirect, window.location.origin));
     } catch {
       showError(errorSelector, 'Network error — check your connection and try again.');
     } finally {

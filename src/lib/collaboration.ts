@@ -2,8 +2,37 @@ import { nextDigest } from './digest-schedule';
 import { env } from 'cloudflare:workers';
 import { HttpError, badRequest } from './http';
 import { prefixedId, randomToken, sha256Hex } from './ids';
+import { canSendEmail, sendMail } from './mailer';
 import { ownProject, requiredText, type Project, type Report } from './projects';
 import type { SessionUser } from './auth';
+
+/**
+ * Emails an invitation link to the collaborator. Returns false when mail
+ * cannot be sent, in which case the owner still has the link to pass on.
+ */
+export async function sendInvitationEmail(input: {
+  to: string;
+  inviter: Pick<SessionUser, 'name' | 'email'>;
+  project: string;
+  role: 'viewer' | 'editor';
+  link: string;
+}): Promise<boolean> {
+  if (!canSendEmail()) return false;
+  // Names are the owner's free text; keep them to one short line in the message.
+  const line = (value: string) => value.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 80);
+  const inviter = line(input.inviter.name) ? `${line(input.inviter.name)} (${input.inviter.email})` : input.inviter.email;
+  const can = input.role === 'editor' ? 'read its review reports and add team comments' : 'read its review reports';
+  return sendMail({
+    to: input.to,
+    subject: `${line(input.inviter.name) || input.inviter.email} invited you to a project on Easy Screen Capture`,
+    text:
+      `${inviter} invited you to the project “${line(input.project)}” on Easy Screen Capture, where you can ${can}.\n\n` +
+      `Accept the invitation:\n${input.link}\n\n` +
+      'The link expires in 7 days. Sign in, or create a free account, with this email address, and confirm the address when asked. ' +
+      'If you were not expecting this, ignore this message.',
+  });
+}
+
 export async function collaborationReady() {
   return !!(await env.DB.prepare("SELECT name FROM sqlite_master WHERE name='digest_deliveries'").first());
 }
@@ -41,7 +70,11 @@ export async function collaborationAction(user: SessionUser, b: Record<string, s
       .bind(user.id)
       .first<{ email_lower: string }>();
     if (!verified)
-      throw new HttpError(403, 'email_unverified', 'Verify your email address before accepting a team invitation.');
+      throw new HttpError(
+        403,
+        'email_unverified',
+        'Confirm your email address before accepting a team invitation. Send yourself a confirmation email from this page, open its link, then accept again.',
+      );
     if (!/^[a-f0-9]{64}$/.test(b.token ?? '')) throw badRequest('Invalid invitation.');
     const result = await env.DB.prepare(
       `UPDATE project_members SET user_id=?,token_hash=NULL WHERE token_hash=? AND user_id IS NULL AND email_lower=? AND expires_at>? AND project_id IN(SELECT p.id FROM projects p JOIN users u ON u.id=p.user_id WHERE u.plan='business') RETURNING project_id`,
@@ -119,7 +152,12 @@ export async function collaborationAction(user: SessionUser, b: Record<string, s
         throw badRequest(
           'Business includes three collaborators per project, including pending invitations. Revoke an invitation or member first.',
         );
-      return { share_url: `${origin}/app/invite?token=${token}` };
+      // The caller emails it (see sendInvitationEmail); the link is returned
+      // either way so the owner can still copy it if mail does not arrive.
+      return {
+        share_url: `${origin}/app/invite?token=${token}`,
+        invitation: { email, role: b.role as 'viewer' | 'editor', project: project.name },
+      };
     } else throw badRequest('Unknown collaboration action.');
   }
   return { ok: true };

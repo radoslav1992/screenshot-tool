@@ -23,6 +23,37 @@ function cutoffFor(days: number, now: number): string {
   return new Date(now - days * 86_400_000).toISOString();
 }
 
+/** alert_retries arrived with migration 0009. Cached per isolate: a yes for good, a no for a minute. */
+let retriesTable: { ready: boolean; at: number } | undefined;
+async function alertRetriesReady(): Promise<boolean> {
+  if (retriesTable && (retriesTable.ready || Date.now() - retriesTable.at < 60_000)) return retriesTable.ready;
+  const ready = !!(await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='alert_retries'").first());
+  retriesTable = { ready, at: Date.now() };
+  return ready;
+}
+
+/**
+ * Captures an alert still points at. An alert links its before and after, and
+ * one waiting to be retried — or the latest change of a watch paused for a
+ * month and then resumed — should not open onto a missing image.
+ *
+ * The latest change is found per watch by seeking from last_changed_at, which
+ * is set in the same write as that change's run, so it costs one index lookup
+ * per watch rather than a scan of the run history.
+ */
+async function alertCaptures(): Promise<string> {
+  const latest = `SELECT (SELECT r.id FROM watch_runs r WHERE r.watch_id = w.id AND r.changed = 1 AND r.created_at >= w.last_changed_at
+                            ORDER BY r.created_at LIMIT 1)
+                  FROM watches w WHERE w.last_changed_at IS NOT NULL`;
+  const runs = (await alertRetriesReady())
+    ? `${latest} UNION SELECT run_id FROM alert_retries WHERE status IN ('pending', 'sending')`
+    : latest;
+  // NOT IN against a list holding NULL matches nothing, so both columns are filtered.
+  return `AND c.id NOT IN (
+            SELECT capture_id FROM watch_runs WHERE id IN (${runs}) AND capture_id IS NOT NULL
+            UNION SELECT baseline_capture_id FROM watch_runs WHERE id IN (${runs}) AND baseline_capture_id IS NOT NULL)`;
+}
+
 /**
  * Deletes captures past their plan's retention window, along with their R2
  * objects, and purges spent verification tokens.
@@ -41,6 +72,7 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     failed: 0,
   };
 
+  const alerted = await alertCaptures();
   for (const planId of PLAN_ORDER) {
     const plan = getPlan(planId);
     const cutoff = cutoffFor(plan.historyDays, now);
@@ -48,13 +80,14 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     /*
      * A watch's baseline is exempt. It is the only thing the next run has to
      * compare against, so sweeping it would silently turn a weekly watch into
-     * one that can never report a change.
+     * one that can never report a change. So are the captures alerts link to.
      */
     const { results } = await env.DB.prepare(
       `SELECT c.* FROM captures c
        JOIN users u ON u.id = c.user_id
        WHERE (CASE WHEN u.plan = 'free' AND u.apple_expires_at > ? THEN 'lite' ELSE u.plan END) = ? AND c.created_at < ?
          AND c.id NOT IN (SELECT baseline_capture_id FROM watches WHERE baseline_capture_id IS NOT NULL)
+         ${alerted}
        ORDER BY c.created_at ASC
        LIMIT ?`,
     )

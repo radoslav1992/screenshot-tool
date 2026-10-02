@@ -71,6 +71,13 @@ root it needs `--no-sandbox`, which Miniflare adds when `CI` is set:
 CI=1 npm run dev
 ```
 
+**Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
+retention, push, Apple, commerce, capture engine, auth and billing) against SQLite and local Chromium; no
+real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
+`BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
+app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
+shape the app decodes.
+
 ## Deploying
 
 `wrangler.jsonc` already points at the project's Cloudflare resources: D1 `screenify-data`, R2
@@ -133,7 +140,12 @@ context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such
 
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and
 `CF_API_TOKEN` (a token with *Browser Rendering: Edit*) as secrets to use the REST fallback — it
-covers `visible`, `fullpage` and `pdf`, but not `series`.
+covers `visible`, `fullpage` and `pdf`, but not `series`. Options only the binding can honour (`hide`,
+`blur`, `redact_pii`, ignore regions, credentials, actions, `dark_mode`, `sizes`) are refused with
+`501 unsupported_option` rather than silently dropped. When the binding exists but cannot be reached,
+REST stands in only for captures that ask for none of those (and no ad blocking, consent handling or
+facts, so a monitor's picture stays comparable); anything else answers a retryable
+`503 browser_unavailable`.
 
 ```bash
 npx wrangler secret put CF_ACCOUNT_ID
@@ -535,6 +547,18 @@ The AI summary integration remains optional and configuration-dependent; this re
 
 Validation: `npm run check`, `npm run workflows:check`, `npm run monitor:check`, `npm run library:check`, `npm run projects:check`, `npm run build`. Automated checks use SQLite and mocked external services; they do not send real alerts.
 
+
+### Accounts: password reset and confirmation emails
+
+`/forgot-password` emails a single-use, one-hour reset link (tokens live hashed in the `RATE` KV, so no
+migration is needed); completing it signs out every device. `/app/account` changes the password and signs
+out other devices. Confirmation emails are sent at signup whenever the mailer is configured, even with
+`REQUIRE_EMAIL_VERIFICATION=0` — that flag still only decides whether unconfirmed accounts may capture.
+Without a mailer, the reset page points people to the support address. Sign-in, signup and reset requests
+are rate limited per IP and per email (`429 rate_limited`).
+
+Migration `0012_watch_runs_user_index.sql` only adds an index for the monitor dashboard; apply it with
+`npm run db:migrate` whenever convenient — no code depends on it.
 
 ### iOS push notifications
 

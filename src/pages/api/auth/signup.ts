@@ -1,18 +1,18 @@
 import type { APIRoute } from 'astro';
-import { createSession, createUser, isSecureRequest, sessionCookie } from '../../../lib/auth';
+import { afterResponse } from '../../../lib/background';
+import { checkNewPassword, createSession, createUser, isSecureRequest, sessionCookie } from '../../../lib/auth';
+import { AUTH_LIMITS, clientIp, emailBucket, enforceThrottles } from '../../../lib/auth-throttle';
 import { assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
-import { issueVerificationToken, sendVerificationEmail, verificationEnabled } from '../../../lib/verification';
+import { safeNext } from '../../../lib/safe-next';
+import { confirmationEmailsEnabled, issueVerificationToken, sendVerificationEmail } from '../../../lib/verification';
 
 export const prerender = false;
 
-function safeNext(value: string | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/app';
-  return value;
-}
-
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
   const wantsJson = (request.headers.get('accept') ?? '').includes('application/json');
+  const origin = new URL(request.url).origin;
+  let next = '/app';
 
   try {
     assertSameOrigin(request);
@@ -20,23 +20,36 @@ export const POST: APIRoute = async ({ request }) => {
 
     const email = (body.email ?? '').trim();
     const password = body.password ?? '';
-    const next = safeNext(body.next);
+    next = safeNext(body.next, origin);
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw badRequest('Enter a valid email address.', 'email');
     }
-    if (password.length < 8) {
-      throw badRequest('Passwords must be at least 8 characters.', 'password');
-    }
-    if (password.length > 200) {
-      throw badRequest('That password is too long.', 'password');
-    }
+    checkNewPassword(password);
+
+    // "Already registered" is a deliberate answer, so the throttle is what
+    // keeps it from being a fast way to test a list of addresses.
+    await enforceThrottles(
+      [
+        { bucket: `signup-ip:${clientIp(request)}`, ...AUTH_LIMITS.signupIp },
+        { bucket: await emailBucket('signup-email', email), ...AUTH_LIMITS.signupEmail },
+      ],
+      (wait) => `Too many sign-up attempts. Wait ${wait} and try again.`,
+    );
 
     const user = await createUser({ email, password, name: body.name });
 
-    if (verificationEnabled()) {
-      const issued = await issueVerificationToken(user, new URL(request.url).origin);
-      await sendVerificationEmail(user.email, issued.link);
+    // Sent whenever mail works, not only when captures wait on it: team
+    // invitations and digests need a confirmed address either way. The account
+    // exists by now, so a hiccup here must not turn into a failed signup — the
+    // email can be sent again from the app.
+    if (confirmationEmailsEnabled()) {
+      await afterResponse(
+        locals,
+        issueVerificationToken(user, origin)
+          .then((issued) => sendVerificationEmail(user.email, issued.link))
+          .catch((error) => console.error('[signup] confirmation email failed', error)),
+      );
     }
 
     const { token, expiresAt } = await createSession(user.id, request.headers.get('user-agent') ?? '');
@@ -52,9 +65,8 @@ export const POST: APIRoute = async ({ request }) => {
   } catch (error) {
     const httpError = toHttpError(error, 'signup', 'Could not create the account.');
     if (wantsJson) return httpError.toResponse();
-    return new Response(null, {
-      status: 303,
-      headers: { location: `/signup?error=${encodeURIComponent(httpError.message)}` },
-    });
+    const back = new URLSearchParams({ error: httpError.message });
+    if (next !== '/app') back.set('next', next);
+    return new Response(null, { status: 303, headers: { location: `/signup?${back}` } });
   }
 };

@@ -35,7 +35,7 @@
   text-transform: uppercase;
 }
 .ai-landing .hero-17-title > span {
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .ai-landing .hero-17-content {
   grid-template-columns: 1.6fr 0.9fr 1.5fr;
@@ -604,7 +604,7 @@
   font-size: clamp(65px, 12vw, 180px);
 }
 .ai-orange-text {
-  color: var(--theme);
+  color: var(--theme-text);
 }
 .ai-landing .cta-area-17 .rr-btn-classic {
   max-width: 360px;

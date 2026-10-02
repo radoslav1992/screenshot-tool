@@ -8,11 +8,17 @@
  */
 
 export interface DiffResult {
-  /** Share of pixels that differ, 0–100. */
+  /**
+   * Share of pixels that differ, 0–100. When the sizes differ it is measured
+   * over the area of both images together, and the part only one of them
+   * covers counts as changed: a page that grew by a tenth changed by a tenth.
+   */
   changedPct: number;
-  /** Count before percentage rounding, after tolerance and downsampling. */
+  /** Count before percentage rounding, after tolerance and downsampling. Includes the uncovered area. */
   changedPixels: number;
-  /** True when the two images are not the same size — itself a change. */
+  /** The same share over the area both images cover. Equals changedPct when the sizes match. */
+  sharedPct: number;
+  /** True when the two images are not the same size. */
   resized: boolean;
   width: number;
   height: number;
@@ -52,13 +58,17 @@ export async function compareInPage(
 
   const resized = !region && (a.naturalWidth !== b.naturalWidth || a.naturalHeight !== b.naturalHeight);
 
-  // Compare over the shared area. A page that grew taller has already changed;
-  // this still measures how much of the part they have in common moved.
+  // Compare over the shared area, then count what only one image covers as
+  // changed. A page that grew taller has changed by the part it grew, not by
+  // all of it — so the threshold, not the resize alone, decides.
   const x = region?.x ?? 0, y = region?.y ?? 0;
   const width = Math.min(region?.width ?? Infinity, a.naturalWidth - x, b.naturalWidth - x);
   const height = Math.min(region?.height ?? Infinity, a.naturalHeight - y, b.naturalHeight - y);
   if (region && (width < region.width || height < region.height)) throw new Error("Watched region is outside the captured page.");
-  if (!width || !height) return { changedPct: 100, changedPixels: 0, resized, width, height };
+  const union = resized ? Math.max(a.naturalWidth, b.naturalWidth) * Math.max(a.naturalHeight, b.naturalHeight) : width * height;
+  if (!width || !height) {
+    return { changedPct: 100, changedPixels: resized ? Math.max(1, union) : 0, sharedPct: 100, resized, width, height };
+  }
 
   const scale = Math.min(1, Math.sqrt(maxPixels / (width * height)));
   const w = Math.max(1, Math.round(width * scale));
@@ -87,5 +97,10 @@ export async function compareInPage(
     }
   }
 
-  return { changedPct: (changed / (w * h)) * 100, changedPixels: changed, resized, width, height };
+  const sharedShare = changed / (w * h);
+  const uncovered = union - width * height;
+  const changedPct = ((sharedShare * width * height + uncovered) / union) * 100;
+  // In the same downsampled units as `changed`, and never zero for a resize.
+  const extra = uncovered > 0 ? Math.max(1, Math.round(uncovered * scale * scale)) : 0;
+  return { changedPct, changedPixels: changed + extra, sharedPct: sharedShare * 100, resized, width, height };
 }

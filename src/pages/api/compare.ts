@@ -5,7 +5,7 @@ import { toHttpError } from '../../lib/errors';
 import { assertVerified } from '../../lib/verification';
 import { APP_RATE_LIMIT, getPlan } from '../../lib/plans';
 import { checkRateLimit } from '../../lib/rate-limit';
-import { compareCaptures } from '../../lib/compare';
+import { compareCaptures, splitCompareInput } from '../../lib/compare';
 
 export const prerender = false;
 
@@ -14,7 +14,8 @@ export const prerender = false;
  *
  * Both sides take the same capture parameters, prefixed `a_` and `b_`, so a
  * comparison can be made at a phone viewport or a desktop one without a second
- * vocabulary to learn. Anything not prefixed applies to both.
+ * vocabulary to learn. Anything not prefixed applies to both, except the
+ * credentials (`headers`, `cookies`, `basic_auth`), which must name their side.
  */
 export const POST: APIRoute = async ({ request, locals }) => {
   const user = locals.user;
@@ -37,22 +38,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
 
     const body = await readBody(request);
-    const shared: Record<string, string> = {};
-    for (const [key, value] of Object.entries(body)) {
-      if (!key.startsWith('a_') && !key.startsWith('b_')) shared[key] = value;
-    }
-    const side = (prefix: 'a_' | 'b_'): Record<string, string> => {
-      const out = { ...shared };
-      for (const [key, value] of Object.entries(body)) {
-        if (key.startsWith(prefix)) out[key.slice(2)] = value;
-      }
-      return out;
-    };
-
-    const beforeInput = side('a_');
-    const afterInput = side('b_');
-    if (!beforeInput.url && !beforeInput.html) throw badRequest('`a_url` is required.', 'a_url');
-    if (!afterInput.url && !afterInput.html) throw badRequest('`b_url` is required.', 'b_url');
+    const { before: beforeInput, after: afterInput } = splitCompareInput(body);
 
     const before = parseCaptureOptions(beforeInput);
     const after = parseCaptureOptions(afterInput);

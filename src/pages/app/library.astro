@@ -60,9 +60,9 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
   <div class="app-wrap stack gap-20">
     <div class="workspace-intro">
       <div><span class="eyebrow">YOUR VISUAL RECORD</span><h1>{heading}</h1>
-        <p>{collection === 'regular' ? 'Your manual, batch and API captures, without recurring monitor checks.' : foldersView ? 'Open a monitoring job to browse its retained screenshots.' : unassigned ? 'Unused previews and captures whose monitoring job was deleted. Older previews without a recorded job may remain in Regular screenshots.' : 'Baseline and check screenshots for this monitoring job.'}</p>
+        <p>{collection === 'regular' ? 'Your manual, batch and API captures, without recurring monitor checks.' : foldersView ? 'Open a monitor to browse its retained screenshots.' : unassigned ? 'Unused previews and captures whose monitor was deleted. Older previews without a recorded monitor may remain in Regular screenshots.' : 'Baseline and check screenshots for this monitor.'}</p>
       </div>
-      <a class="btn btn--ink" href={collection === 'regular' ? '/app' : '/app/watches'} style="width:auto">
+      <a class="btn btn--lime" href={collection === 'regular' ? '/app' : '/app/watches'}>
         {collection === 'regular' ? 'New capture' : 'Manage monitors'}
       </a>
     </div>
@@ -70,14 +70,14 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
       <a class="chip" href="/app/library" aria-current={collection === 'regular' ? 'true' : undefined}>Regular screenshots</a>
       <a class="chip" href="/app/library?collection=monitors" aria-current={collection === 'monitors' ? 'true' : undefined}>Monitor screenshots</a>
     </nav>
-    {selected && <div class="project-links">
-      <a href="/app/library?collection=monitors">← All monitoring jobs</a>
-      {watch && <a href={`/app/watches/${watch.id}`}>Job settings &amp; comparisons →</a>}
-    </div>}
-    {collection === 'regular' && <div class="project-links">
-      <a href="/app/batch" class="btn btn--outline" style="width:auto">Batch capture</a>
-      <a href="/app/projects" class="btn btn--outline" style="width:auto">Organize in projects</a>
-    </div>}
+    {selected && <nav class="link-row" aria-label="Monitor screenshots">
+      <a href="/app/library?collection=monitors">← All monitors</a>
+      {watch && <a href={`/app/watches/${watch.id}`}>Monitor settings &amp; comparisons →</a>}
+    </nav>}
+    {collection === 'regular' && <nav class="link-row" aria-label="More ways to capture">
+      <a href="/app/batch">Batch capture →</a>
+      <a href="/app/projects">Organize in projects →</a>
+    </nav>}
     {watch && <nav class="chips" aria-label="Monitor album view">
       <a class="chip" aria-current={timeline?'true':undefined} href={`/app/library?collection=monitors&watch=${watch.id}`}>Change timeline</a>
       <a class="chip" aria-current={!timeline?'true':undefined} href={`/app/library?collection=monitors&watch=${watch.id}&view=gallery`}>All screenshots</a>
@@ -89,8 +89,8 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
       {watch && <input type="hidden" name="view" value="gallery" />}
       {changedOnly && <input type="hidden" name="changed" value="1" />}
       {!foldersView && <input type="hidden" name="mode" value={filter} />}
-      <label class="sr-only" for="library-search">{foldersView ? 'Search monitoring jobs' : 'Search capture URLs'}</label>
-      <input type="search" class="input" id="library-search" name="q" value={search} placeholder={foldersView ? 'Search job names or website URLs…' : 'Search by website or page URL…'} maxlength="200" />
+      <label class="sr-only" for="library-search">{foldersView ? 'Search monitors' : 'Search capture URLs'}</label>
+      <input type="search" class="input" id="library-search" name="q" value={search} placeholder={foldersView ? 'Search monitor names or website URLs…' : 'Search by website or page URL…'} maxlength="200" />
       <button type="submit" class="btn btn--outline"><Icon name="search" size={16} /> Search</button>
     </form>}
     {!foldersView && !timeline && <div class="chips" aria-label="Filter by capture mode">
@@ -109,8 +109,8 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
           <strong>{folder.capture_count} retained screenshots →</strong>
         </a>)}
       </div>
-      {folders.length === 0 && <p class="notice">{search ? 'No matching monitoring jobs. Try another name or URL.' : 'No monitoring jobs yet. Create one from Monitors to start a separate screenshot history.'}</p>}
-      <a class="btn btn--outline" href="/app/library?collection=monitors&watch=unassigned">Unassigned previews &amp; deleted jobs →</a>
+      {folders.length === 0 && <p class="notice">{search ? 'No matching monitors. Try another name or URL.' : 'No monitors yet. Create one from Monitors to start a separate screenshot history.'}</p>}
+      <a class="btn btn--outline" href="/app/library?collection=monitors&watch=unassigned">Unassigned previews &amp; deleted monitors →</a>
     </> : captures.length === 0 ? <div class="empty">
       <h2 class="h4">{search ? 'No matching screenshots' : 'No screenshots here yet'}</h2>
       <p class="small muted">{search ? 'Try another URL or clear your search.' : collection === 'regular' ? 'Capture a page to start your library.' : 'Screenshots appear here after a check. Expired files are removed according to your plan.'}</p>
@@ -125,7 +125,6 @@ const heading = collection === 'regular' ? 'Regular screenshots' : foldersView ?
 <style>
   .album-cover { width:100%;height:180px;object-fit:cover;object-position:top;border:1px solid var(--line-2); }
   .album-placeholder { height:180px;display:grid;place-content:center;gap:12px;text-align:center;background:var(--lime-tint); }
-  .project-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .monitor-folders { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
   .monitor-folder { display: grid; gap: 12px; padding: 24px; border: 1px solid var(--line-2); background: white; color: var(--ink); overflow-wrap: anywhere; }
   .monitor-folder:hover { border-color: var(--green); background: var(--lime-tint); }

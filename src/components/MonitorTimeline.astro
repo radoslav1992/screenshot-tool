@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { fileUrl, safeParseFiles, type CaptureRow } from '../lib/captures';
 import { decodeRunDetail, deliveryLabel, runLabel } from '../lib/monitor-health';
 import { listProjects } from '../lib/projects';
+import { formatDateTime } from '../lib/dates';
 import type { WatchRunRow } from '../lib/watches';
 interface Props { watchId: string; userId: string; page: number; changedOnly: boolean }
 const { watchId,userId,page,changedOnly } = Astro.props;
@@ -29,7 +30,7 @@ const link = (n:number) => `/app/library?collection=monitors&watch=${encodeURICo
 {runs.map(run=>{
  const before=url(run.baseline_capture_id), after=url(run.capture_id); const decoded=decodeRunDetail(run.detail);
  return <article class="card card--pad stack gap-12">
- <div><strong>{runLabel(run)}</strong> · <time datetime={run.created_at}>{new Date(run.created_at).toUTCString()}</time></div>
+ <div><strong>{runLabel(run)}</strong> · <time datetime={run.created_at}>{formatDateTime(run.created_at)}</time></div>
  <p class="small muted">{decoded.detail || (run.change_pct!==null?`${run.change_pct}% visually different`:'')}</p>
  <div class="comparison-pair">
  <div><span class="eyebrow">Before</span>{before?<a href={before} target="_blank" rel="noopener"><img src={before} loading="lazy" alt="Screenshot before this check" /></a>:<p>Baseline unavailable or expired.</p>}</div>

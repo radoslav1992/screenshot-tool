@@ -35,7 +35,10 @@ try{
  const add=()=>db.prepare('INSERT OR REPLACE INTO push_devices VALUES(?,?,?,?,?,?)').run('d','u','s','a'.repeat(64),'sandbox',new Date().toISOString());
  add();await push.queuePush('r','u');assert.equal(calls,1);assert.equal(db.prepare('SELECT status FROM push_deliveries').get().status,'accepted');
  await push.queuePush('r','u');await push.drainPush();assert.equal(calls,1);
- mode='retry';await push.queuePush('r2','u');assert.equal(calls,2);db.exec("UPDATE push_deliveries SET next_attempt_at='2000-01-01' WHERE run_id='r2'");mode='ok';await Promise.all([push.drainPush(),push.drainPush()]);assert.equal(calls,3);
+ mode='retry';await push.queuePush('r2','u');assert.equal(calls,2);
+ const retryAt=Date.parse(db.prepare("SELECT next_attempt_at AS t FROM push_deliveries WHERE run_id='r2'").get().t);assert.equal(retryAt%3600000,0,'a push retry is due on the hour the sweep runs');assert(retryAt>Date.now()&&retryAt<=Date.now()+3600000);
+ assert.equal(await push.pushQueueStatement('missing-run','u').then(s=>s.run()).then(r=>r.meta.changes),0,'nothing is queued for a run that was never recorded');
+ db.exec("UPDATE push_deliveries SET next_attempt_at='2000-01-01' WHERE run_id='r2'");mode='ok';await Promise.all([push.drainPush(),push.drainPush()]);assert.equal(calls,3);
  mode='network';await push.queuePush('r3','u');const count=calls;await push.drainPush();assert.equal(calls,count);assert.equal(db.prepare("SELECT status FROM push_deliveries WHERE run_id='r3'").get().status,'unknown');
  mode='invalid';await push.queuePush('r4','u');assert.equal(db.prepare('SELECT count(*) AS n FROM push_devices').get().n,0);
  add();db.exec("DELETE FROM sessions WHERE id='s'");assert.equal(db.prepare('SELECT count(*) AS n FROM push_devices').get().n,0);

@@ -1,16 +1,19 @@
 import type { SessionUser } from './auth';
 import {
+  assertPlanAllows,
   createCaptureRow,
+  discardCaptureRow,
   getUsage,
   runCapture,
   safeParseFiles,
   toDTO,
   type CaptureDTO,
+  type CaptureRow,
   type CaptureSource,
 } from './captures';
 import { fileUrl } from './captures';
-import type { CaptureOptions } from './capture-options';
-import { HttpError } from './http';
+import { plannedShots, type CaptureOptions } from './capture-options';
+import { HttpError, badRequest } from './http';
 import { getPlan } from './plans';
 import { compareImages, diffAvailable } from './visual-diff';
 
@@ -34,6 +37,52 @@ export interface CompareResult {
   detail?: string;
 }
 
+/**
+ * Parameters that are never shared between the two sides.
+ *
+ * Staging and production rarely take the same password, and two different
+ * sites never should: a credential written once would otherwise go to both,
+ * including the competitor's page being compared against.
+ */
+const PER_SIDE_ONLY = ['headers', 'cookies', 'basic_auth'];
+
+/**
+ * Splits a comparison request into its two captures. Each side takes the same
+ * parameters as a capture, prefixed `a_` and `b_`; anything unprefixed applies
+ * to both — except credentials, which must name their side.
+ */
+export function splitCompareInput(body: Record<string, string>): {
+  before: Record<string, string>;
+  after: Record<string, string>;
+} {
+  for (const key of PER_SIDE_ONLY) {
+    if ((body[key] ?? '').trim()) {
+      throw badRequest(
+        `\`${key}\` is not shared between the two pages. Send \`a_${key}\` and/or \`b_${key}\` for the page it belongs to.`,
+        key,
+      );
+    }
+  }
+
+  const shared: Record<string, string> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (!key.startsWith('a_') && !key.startsWith('b_')) shared[key] = value;
+  }
+  const side = (prefix: 'a_' | 'b_'): Record<string, string> => {
+    const out = { ...shared };
+    for (const [key, value] of Object.entries(body)) {
+      if (key.startsWith(prefix)) out[key.slice(2)] = value;
+    }
+    return out;
+  };
+
+  const before = side('a_');
+  const after = side('b_');
+  if (!before.url && !before.html) throw badRequest('`a_url` is required.', 'a_url');
+  if (!after.url && !after.html) throw badRequest('`b_url` is required.', 'b_url');
+  return { before, after };
+}
+
 export async function compareCaptures(
   user: SessionUser,
   before: CaptureOptions,
@@ -41,8 +90,23 @@ export async function compareCaptures(
   origin: string,
   source: CaptureSource = 'app',
 ): Promise<CompareResult> {
+  // Only the first file of each side is compared; extra sizes would be paid
+  // for and never looked at.
+  if (before.sizes.length || after.sizes.length) {
+    throw badRequest('`sizes` is not available in a comparison: each side is one image.', 'sizes');
+  }
+
+  /*
+   * Everything that could refuse the second capture is asked before the first
+   * is rendered. Otherwise a plan or quota refusal for one side arrives after
+   * the other has been rendered and charged, and the comparison is lost anyway.
+   */
+  assertPlanAllows(user, before);
+  assertPlanAllows(user, after);
+
   const usage = await getUsage(user);
-  if (usage.remaining < 2) {
+  const shots = plannedShots(before) + plannedShots(after);
+  if (usage.remaining < shots) {
     throw new HttpError(
       402,
       'quota_exceeded',
@@ -50,10 +114,21 @@ export async function compareCaptures(
     );
   }
 
+  // Both rows reserve their quota before either renders; if the second cannot,
+  // the first is taken back.
+  const beforePending = await createCaptureRow(user, before, source);
+  let afterPending: CaptureRow;
+  try {
+    afterPending = await createCaptureRow(user, after, source);
+  } catch (error) {
+    await discardCaptureRow(beforePending);
+    throw error;
+  }
+
   // Sequential, not parallel: two browsers at once doubles this account's draw
   // on the session pool, and the pool is the scarce thing.
-  const beforeRow = await runCapture(await createCaptureRow(user, before, source), before);
-  const afterRow = await runCapture(await createCaptureRow(user, after, source), after);
+  const beforeRow = await runCapture(beforePending, before);
+  const afterRow = await runCapture(afterPending, after);
 
   const result: CompareResult = {
     before: toDTO(beforeRow, origin),

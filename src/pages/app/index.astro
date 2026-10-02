@@ -6,6 +6,7 @@ import { DEVICE_LIST, FORMATS, FRAME_LIST, MODES } from '../../lib/capture-optio
 import { getUsage } from '../../lib/captures';
 import { cheapestPlanWith, getPlan } from '../../lib/plans';
 import { isVerified } from '../../lib/verification';
+import { formatDate } from '../../lib/dates';
 
 const user = Astro.locals.user!;
 const [usage, verified] = await Promise.all([getUsage(user), isVerified(user.id)]);
@@ -65,7 +66,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
         <Icon name="eye-off" size={15} /> Privacy check
       </button>
     </div>
-    <p class="xs muted" id="preset-hint" aria-live="polite" style="margin-top: 10px">
+    <p class="xs muted preset-hint" id="preset-hint" aria-live="polite">
       Start with a preset, or choose your own settings below.
     </p>
   </div>
@@ -74,7 +75,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
     {!verified && (
       <div class="notice notice--info" id="verify-banner">
         <strong>Confirm your email to start capturing.</strong> We sent a link to {user.email}.
-        <button type="button" id="resend-verification" style="font-weight: 600; color: var(--green); margin-left: 4px">
+        <button type="button" id="resend-verification" class="link-button">
           Send it again
         </button>
         <span id="resend-state" class="xs muted-2" />
@@ -85,7 +86,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 
     <div class="app-col capture-panel">
       <h2 class="panel-heading">
-        <span>01</span> Choose your page
+        <span>[ 01 ]</span> Choose your page
       </h2>
       <div class="field">
         <label class="field__label" for="url">
@@ -103,11 +104,13 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
             required
             placeholder="stripe.com/pricing"
             value={prefillUrl}
+            aria-describedby="url-error"
           />
           <span class="input-affix__end" id="url-state" hidden>
             ✓ Valid format
           </span>
         </div>
+        <p class="field__error" id="url-error" hidden></p>
       </div>
 
       <div>
@@ -151,9 +154,9 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
           <button
             type="button"
             id="custom-toggle"
+            class="link-button"
             aria-expanded="false"
             aria-controls="custom-size"
-            style="font-weight: 600; color: var(--green)"
           >
             Set width × height
           </button>
@@ -203,7 +206,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 
     <div class="app-col capture-panel">
       <h2 class="panel-heading">
-        <span>02</span> Make it yours
+        <span>[ 02 ]</span> Make it yours
       </h2>
       <div>
         <div class="field__label" style="margin-bottom: 8px">
@@ -345,18 +348,18 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
         </span>
       </div>
 
-      <button type="submit" class="btn btn--ink" id="capture-submit" disabled={!verified || usage.remaining <= 0}>
+      <button type="submit" class="btn btn--lime" id="capture-submit" disabled={!verified || usage.remaining <= 0}>
         <Icon name="camera" size={18} /> Capture screenshot
       </button>
 
-      <p class="xs center" style="color: var(--muted-2); margin-top: -10px" id="quota-line">
+      <p class="xs center muted-2 capture-note" id="quota-line">
         {usage.remaining > 0
           ? `Uses 1 of ${usage.remaining.toLocaleString()} shots left this month`
-          : `No shots left this month — resets ${usage.renewsOn}`}
+          : `No shots left this month — resets ${formatDate(`${usage.renewsOn}T00:00:00Z`)}`}
       </p>
 
       {plan.watermark && (
-        <p class="xs center" style="color: var(--muted-2); margin-top: -12px">
+        <p class="xs center muted-2 capture-note">
           Captures carry a small easyscreencapture.com mark. <a href="/pricing">{cleanPlan.name}</a> removes it from $
           {cleanPlan.priceMonthly}/mo.
         </p>

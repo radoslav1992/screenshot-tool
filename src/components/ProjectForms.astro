@@ -1,41 +1,66 @@
 <script>
+  /**
+   * Every `form[data-project-form]` posts to the projects API. Progress goes in
+   * the form's quiet `[role="status"]` line; a failure goes in an error notice
+   * with role="alert", so the two never look alike. `data-confirm` asks first.
+   */
   document.querySelectorAll<HTMLFormElement>('form[data-project-form]').forEach((form) => {
+    let status = form.querySelector<HTMLElement>('[role="status"]');
+    if (!status) {
+      status = document.createElement('p');
+      status.setAttribute('role', 'status');
+      form.appendChild(status);
+    }
+    const errorBox = document.createElement('p');
+    errorBox.className = 'notice notice--error form-error';
+    errorBox.setAttribute('role', 'alert');
+    errorBox.hidden = true;
+    status.parentNode!.insertBefore(errorBox, status.nextSibling);
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (form.dataset.busy) return;
       if (form.dataset.confirm && !confirm(form.dataset.confirm)) return;
       const data = new FormData(form);
-      const status = form.querySelector<HTMLElement>('[role="status"]')!;
       const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
       form.dataset.busy = 'true';
       button.disabled = true;
-      status.textContent = 'Saving…';
+      errorBox.hidden = true;
+      errorBox.textContent = '';
+      status!.textContent = form.dataset.pending ?? 'Saving…';
       try {
         const response = await fetch(form.dataset.endpoint || '/api/projects', { method: 'POST', body: data });
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => ({}))) as {
           error?: { message?: string };
           share_url?: string;
           redirect?: string;
         };
         if (!response.ok) throw new Error(result.error?.message ?? 'Update failed.');
         if (result.share_url) {
-          status.textContent = 'Copy this link now and share it with the intended recipient. ';
+          status!.textContent = 'Copy this link now and share it with the intended recipient. ';
           const link = document.createElement('a');
           link.href = result.share_url;
           link.textContent = result.share_url;
-          status.appendChild(link);
+          status!.appendChild(link);
           const output = document.createElement('input');
           output.className = 'input';
           output.value = result.share_url;
           output.readOnly = true;
           output.setAttribute('aria-label', 'Share link');
-          status.appendChild(output);
+          status!.appendChild(output);
           output.select();
+          // A link now exists, so making another one replaces it.
+          if (form.dataset.confirmReplace) form.dataset.confirm = form.dataset.confirmReplace;
         } else if (result.redirect) location.assign(result.redirect);
-        else if (form.dataset.stay) status.textContent = 'Saved.';
+        else if (form.dataset.stay) status!.textContent = 'Saved.';
         else location.reload();
       } catch (error) {
-        status.textContent = error instanceof Error ? error.message : 'Could not save. Please try again.';
+        status!.textContent = '';
+        errorBox.textContent =
+          error instanceof Error && error.message !== 'Failed to fetch'
+            ? error.message
+            : 'Could not save. Check your connection and try again.';
+        errorBox.hidden = false;
       } finally {
         delete form.dataset.busy;
         button.disabled = false;

@@ -9,12 +9,13 @@ import { runLabel, deliveryLabel } from '../../../lib/monitor-health';
 import { getUsage } from '../../../lib/captures';
 import AppShell from '../../../layouts/AppShell.astro';
 import Icon from '../../../components/Icon.astro';
-import { fileUrl, formatRelative, safeParseFiles, type CaptureRow } from '../../../lib/captures';
+import { fileUrl, safeParseFiles, type CaptureRow } from '../../../lib/captures';
 import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options';
 import { allowedFrequencies, FREQUENCIES, frequencyLabel } from '../../../lib/plans';
-import { getWatch, listRuns, listWatches } from '../../../lib/watches';
+import { checkInProgress, getWatch, listRuns, listWatches } from '../../../lib/watches';
 import { safeParseFacts } from '../../../lib/page-facts';
 import { diffText } from '../../../lib/text-diff';
+import { formatDateTime } from '../../../lib/dates';
 import { env } from 'cloudflare:workers';
 
 const user = Astro.locals.user!;
@@ -32,6 +33,23 @@ const rulesReady = await workflowsReady();
 const frequencies = FREQUENCIES.filter((entry) => allowedFrequencies(user.plan).includes(entry.id));
 const origin = Astro.url.origin;
 const latestAlert = health.alerts.get(watch.id);
+const name = watch.label || displayUrl(watch.url);
+const active = watch.status === 'active';
+const emailReady = canSendEmail();
+
+/*
+ * Why the last check did not produce a comparison, in the terms that matter:
+ * a plan limit, a passing problem on our side, or the page itself failing.
+ */
+const TEMPORARY = 'Temporarily unavailable: ';
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const problem = !watch.last_error
+  ? null
+  : watch.last_error.startsWith('Paused:')
+    ? { title: 'Monitor paused.', text: sentence(watch.last_error.slice('Paused:'.length).trim()), upgrade: true }
+    : watch.last_error.startsWith(TEMPORARY)
+      ? { title: 'The last check could not run.', text: `${watch.last_error.slice(TEMPORARY.length)} It will be retried automatically.`, upgrade: false }
+      : { title: 'Last check failed.', text: `${watch.last_error}${active ? '' : ' The monitor has been paused.'}`, upgrade: false };
 
 /** The images for the most recent comparison, when there is one to show. */
 const lastComparison = runs.find(
@@ -70,41 +88,44 @@ const change = diffText(
 const hasWords = change.comparable && (change.added.length > 0 || change.removed.length > 0);
 ---
 
-<AppShell title={watch.label || displayUrl(watch.url)} tab="watches">
+<AppShell title={name} tab="watches">
   <header class="appbar" slot="appbar">
-    <a class="icon-btn" href="/app/watches" aria-label="Back to watches">
+    <a class="icon-btn" href="/app/watches" aria-label="Back to monitors">
       ‹
     </a>
-    <div class="appbar__title truncate">{watch.label || displayUrl(watch.url)}</div>
+    <div class="appbar__title truncate">{name}</div>
   </header>
 
   <div class="app-wrap app-split stack gap-16">
-    <div class="app-col">
-      {watch.last_error && (
-        <div class="notice notice--error">
-          <strong>Last check failed.</strong> {watch.last_error}
-          {watch.status === 'paused' && ' The watch has been paused.'}
-        </div>
-      )}
+    <div class="workspace-intro monitor-intro">
+      <div>
+        <span class="eyebrow">WEBSITE MONITOR</span>
+        <h1>{name}</h1>
+        <p>
+          {frequencyLabel(watch.frequency)} ·{' '}
+          <a class="mono" href={watch.url} target="_blank" rel="noopener nofollow">{displayUrl(watch.url)}</a>
+        </p>
+      </div>
+      <span class={`pill ${active ? 'pill--quota' : ''}`}>{active ? 'Monitoring' : 'Paused'}</span>
+    </div>
 
+    {problem && (
+      <div class="notice notice--error">
+        <strong>{problem.title}</strong> {problem.text}
+        {problem.upgrade && <> <a href="/app/upgrade">Review your plan</a>.</>}
+      </div>
+    )}
+
+    <div class="app-col">
       <section class="card card--pad stack gap-10">
-        <div class="row-between">
-          <span class="label">{frequencyLabel(watch.frequency)}</span>
-          <span class={`pill ${watch.status === 'active' ? 'pill--quota' : ''}`}>
-            {watch.status === 'active' ? 'Watching' : 'Paused'}
-          </span>
-        </div>
-        <a class="small mono truncate" href={watch.url} target="_blank" rel="noopener nofollow">
-          {watch.url}
-        </a>
         <p class="xs muted-2">
           {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? (watch.threshold === 0 ? 'alerts for any detected visual change' : `visual alerts at ${watch.threshold}% or more`) : `${rule.kind} alert rule`}
           {watch.webhook_url && ' · webhook on'}
         </p>
-        <div class="rows" style="margin-top: 4px">
+        <div class="rows">
           <div class="row">
             <span class="row__label">Last attempted</span>
-            <span class="row__value">{watch.last_run_at ? formatRelative(watch.last_run_at) : 'not yet'}</span>
+            <span class="row__value">{formatDateTime(watch.last_run_at, 'not yet')}</span>
           </div>
           <div class="row">
             <span class="row__label">Latest result</span>
@@ -112,21 +133,17 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           </div>
           <div class="row">
             <span class="row__label">Last successful check</span>
-            <span class="row__value">
-              {health.successes.has(watch.id) ? formatRelative(health.successes.get(watch.id)!) : 'not recorded'}
-            </span>
+            <span class="row__value">{formatDateTime(health.successes.get(watch.id), 'not recorded')}</span>
           </div>
           <div class="row">
             <span class="row__label">Next check</span>
             <span class="row__value">
-              {watch.status === 'active' ? new Date(watch.next_run_at).toUTCString().slice(5, 22) + ' UTC' : 'paused'}
+              {!active ? 'paused' : checkInProgress(watch) ? 'checking now' : formatDateTime(watch.next_run_at)}
             </span>
           </div>
           <div class="row">
             <span class="row__label">Last change</span>
-            <span class="row__value">
-              {watch.last_changed_at ? formatRelative(watch.last_changed_at) : 'none seen yet'}
-            </span>
+            <span class="row__value">{formatDateTime(watch.last_changed_at, 'none seen yet')}</span>
           </div>
         </div>
       </section>
@@ -140,24 +157,56 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
             Webhook: {deliveryLabel[latestAlert.delivery.webhook]}
           </p>
           <p class="xs muted">
-            Change detected {formatRelative(latestAlert.created_at)}. Provider acceptance does not confirm inbox
+            Change detected {formatDateTime(latestAlert.created_at)}. Provider acceptance does not confirm inbox
             delivery.
           </p>
         </section>
       )}
-      {watch.notify_email === 1 && !canSendEmail() && <p class="notice">Email alerts are unavailable. Configure email sending before relying on this monitor.</p>}
-      {rulesReady && <form id="rules-form" class="card card--pad stack gap-12" data-watch={watch.id}>
-        <h2 class="h4">What should trigger an alert?</h2>
-        <MonitorRuleFields rule={rule} />
-        <button class="btn btn--ink" type="submit">Save alert rule</button>
-        <p role="status"></p>
-      </form>}
-      <form id="threshold-form" class="card card--pad stack gap-12" data-watch={watch.id}>
-        <h2 class="h4">Change sensitivity</h2>
+
+      <form id="detection-form" class="card card--pad stack gap-12" data-watch={watch.id} data-rules={String(rulesReady)}>
+        <h2 class="h4">What triggers an alert</h2>
+        {rulesReady && <MonitorRuleFields rule={rule} />}
         <MonitorThreshold value={watch.threshold} />
-        <button class="btn btn--ink" type="submit">Save threshold</button>
+        <button class="btn btn--ink" type="submit">Save alert rule</button>
         <p role="status" aria-live="polite"></p>
       </form>
+
+      <form id="alerts-form" class="card card--pad stack gap-12" data-watch={watch.id}>
+        <h2 class="h4">Where alerts go</h2>
+        <label>
+          Email alerts
+          <select class="input" name="notify_email">
+            <option value="1" selected={watch.notify_email === 1}>Send to {user.email}</option>
+            <option value="0" selected={watch.notify_email !== 1}>Email off</option>
+          </select>
+        </label>
+        {watch.notify_email === 1 && !emailReady && (
+          <p class="notice">Email alerts are unavailable until email sending is configured. Use a webhook meanwhile.</p>
+        )}
+        <label>
+          Webhook URL (optional)
+          <input
+            class="input"
+            type="url"
+            name="webhook_url"
+            value={watch.webhook_url ?? ''}
+            maxlength="2000"
+            placeholder="https://hooks.slack.com/…"
+          />
+        </label>
+        <p class="xs muted">
+          Slack, Discord, Microsoft Teams and Google Chat webhooks get a formatted message; any other HTTPS address
+          gets JSON. Leave it empty to stop webhook alerts. A test uses the saved settings.
+        </p>
+        <div class="alert-actions">
+          <button class="btn btn--ink" type="submit">Save alert channels</button>
+          <button type="button" class="btn btn--outline" id="test-notification" data-watch={watch.id}>
+            Send test notification
+          </button>
+        </div>
+        <p role="status" aria-live="polite" id="alerts-status"></p>
+      </form>
+
       {beforeUrl && afterUrl && (
       <section class="stack gap-8">
           <div class="row-between">
@@ -212,8 +261,37 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           Your screenshot allowance is exhausted. Checks are skipped until quota is available.
         </div>
       )}
+      <div class="rows">
+        <button type="button" class="row" data-action="run" style="width: 100%">
+          <span class="row__label">Check now</span>
+          <span class="row__value" style="color: var(--muted-2)">
+            Uses one screenshot ›
+          </span>
+        </button>
+        <button
+          type="button"
+          class="row"
+          data-action={active ? 'pause' : 'resume'}
+          style="width: 100%"
+        >
+          <span class="row__label">{active ? 'Pause' : 'Resume'}</span>
+          <span class="row__value" style="color: var(--muted-2)">
+            ›
+          </span>
+        </button>
+        <button type="button" class="row" data-action="delete" style="width: 100%">
+          <span class="row__label" style="color: var(--danger)">
+            Delete monitor
+          </span>
+          <span class="row__value" style="color: var(--muted-2)">
+            ›
+          </span>
+        </button>
+      </div>
+      <div class="notice notice--error" id="watch-error" hidden></div>
+
       <form id="schedule-form" class="card card--pad stack gap-12" data-watch-id={watch.id}>
-        <h2 class="h4">Adjust your schedule</h2>
+        <h2 class="h4">Check schedule</h2>
         <label class="field__label" for="schedule-frequency">
           Check frequency
         </label>
@@ -232,7 +310,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           frequency={watch.frequency}
         />
         <p class="xs muted">
-          {watch.status === 'paused'
+          {!active
             ? 'The forecast shows the cost if resumed. Saving keeps this monitor paused.'
             : 'Saving queues a check on the next scheduler run, then repeats at your chosen interval.'}
         </p>
@@ -241,6 +319,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
         </button>
         <p class="notice notice--error" id="schedule-error" role="alert" hidden></p>
       </form>
+
       <section class="stack gap-8">
         <h2 class="h4">History &amp; alert status</h2>
         <a class="btn btn--outline" href={`/app/library?collection=monitors&watch=${encodeURIComponent(watch.id)}`}>View this monitor’s screenshots →</a>
@@ -254,9 +333,9 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
               <Icon name="eye" size={30} />
             </div>
             <p class="small muted" style="margin-top: 8px">
-              {watch.status === 'paused'
+              {!active
                 ? 'This monitor is paused. Resume it to run scheduled checks.'
-                : `The first scheduled check is due ${new Date(watch.next_run_at).toUTCString()}. You can also check now.`}
+                : `The first scheduled check is due ${formatDateTime(watch.next_run_at)}. You can also check now.`}
             </p>
           </div>
         ) : (
@@ -267,7 +346,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
                   <span class="row__label" style="display: block">
                     {runLabel(run)}
                   </span>
-                  <span class="xs muted-2">{formatRelative(run.created_at)}</span>
+                  <time class="xs muted-2" datetime={run.created_at}>{formatDateTime(run.created_at)}</time>
                   {run.changed === 1 && (
                     <span class="xs muted" style="display:block">
                       Email: {deliveryLabel[run.delivery.email]}
@@ -286,76 +365,90 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           </div>
         )}
       </section>
-
-      <div class="rows">
-        <button type="button" class="row" data-action="run" style="width: 100%">
-          <span class="row__label">Check now</span>
-          <span class="row__value" style="color: var(--muted-2)">
-            Uses one screenshot ›
-          </span>
-        </button>
-        <button
-          type="button"
-          class="row"
-          data-action={watch.status === 'active' ? 'pause' : 'resume'}
-          style="width: 100%"
-        >
-          <span class="row__label">{watch.status === 'active' ? 'Pause' : 'Resume'}</span>
-          <span class="row__value" style="color: var(--muted-2)">
-            ›
-          </span>
-        </button>
-        <button type="button" class="row" data-action="delete" style="width: 100%">
-          <span class="row__label" style="color: var(--danger)">
-            Delete watch
-          </span>
-          <span class="row__value" style="color: var(--muted-2)">
-            ›
-          </span>
-        </button>
-      </div>
-      <div class="notice notice--error" id="watch-error" hidden></div>
     </div>
   </div>
-  <div class="app-wrap">
-    <button type="button" class="btn btn--outline" id="test-notification" data-watch={watch.id}>
-      Send test notification
-    </button>
-    <p id="test-notification-status" class="small muted" role="status"></p>
-  </div>
 </AppShell>
+
+<style>
+  /* The intro speaks for the whole page, so it spans both columns of the split. */
+  .monitor-intro {
+    grid-column: 1 / -1;
+  }
+  .monitor-intro h1 {
+    overflow-wrap: anywhere;
+  }
+  .alert-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .alert-actions .btn {
+    width: auto;
+  }
+</style>
+
 <script>
-  document.querySelector<HTMLFormElement>('#threshold-form')?.addEventListener('submit', async e => {
+  const statusOf = (form: HTMLFormElement) => form.querySelector<HTMLElement>('[role="status"]')!;
+  const send = async (url: string, body: FormData | Record<string, string>) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      ...(body instanceof FormData
+        ? { body }
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+    const result = (await response.json().catch(() => ({}))) as { message?: string; error?: { message?: string } };
+    if (!response.ok) throw new Error(result.error?.message || 'That did not save. Try again.');
+    return result;
+  };
+
+  // One save for the rule and its sensitivity: they answer the same question.
+  document.querySelector<HTMLFormElement>('#detection-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
     const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    const state = form.querySelector('[role="status"]')!;
+    const state = statusOf(form);
     if (button.disabled || !form.reportValidity()) return;
     button.disabled = true;
     state.textContent = 'Saving…';
     try {
-      const body = new FormData(form); body.set('action', 'threshold');
-      const response = await fetch(`/api/watches/${form.dataset.watch}`, { method: 'POST', body });
-      const result = await response.json() as { error?: { message: string } };
-      if (!response.ok) throw new Error(result.error?.message || 'Could not save threshold.');
+      const body = new FormData(form);
+      body.set('action', 'threshold');
+      await send(`/api/watches/${form.dataset.watch}`, body);
+      if (form.dataset.rules === 'true') await send(`/api/watches/${form.dataset.watch}/rules`, new FormData(form));
       window.location.reload();
-    } catch (error) { state.textContent = error instanceof Error ? error.message : 'Could not save threshold.'; }
-    finally { button.disabled = false; }
+    } catch (error) {
+      state.textContent = error instanceof Error ? error.message : 'That did not save. Try again.';
+      button.disabled = false;
+    }
   });
 
-  document.querySelector<HTMLFormElement>('#rules-form')?.addEventListener('submit', async e => {
-    e.preventDefault(); const form = e.currentTarget as HTMLFormElement;
-    const state = form.querySelector('[role="status"]')!;
-    const button = form.querySelector('button')!; button.disabled = true;
-    try { const response = await fetch(`/api/watches/${form.dataset.watch}/rules`, { method:'POST', body:new FormData(form) });
-      const result = await response.json() as { error?: { message: string }; message: string }; if (!response.ok) throw Error(result.error?.message || 'Could not save.'); state.textContent = result.message;
-    } catch (error) { state.textContent = error instanceof Error ? error.message : 'Could not save.'; }
-    finally { button.disabled = false; }
+  document.querySelector<HTMLFormElement>('#alerts-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const state = statusOf(form);
+    if (button.disabled || !form.reportValidity()) return;
+    button.disabled = true;
+    state.textContent = 'Saving…';
+    try {
+      const data = new FormData(form);
+      await send(`/api/watches/${form.dataset.watch}`, {
+        action: 'alerts',
+        notify_email: String(data.get('notify_email') ?? '1'),
+        webhook_url: String(data.get('webhook_url') ?? ''),
+      });
+      state.textContent = 'Alert channels saved.';
+    } catch (error) {
+      state.textContent = error instanceof Error ? error.message : 'That did not save. Try again.';
+    } finally {
+      button.disabled = false;
+    }
   });
+
   document.querySelector<HTMLButtonElement>('#test-notification')?.addEventListener('click', async (e) => {
     const button = e.currentTarget as HTMLButtonElement;
     button.disabled = true;
-    const status = document.querySelector('#test-notification-status')!;
+    const status = document.querySelector('#alerts-status')!;
     status.textContent = 'Sending test…';
     try {
       const response = await fetch(`/api/watches/${button.dataset.watch}/test`, { method: 'POST' });
@@ -383,7 +476,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
       const action = button.getAttribute('data-action');
       if (errorBox) errorBox.hidden = true;
 
-      if (action === 'delete' && !window.confirm('Delete this watch and its history?')) return;
+      if (action === 'delete' && !window.confirm('Delete this monitor and its history?')) return;
 
       const label = button.querySelector('.row__label');
       const original = label?.textContent;

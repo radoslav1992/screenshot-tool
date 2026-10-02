@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { captureListQuery, monitorFoldersQuery } from '../src/lib/capture-list.ts';
+import { captureCursor, captureListQuery, listLimit, monitorFoldersQuery } from '../src/lib/capture-list.ts';
 const db = new DatabaseSync(':memory:');
 db.exec("CREATE TABLE captures (id TEXT, user_id TEXT, url TEXT, mode TEXT, created_at TEXT, source TEXT NOT NULL DEFAULT 'app')");
 const insert = db.prepare('INSERT INTO captures (id, user_id, url, mode, created_at) VALUES (?, ?, ?, ?, ?)');
@@ -25,6 +25,21 @@ assert.deepEqual(list({ mode: 'visible', search: 'example' }), ['b']);
 assert.deepEqual(list({ limit: 1 }), ['b']);
 assert.deepEqual(list({ limit: 1, offset: 1 }), ['a'], 'equal timestamps must paginate deterministically');
 assert.deepEqual(list({ cursor: '2026-09-12' }), ['d'], 'existing API cursor must keep working');
+// Walking the API with its own cursors: rows sharing a timestamp must not fall between pages.
+const walk = [];
+for (let cursor, guard = 0; guard < 10; guard++) {
+  const { sql, binds } = captureListQuery('owner', { limit: 1, cursor, lookahead: true });
+  const rows = db.prepare(sql).all(...binds);
+  const page = rows.slice(0, listLimit(1));
+  walk.push(...page.map((row) => row.id));
+  if (rows.length <= listLimit(1)) break;
+  cursor = captureCursor(page.at(-1));
+}
+assert.deepEqual(walk, ['b', 'a', 'd'], 'a cursor of timestamp and id must visit equal-timestamp rows once each');
+assert.equal(captureCursor({ created_at: '2026-09-12', id: 'b' }), '2026-09-12~b');
+assert.deepEqual(list({ cursor: '2026-09-12~b' }), ['a', 'd'], 'the id breaks timestamp ties');
+assert.deepEqual(list({ limit: 2, lookahead: true }), ['b', 'a', 'd'], 'lookahead fetches one row past the page');
+assert.deepEqual(list({ cursor: '2026-09-11~d', lookahead: true }), [], 'the last page has nothing after it');
 assert.deepEqual(list({ limit: NaN, offset: -20 }), ['b', 'a', 'd']);
 db.exec(`
   CREATE TABLE watches (id TEXT, user_id TEXT, baseline_capture_id TEXT, label TEXT, url TEXT, status TEXT, created_at TEXT);
@@ -59,4 +74,4 @@ assert.deepEqual(folders("' OR 1=1 --"), []);
 db.exec("DELETE FROM watches WHERE id = 'job2'");
 assert.deepEqual(list({ collection: 'monitors', unassigned: true }), ['g', 'e'], 'deleted job captures remain accessible');
 db.close();
-console.log('Library checks passed: owner isolation, literal search, modes, pagination, API compatibility, monitor folders, baselines, and unassigned captures.');
+console.log('Library checks passed: owner isolation, literal search, modes, pagination, tie-safe cursors, API compatibility, monitor folders, baselines, and unassigned captures.');

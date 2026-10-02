@@ -1,13 +1,14 @@
-import { allowedFrequencies } from '../../../lib/plans';
 import { assertVerified } from '../../../lib/verification';
 import type { APIRoute } from 'astro';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
 import {
+  assertCanResume,
   deleteWatch,
   getWatch,
   listRuns,
-  runWatch,
+  runWatchNow,
+  setWatchAlerts,
   setWatchStatus,
   setWatchFrequency,
   setWatchThreshold,
@@ -39,7 +40,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
   }
 };
 
-/** Pause, resume, or run one now. */
+/** Pause, resume, run one now, or change its schedule, sensitivity or alert channels. */
 export const POST: APIRoute = async ({ request, params, locals }) => {
   const user = locals.user;
   if (!user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
@@ -49,7 +50,7 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     const watch = await owned(params.id, user.id);
     const body = await readBody(request);
     const action = body.action ?? '';
-    if (['schedule', 'threshold', 'resume', 'run'].includes(action)) await assertVerified(user);
+    if (['schedule', 'threshold', 'alerts', 'resume', 'run'].includes(action)) await assertVerified(user);
     if (action === 'threshold') {
       await setWatchThreshold(watch, user, body.threshold ?? '');
       return json(toWatchDTO((await getWatch(watch.id))!));
@@ -58,10 +59,12 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
       await setWatchFrequency(watch, user, body.frequency ?? '');
       return json(toWatchDTO((await getWatch(watch.id))!));
     }
-
-    if (action === 'resume' && !allowedFrequencies(user.plan).includes(watch.frequency as never)) {
-      throw new HttpError(403, 'plan_required', 'Choose a schedule included in your plan before resuming.');
+    if (action === 'alerts') {
+      await setWatchAlerts(watch, user, body);
+      return json(toWatchDTO((await getWatch(watch.id))!));
     }
+
+    if (action === 'resume') await assertCanResume(watch, user);
     if (action === 'pause' || action === 'resume') {
       await setWatchStatus(watch.id, action === 'pause' ? 'paused' : 'active');
       const updated = await getWatch(watch.id);
@@ -71,12 +74,12 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     if (action === 'run') {
       // Checking now spends a capture from the quota exactly as a scheduled run
       // does, and is the only way to see the feature work without waiting.
-      const outcome = await runWatch(watch, new URL(request.url).origin);
+      const outcome = await runWatchNow(watch, new URL(request.url).origin);
       const updated = await getWatch(watch.id);
       return json({ ...toWatchDTO(updated!), outcome });
     }
 
-    throw badRequest('`action` must be one of: pause, resume, run, schedule, threshold.', 'action');
+    throw badRequest('`action` must be one of: pause, resume, run, schedule, threshold, alerts.', 'action');
   } catch (error) {
     return toHttpError(error, 'watches.update', 'Could not update that watch.').toResponse();
   }

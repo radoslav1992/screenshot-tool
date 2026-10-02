@@ -1,0 +1,323 @@
+/* AI Agency layout primitives for every public page outside the homepage.
+ * They sit inside `.ai-landing .ai-grid` (see components/AiPage.astro), so the
+ * ruled four-column grid, `.ai-hero-label`, `.ai-section-head` and
+ * `.rr-btn-classic` from ai-landing.css apply unchanged.
+ */
+
+/* Page hero: label bar, oversized title, then a 1fr / 3fr foot row. */
+.ai-page-head__body {
+  padding: 60px 25px 55px;
+}
+.ai-page-title {
+  font: 300 clamp(52px, 7.2vw, 116px) / 0.9 var(--font_astronebula);
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+  max-width: none;
+}
+.ai-page-head__body .ai-eyebrow + .ai-page-title {
+  margin-top: 28px;
+}
+.ai-page-title > span {
+  color: var(--theme);
+}
+.ai-page-head__foot {
+  display: grid;
+  grid-template-columns: 1fr 3fr;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.ai-page-head__aside {
+  padding: 20px;
+  border-right: 1px solid var(--line);
+  font: 10px/1.6 var(--mono);
+  text-transform: uppercase;
+}
+.ai-page-head__lede {
+  padding: 28px 25px 32px;
+  display: grid;
+  gap: 22px;
+}
+.ai-page-head__lede > .switch {
+  justify-self: start;
+}
+.ai-page-head__lede > p {
+  font-size: 16px;
+  line-height: 1.8;
+  max-width: 62ch;
+}
+
+/* Full-width notice strip directly under a label bar or section head. */
+.ai-strip {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--lime-tint);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ai-strip--error {
+  background: #fbeae5;
+}
+.ai-strip > strong {
+  font-weight: 600;
+}
+
+/* Square call-to-action rows built from `.rr-btn-classic`. */
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ai-actions .rr-btn-classic {
+  width: auto;
+  min-width: 260px;
+}
+.ai-landing .ai-btn-outline {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.ai-landing .ai-btn-outline:hover {
+  background: var(--ink);
+  color: white;
+}
+
+/* A section of the grid with a padded paper body below its section head. */
+.ai-panel {
+  padding: 32px 25px;
+  background: var(--paper);
+}
+.ai-section-head .ai-section-lede {
+  font-size: 16px;
+  line-height: 1.8;
+  max-width: 60ch;
+  margin-top: 26px;
+  color: var(--ink);
+}
+.ai-section-head .ai-section-lede + .ai-section-lede {
+  margin-top: 12px;
+}
+
+/* Long-form pages: sticky index on the first grid column, sections on the rest. */
+.ai-doc {
+  display: grid;
+  grid-template-columns: 1fr 3fr;
+  margin-top: 35px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.ai-doc__nav {
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+.ai-doc__nav-inner {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 20px;
+}
+.ai-doc__nav-label {
+  display: block;
+  margin-bottom: 14px;
+  font: 10px/1.5 var(--mono);
+}
+.ai-doc__nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ai-doc__nav a {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.ai-doc__nav a > span {
+  font: 9px/1.6 var(--mono);
+  color: var(--muted);
+}
+.ai-doc__nav a:hover {
+  color: var(--green);
+}
+.ai-doc__body {
+  min-width: 0;
+}
+.ai-doc__section {
+  padding: 40px 30px 44px;
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: 16px;
+}
+.ai-doc__section:last-child {
+  border-bottom: 0;
+}
+.ai-doc__num {
+  display: block;
+  margin-bottom: 16px;
+  font: 10px var(--mono);
+}
+.ai-doc__section > h2 {
+  font: 300 clamp(26px, 2.6vw, 38px) / 1 var(--font_astronebula);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  margin-bottom: 22px;
+}
+
+/* Readable body copy, inline code chips, square tables and code blocks. */
+.ai-prose {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.ai-prose > p,
+.ai-prose > ul {
+  max-width: 76ch;
+}
+.ai-prose p {
+  margin: 0;
+}
+.ai-prose a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ai-prose a:hover {
+  color: var(--ink);
+}
+.ai-prose strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ai-prose :is(p, li) .mono {
+  font: 12.5px var(--mono);
+  color: var(--ink);
+  background: #e7e7e3;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+.ai-prose .ai-note {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted-2);
+}
+.ai-prose > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.ai-prose > ul > li {
+  position: relative;
+  padding: 11px 0 11px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.ai-prose > ul > li::before {
+  content: "+";
+  position: absolute;
+  left: 0;
+  font-family: var(--mono);
+  color: var(--theme);
+}
+.ai-prose .rows,
+.ai-prose .deflist {
+  background: white;
+  border-color: var(--line);
+}
+.ai-prose .row:hover {
+  background: transparent;
+}
+.ai-prose .param-list {
+  border-top: 1px solid var(--line);
+}
+.ai-prose .param-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ai-prose .param-row:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.ai-prose .param-row__name {
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.ai-prose .param-row__desc {
+  max-width: 60ch;
+}
+.ai-prose .code {
+  margin: 0;
+}
+
+@media (max-width: 1100px) {
+  .ai-page-head__aside {
+    padding: 18px 15px;
+  }
+}
+@media (max-width: 899px) {
+  .ai-doc {
+    grid-template-columns: 1fr;
+  }
+  .ai-doc__nav {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  /* ai-landing.css hides the right-hand label on phones; keep a lone label. */
+  .ai-hero-label > span:only-child {
+    display: block;
+  }
+  .ai-page-head__body {
+    padding: 36px 15px;
+  }
+  .ai-page-title {
+    font-size: clamp(36px, 11vw, 60px);
+    line-height: 0.95;
+  }
+  .ai-page-head__foot {
+    grid-template-columns: 1fr;
+  }
+  .ai-page-head__aside {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 14px 15px;
+    font-size: 8px;
+  }
+  .ai-page-head__lede {
+    padding: 22px 15px 26px;
+  }
+  .ai-strip {
+    padding: 14px;
+  }
+  .ai-actions .rr-btn-classic {
+    width: 100%;
+    min-width: 0;
+  }
+  .ai-panel {
+    padding: 22px 15px;
+  }
+  .ai-doc {
+    margin-top: 20px;
+  }
+  .ai-doc__section {
+    padding: 30px 15px 34px;
+  }
+  .ai-prose {
+    font-size: 15px;
+  }
+  .ai-prose .param-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ai-prose .param-row__desc {
+    text-align: left;
+  }
+}
+.ai-prose b {
+  color: var(--ink);
+  font-weight: 500;
+}

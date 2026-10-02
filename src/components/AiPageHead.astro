@@ -1,0 +1,39 @@
+---
+interface Props {
+  /** Bracketed label on the left of the top rule. */
+  label: string;
+  /** Right-hand side of the top rule; hidden on phones. */
+  meta?: string;
+  eyebrow?: string;
+  /** Mono note in the first grid column beside the lede. */
+  aside?: string;
+  id?: string;
+}
+
+const { label, meta, eyebrow, aside, id = 'page-title' } = Astro.props;
+const hasLede = Astro.slots.has('default');
+---
+
+<section class="ai-page-head" aria-labelledby={id}>
+  <div class="ai-hero-label">
+    <span>[ {label} ]</span>
+    {meta && <span>{meta}</span>}
+  </div>
+  <slot name="notice" />
+  <div class="ai-page-head__body">
+    {eyebrow && <span class="ai-eyebrow">{eyebrow}</span>}
+    <h1 id={id} class="ai-page-title" data-adon-title>
+      <slot name="title" />
+    </h1>
+  </div>
+  {
+    hasLede && (
+      <div class="ai-page-head__foot">
+        <span class="ai-page-head__aside">{aside}</span>
+        <div class="ai-page-head__lede">
+          <slot />
+        </div>
+      </div>
+    )
+  }
+</section>

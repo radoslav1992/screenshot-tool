@@ -1,6 +1,7 @@
 ---
 import type { Project, Report } from '../lib/projects';
 import { safeParseFiles, type CaptureRow } from '../lib/captures';
+import '../styles/adon/ai-report.css';
 interface Props {
   project: Project;
   report: Report;
@@ -8,50 +9,86 @@ interface Props {
   token?: string;
 }
 const { project, report, captures, token } = Astro.props;
+const brand = project.brand || project.name;
+const prepared = new Date(report.created_at).toISOString().slice(0, 10);
+const titles = ['Before · baseline', 'After · current', 'Comparison 2 · before', 'Comparison 2 · after'];
 ---
 
-<article class="report-page">
-  <header>
-    <span class="eyebrow">{project.brand || project.name} · WEBSITE REVIEW</span>
-    <h1>{report.title}</h1>
-    <p>
-      {project.name} · Prepared {new Date(report.created_at).toISOString().slice(0, 10)}
-    </p>
-  </header>
-  {report.notes && (
-    <section>
-      <h2>Review notes</h2>
-      <p class="report-notes">{report.notes}</p>
-    </section>
-  )}
-  <div class="review-images">
-    {captures.map((c) => {
-      const file = c.id ? safeParseFiles(c.files)[0] : null;
-      const src = token ? `/r/${token}/${c.position}` : `/api/reports/${report.id}/image?position=${c.position}`;
-      return (
-        <figure>
-          <h2>{['Before · baseline', 'After · current', 'Comparison 2 · before', 'Comparison 2 · after'][c.position]}</h2>
-          {file ? (
-            <>
-              <p class="report-meta">
-                {c.url}
-                <br />
-                {c.width} × {c.height} CSS px · {c.scale}× scale · {c.mode}
-                <br />
-                {c.created_at}
-              </p>
-              <img src={src} alt={`${c.position % 2 ? 'After' : 'Before'} capture of ${c.url}`} loading="eager" />
-            </>
-          ) : (
-            <p class="project-panel">
-              Original image expired or was deleted. Ask the report owner for a current capture.
-            </p>
-          )}
-        </figure>
-      );
-    })}
+<article class="ai-report">
+  <div class="ai-report-label">
+    <span>[ WEBSITE REVIEW ]</span>
+    <span>PREPARED {prepared}</span>
   </div>
-  <footer class="small muted">
+  <header class="ai-report-head">
+    <span class="ai-report-eyebrow">{brand} · WEBSITE REVIEW</span>
+    <h1 class="ai-report-title">{report.title}</h1>
+  </header>
+  <dl class="ai-report-facts">
+    <div>
+      <dt>PROJECT</dt>
+      <dd>{project.name}</dd>
+    </div>
+    <div>
+      <dt>PREPARED</dt>
+      <dd>{prepared}</dd>
+    </div>
+    <div>
+      <dt>CAPTURES</dt>
+      <dd>{captures.length}</dd>
+    </div>
+  </dl>
+  {
+    report.notes && (
+      <section class="ai-report-notes" aria-labelledby={`report-notes-${report.id}`}>
+        <span>[ REVIEW NOTES ]</span>
+        <div>
+          <h2 id={`report-notes-${report.id}`}>Review notes</h2>
+          <p class="report-notes">{report.notes}</p>
+        </div>
+      </section>
+    )
+  }
+  <div class="ai-report-compare">
+    {
+      captures.map((c) => {
+        const file = c.id ? safeParseFiles(c.files)[0] : null;
+        const src = token ? `/r/${token}/${c.position}` : `/api/reports/${report.id}/image?position=${c.position}`;
+        const after = c.position % 2 === 1;
+        return (
+          <figure class:list={['ai-report-shot', { 'ai-report-shot--after': after }]}>
+            <figcaption>
+              <div class="ai-report-shot-label">
+                <span>[ {after ? 'AFTER' : 'BEFORE'} ]</span>
+                <span>
+                  {after ? 'CURRENT' : 'BASELINE'} / 0{c.position + 1}
+                </span>
+              </div>
+              <h2>{titles[c.position]}</h2>
+              {file && (
+                <p class="ai-report-meta">
+                  {c.url}
+                  <br />
+                  {c.width} × {c.height} CSS px · {c.scale}× scale · {c.mode}
+                  <br />
+                  {c.created_at}
+                </p>
+              )}
+            </figcaption>
+            <div class="ai-report-stage">
+              {file ? (
+                <img src={src} alt={`${after ? 'After' : 'Before'} capture of ${c.url}`} loading="eager" />
+              ) : (
+                <p class="ai-report-missing">
+                  Original image expired or was deleted. Ask the report owner for a current capture.
+                </p>
+              )}
+            </div>
+          </figure>
+        );
+      })
+    }
+  </div>
+  <footer class="ai-report-foot">
     Images are retained under the account’s capture retention policy. This report does not extend retention.
   </footer>
 </article>

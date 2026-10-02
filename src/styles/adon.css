@@ -271,18 +271,6 @@
   background: var(--ink);
   color: white;
 }
-.adon-theme .workspace-features {
-  padding-block: 72px;
-}
-.adon-theme .workspace-features > h2 {
-  font-size: clamp(28px, 4vw, 48px);
-  letter-spacing: -0.045em;
-  line-height: 1.1;
-}
-.adon-theme .feature-grid article,
-.adon-theme .feature-table {
-  border-radius: 8px;
-}
 .adon-theme .section--ink {
   background: var(--ink);
 }

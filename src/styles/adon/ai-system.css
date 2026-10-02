@@ -232,3 +232,66 @@
   letter-spacing: -0.035em;
   text-transform: uppercase;
 }
+
+/* Cards, panels, lists, notices and code are square everywhere, as in the
+ * AI Agency demo; only dots, avatars and toggles stay round. */
+.adon-theme
+  :is(
+    .card,
+    .panel-dark,
+    .rows,
+    .deflist,
+    .code,
+    .shot,
+    .shot__badge,
+    .shot__strip-item,
+    .stat,
+    .notice,
+    .feature,
+    .feature__icon,
+    .upgrade,
+    .icon-btn,
+    .urlbar,
+    .urlbar button,
+    .compare__side img,
+    .diff-line,
+    .skeleton,
+    .mode-card,
+    .size-card,
+    .workflow-card,
+    .capture-summary,
+    .panel-heading > span,
+    .health-grid article,
+    .monitor-budget,
+    .project-panel,
+    .project-item,
+    .pill,
+    .meter,
+    .meter__fill,
+    .upgrade__tag
+  ) {
+  border-radius: 0;
+}
+body.adon-theme .shell,
+body.adon-theme .shell--app,
+body.adon-theme .shell--app > .tabbar {
+  border-radius: 0;
+}
+.adon-theme .code {
+  background: #1b1c1c;
+}
+.adon-theme .code--light {
+  background: white;
+  border-color: var(--line);
+}
+.adon-theme .code__copy {
+  font: 500 10px var(--mono);
+  text-transform: uppercase;
+  color: var(--theme);
+}
+.adon-theme .notice--info {
+  border-color: var(--line);
+}
+.adon-theme .notice--ok {
+  border-color: #edcbb7;
+}

@@ -1,10 +1,13 @@
 ---
 import Base from '../layouts/Base.astro';
-import SiteHeader from '../components/SiteHeader.astro';
-import SiteFooter from '../components/SiteFooter.astro';
+import AiPage from '../components/AiPage.astro';
+import AiPageHead from '../components/AiPageHead.astro';
+import AiDoc from '../components/AiDoc.astro';
+import DocSection from '../components/DocSection.astro';
 import CodeBlock from '../components/CodeBlock.astro';
 import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
 import { API_RATE_LIMIT, PLANS } from '../lib/plans';
+import { docSections } from '../lib/doc-sections';
 
 const user = Astro.locals.user;
 const origin = Astro.url.origin;
@@ -179,85 +182,101 @@ const endpoints = [
   { method: 'DELETE', path: '/v1/captures/:id', desc: 'Delete a capture and its files.' },
   { method: 'GET', path: '/v1/account', desc: 'Plan and quota for the key owner.' },
 ];
+
+const toc = [
+  { id: 'authentication', title: 'Authentication' },
+  { id: 'quick-start', title: 'Quick start' },
+  { id: 'your-own-html', title: 'Your own HTML' },
+  { id: 'what-the-page-says-about-itself', title: 'What the page says about itself' },
+  { id: 'every-size-in-one-visit', title: 'Every size in one visit' },
+  { id: 'hiding-and-redacting', title: 'Hiding and redacting' },
+  { id: 'getting-past-what-is-in-the-way', title: 'Getting past what is in the way' },
+  { id: 'pages-behind-a-login', title: 'Pages behind a login' },
+  { id: 'a-list-or-a-whole-sitemap', title: 'A list, or a whole sitemap' },
+  { id: 'comparing-two-pages', title: 'Comparing two pages' },
+  { id: 'watching-a-page', title: 'Watching a page' },
+  { id: 'endpoints', title: 'Endpoints' },
+  { id: 'parameters', title: 'Parameters' },
+  { id: 'devices', title: 'Devices' },
+  { id: 'output-frames', title: 'Output frames' },
+  { id: 'capture-modes', title: 'Capture modes' },
+  { id: 'long-pages-async-mode', title: 'Long pages: async mode' },
+  { id: 'javascript', title: 'JavaScript' },
+  { id: 'errors', title: 'Errors' },
+  { id: 'the-free-plan-mark', title: 'The free-plan mark' },
+  { id: 'file-urls', title: 'File URLs' },
+] as const;
+const { list: sections, byId: s } = docSections(toc);
 ---
 
 <Base title="API reference">
-  <div class="page">
-    <SiteHeader user={user} />
+  <AiPage user={user}>
+    <AiPageHead label="API REFERENCE" meta="POST /v1/capture" aside="REST · JSON or form-encoded">
+      <Fragment slot="title">API <span>reference</span></Fragment>
+      <p>
+        One endpoint does the work: <span class="mono">POST /v1/capture</span>. Send a URL, get back file URLs.
+        Bodies may be JSON or form-encoded.
+      </p>
+    </AiPageHead>
 
-    <div class="wrap prose-wrap stack gap-20" style="padding-block: 48px 64px">
-      <header>
-        <h1 class="h2">API reference</h1>
-        <p class="small muted" style="margin-top: 8px">
-          One endpoint does the work: <span class="mono">POST /v1/capture</span>. Send a URL, get back file URLs.
-          Bodies may be JSON or form-encoded.
-        </p>
-      </header>
-
-      <section class="stack gap-8">
-        <h2 class="h4">Authentication</h2>
-        <p class="small muted">
+    <AiDoc sections={sections} label="ENDPOINTS & GUIDES">
+      <DocSection {...s['authentication']}>
+        <p>
           Every request needs a key from the <a href="/app/api">API screen</a>, sent as a bearer token. Keys are shown
           once at creation — store them as a secret.
         </p>
         <CodeBlock tag="HEADER" code={'Authorization: Bearer sk_live_…'} />
-        <p class="xs muted">
+        <p class="ai-note">
           API access is included on {PLANS.pro.name} and {PLANS.business.name}. Rate limits:
           {PLANS.pro.name} {API_RATE_LIMIT.pro} req/min, {PLANS.business.name} {API_RATE_LIMIT.business} req/min.
         </p>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Quick start</h2>
+      <DocSection {...s['quick-start']}>
         <CodeBlock tag="POST /v1/capture" code={quickstart} />
         <CodeBlock tag="RESPONSE · 201" code={responseSample} light copyable={false} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Your own HTML</h2>
-        <p class="small muted">
+      <DocSection {...s['your-own-html']}>
+        <p>
           Send <span class="mono">html</span> instead of <span class="mono">url</span> and the markup is rendered
           directly — no publishing it somewhere first. This is the short path to an
           <span class="mono">og:image</span>, a social card or a receipt. Up to 512 KB, and every subrequest the
           markup makes is checked, so it cannot be used to reach a private address.
         </p>
         <CodeBlock tag="POST /v1/capture" code={htmlExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">What the page says about itself</h2>
-        <p class="small muted">
+      <DocSection {...s['what-the-page-says-about-itself']}>
+        <p>
           Add <span class="mono">facts=1</span> and the response carries a <span class="mono">page</span> object
           alongside the files: title, meta description, canonical, OG and Twitter tags, headings, word count, link
           counts, JSON-LD types, the CMS and framework it was built with, image alt coverage, page weight and load
           timings — read from the rendered DOM, so it is what a visitor got rather than what the server shipped.
         </p>
         <CodeBlock tag="RESPONSE · page" code={factsExample} light copyable={false} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Every size in one visit</h2>
-        <p class="small muted">
+      <DocSection {...s['every-size-in-one-visit']}>
+        <p>
           <span class="mono">sizes=desktop,tablet,mobile</span> shoots the same page at each viewport during a single
           page load, returning one file per device named after it. One load matters: three separate captures pay for
           three, and a page that shows a cookie wall on first visit behaves differently the second time.
         </p>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Hiding and redacting</h2>
-        <p class="small muted">
+      <DocSection {...s['hiding-and-redacting']}>
+        <p>
           <span class="mono">hide</span> removes elements, <span class="mono">blur</span> blurs them, and
           {' '}<span class="mono">redact_pii=1</span> finds email addresses, phone numbers, card numbers and IBANs in
           the page text and covers them. All three happen in the page before the shutter, so the information is never
           in the file — a blur applied to finished pixels can be undone by anyone patient.
         </p>
         <CodeBlock tag="POST /v1/capture" code={redactExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Getting past what is in the way</h2>
-        <p class="small muted">
+      <DocSection {...s['getting-past-what-is-in-the-way']}>
+        <p>
           The most common reason a capture is unusable is a consent dialog or a chat bubble sitting on top of the
           thing you wanted. <span class="mono">dismiss_consent=1</span> clicks through the usual ones;
           {' '}<span class="mono">actions</span> handles the rest with four verbs and no expressions —
@@ -265,11 +284,10 @@ const endpoints = [
           {' '}<span class="mono">scroll_to</span> and <span class="mono">type</span>.
         </p>
         <CodeBlock tag="POST /v1/capture" code={actionsExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Pages behind a login</h2>
-        <p class="small muted">
+      <DocSection {...s['pages-behind-a-login']}>
+        <p>
           <span class="mono">headers</span>, <span class="mono">cookies</span> and
           {' '}<span class="mono">basic_auth</span> carry credentials for the length of one capture. Nothing is
           stored: they arrive with the request, live in the browser session and go when it closes — which is also
@@ -277,41 +295,37 @@ const endpoints = [
           {' '}<span class="mono">Host</span> cannot be overridden.
         </p>
         <CodeBlock tag="POST /v1/capture" code={authExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">A list, or a whole sitemap</h2>
-        <p class="small muted">
+      <DocSection {...s['a-list-or-a-whole-sitemap']}>
+        <p>
           <span class="mono">POST /v1/batch</span> takes <span class="mono">urls</span> or a
           {' '}<span class="mono">sitemap</span> URL and captures up to 25 pages, with every other parameter applying
           to each. A page that fails is reported in <span class="mono">failed</span> rather than losing the batch.
         </p>
         <CodeBlock tag="POST /v1/batch" code={batchExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Comparing two pages</h2>
-        <p class="small muted">
+      <DocSection {...s['comparing-two-pages']}>
+        <p>
           <span class="mono">POST /v1/compare</span> captures two pages and measures how much of the picture differs.
           Each side takes the same parameters as a capture, prefixed <span class="mono">a_</span> and
           {' '}<span class="mono">b_</span>; anything unprefixed applies to both. Staging against production, a page
           before and after a deploy, your pricing page against a competitor's.
         </p>
         <CodeBlock tag="POST /v1/compare" code={compareExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Watching a page</h2>
-        <p class="small muted">
+      <DocSection {...s['watching-a-page']}>
+        <p>
           A watch re-takes a capture on a schedule and alerts you when the page looks different, with
           a webhook if you want one — a <span class="mono">watch.changed</span> POST carrying the
           before and after file URLs and the percentage that moved. Watches are set up in the
           <a href="/app/watches">app</a>; they are not on the public API yet.
         </p>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Endpoints</h2>
+      <DocSection {...s['endpoints']}>
         <div class="rows">
           {
             endpoints.map((endpoint) => (
@@ -324,25 +338,25 @@ const endpoints = [
             ))
           }
         </div>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-6">
-        <h2 class="h4" style="margin-bottom: 4px">Parameters</h2>
-        {
-          params.map((param) => (
-            <div class="param-row">
-              <span class="param-row__name">
-                {param.name}
-                {param.required && <span style="color: var(--danger)"> *</span>}
-              </span>
-              <span class="param-row__desc">{param.desc}</span>
-            </div>
-          ))
-        }
-      </section>
+      <DocSection {...s['parameters']}>
+        <div class="param-list">
+          {
+            params.map((param) => (
+              <div class="param-row">
+                <span class="param-row__name">
+                  {param.name}
+                  {param.required && <span style="color: var(--danger)"> *</span>}
+                </span>
+                <span class="param-row__desc">{param.desc}</span>
+              </div>
+            ))
+          }
+        </div>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Devices</h2>
+      <DocSection {...s['devices']}>
         <div class="rows">
           {
             DEVICE_LIST.map((device) => (
@@ -357,15 +371,14 @@ const endpoints = [
             ))
           }
         </div>
-        <p class="xs muted">
+        <p class="ai-note">
           Pass <span class="mono">width</span> and <span class="mono">height</span> for anything else — that switches
           the capture to <span class="mono">device=custom</span> (Pro and above).
         </p>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Output frames</h2>
-        <p class="small muted">
+      <DocSection {...s['output-frames']}>
+        <p>
           Named sizes that land on an exact pixel output, so a capture is publishable without cropping. Pass one as
           <span class="mono"> device</span>. They are named presets rather than custom viewports, so they are available
           on every plan.
@@ -380,14 +393,13 @@ const endpoints = [
             ))
           }
         </div>
-        <p class="xs muted">
+        <p class="ai-note">
           Frames are meant for <span class="mono">mode=visible</span>. A full-page or series capture ignores the frame's
           height, so the result will not keep the aspect ratio.
         </p>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Capture modes</h2>
+      <DocSection {...s['capture-modes']}>
         <div class="rows">
           <div class="row">
             <span class="row__label">visible</span>
@@ -406,25 +418,22 @@ const endpoints = [
             </span>
           </div>
         </div>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Long pages: async mode</h2>
-        <p class="small muted">
+      <DocSection {...s['long-pages-async-mode']}>
+        <p>
           Captures normally run inline and return when the files are stored. For slow pages, pass
           <span class="mono"> async=1</span> to get a <span class="mono">202</span> with
           <span class="mono"> status: "pending"</span> and poll the capture until it is done.
         </p>
         <CodeBlock tag="ASYNC" code={asyncExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">JavaScript</h2>
+      <DocSection {...s['javascript']}>
         <CodeBlock tag="NODE / WORKERS" code={jsExample} />
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">Errors</h2>
+      <DocSection {...s['errors']}>
         <CodeBlock tag="RESPONSE · 402" code={errorSample} light copyable={false} />
         <div class="rows" style="margin-top: 4px">
           {
@@ -436,34 +445,34 @@ const endpoints = [
             ))
           }
         </div>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">The free-plan mark</h2>
-        <p class="small muted">
+      <DocSection {...s['the-free-plan-mark']}>
+        <p>
           Captures made on the {PLANS.free.name} plan carry a small <span class="mono">easyscreencapture.com</span> badge in the corner. Every paid plan —
           from {PLANS.plus.name} at ${PLANS.plus.priceMonthly}/month — returns the file clean. There is no parameter for
           it: it follows the account's plan, so an unmarked file is always a file someone paid for.
         </p>
-      </section>
+      </DocSection>
 
-      <section class="stack gap-8">
-        <h2 class="h4">File URLs</h2>
-        <p class="small muted">
+      <DocSection {...s['file-urls']}>
+        <p>
           Rendered files live at <span class="mono">/f/:captureId/:name</span> and carry a per-capture share token in
           the <span class="mono">t</span> query parameter. Append <span class="mono">&amp;download=1</span> for a
           download disposition. Delete the capture to revoke the links.
         </p>
+      </DocSection>
+
+      <section class="ai-doc__section" aria-label="Get started">
+        <div class="ai-actions">
+          <a class="rr-btn-classic" href={user ? '/app/api' : '/signup'}>
+            {user ? 'Manage your keys' : 'Create a free account'} <span aria-hidden="true">↗</span>
+          </a>
+          <a class="rr-btn-classic ai-btn-outline" href="/pricing">
+            See pricing <span aria-hidden="true">↗</span>
+          </a>
+        </div>
       </section>
-
-      <div class="stack gap-8" style="padding-bottom: 24px">
-        <a class="btn btn--ink" href={user ? '/app/api' : '/signup'}>
-          {user ? 'Manage your keys' : 'Create a free account'}
-        </a>
-        <a class="btn btn--outline" href="/pricing">See pricing</a>
-      </div>
-    </div>
-
-    <SiteFooter />
-  </div>
+    </AiDoc>
+  </AiPage>
 </Base>

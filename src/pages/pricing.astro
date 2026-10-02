@@ -3,8 +3,8 @@ import PlanEstimator from '../components/PlanEstimator.astro';
 import WorkspaceFeatures from '../components/WorkspaceFeatures.astro';
 import Base from '../layouts/Base.astro';
 import Icon from '../components/Icon.astro';
-import SiteHeader from '../components/SiteHeader.astro';
-import SiteFooter from '../components/SiteFooter.astro';
+import AiPage from '../components/AiPage.astro';
+import AiPageHead from '../components/AiPageHead.astro';
 import { PLANS, PLAN_ORDER } from '../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, planPurchasable } from '../lib/billing';
 
@@ -29,37 +29,34 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
 ---
 
 <Base title="Pricing" description="Start free with 20 screenshots a month. Upgrade when you need more.">
-  <div class="page">
-    <SiteHeader user={user} />
+  <AiPage user={user}>
+    <AiPageHead label="PRICING" meta={`${plans.length} PLANS / START FREE`} aside="Monthly or yearly billing">
+      <Fragment slot="title">Simple <span>pricing</span></Fragment>
+      <p>Start with a client project. Upgrade for clean PDF exports, monitoring, API access or collaboration.</p>
+      <div class="switch" role="group" aria-label="Billing period">
+        <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
+        <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly · save about 20%</button>
+      </div>
+    </AiPageHead>
 
-    <section class="section">
-      <div class="wrap">
-        <div class="section__head section__head--center">
-          <h1 class="section__title">Simple pricing</h1>
-          <p class="section__sub">Start with a client project. Upgrade for clean PDF exports, monitoring, API access or collaboration.</p>
+    <section class="pricing-plans" aria-label="Plans">
+      {
+        billingError && (
+          <p class="ai-strip ai-strip--error" role="alert">
+            <strong>Checkout could not be started.</strong> {billingError}
+          </p>
+        )
+      }
 
-          <div class="switch" style="margin-top: 20px" role="group" aria-label="Billing period">
-            <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
-            <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly · save about 20%</button>
-          </div>
-        </div>
+      {
+        cancelled && (
+          <p class="ai-strip" role="status">
+            Checkout was cancelled — nothing was charged. Pick a plan whenever you are ready.
+          </p>
+        )
+      }
 
-        {
-          billingError && (
-            <div class="notice notice--error" style="max-width: 640px; margin: 0 auto 22px">
-              <strong>Checkout could not be started.</strong> {billingError}
-            </div>
-          )
-        }
-
-        {
-          cancelled && (
-            <div class="notice notice--info" style="max-width: 640px; margin: 0 auto 22px">
-              Checkout was cancelled — nothing was charged. Pick a plan whenever you are ready.
-            </div>
-          )
-        }
-
+      <div class="ai-panel">
         <div class="plan-grid">
           {
             plans.map((plan) => (
@@ -130,34 +127,88 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
           }
         </div>
 
-        <p class="small muted center" style="margin-top: 26px">
-          Need more? <a href="mailto:hello@easyscreencapture.com" style="font-weight: 600">Talk to us</a> about custom volume.
-        </p>
+      </div>
 
-        {
-          checkout && (
-            <p class="xs muted-2 center" style="margin-top: 10px">
-              Secure checkout by Stripe. Cancel any time — you keep the plan until the period you paid for ends.
-            </p>
-          )
-        }
-
-        {
-          !checkout && (
-            <div class="notice notice--info" style="max-width: 640px; margin: 22px auto 0">
-              Paid checkout is not available yet. You can start with Free and keep using your workspace.
-            </div>
-          )
-        }
+      <div class="pricing-foot">
+        <span class="pricing-foot__label">[ GOOD TO KNOW ]</span>
+        <div>
+          <p>
+            Need more? <a href="mailto:hello@easyscreencapture.com">Talk to us</a> about custom volume.
+          </p>
+          {
+            checkout && (
+              <p>Secure checkout by Stripe. Cancel any time — you keep the plan until the period you paid for ends.</p>
+            )
+          }
+          {
+            !checkout && (
+              <p>Paid checkout is not available yet. You can start with Free and keep using your workspace.</p>
+            )
+          }
+          <p>
+            Manual captures and monitor checks share the monthly screenshot allowance. A daily monitor uses about 30
+            screenshots per month; an hourly monitor uses about 720. Pro includes 2,000 screenshots: enough for 25 daily
+            monitors, but not all 25 hourly. Monitor limits describe saved pages, not unlimited checks.
+          </p>
+        </div>
       </div>
     </section>
 
     <PlanEstimator />
     <WorkspaceFeatures />
-    <SiteFooter />
-  </div>
-<p class="small muted" style="max-width:900px;margin:24px auto;padding:16px">Manual captures and monitor checks share the monthly screenshot allowance. A daily monitor uses about 30 screenshots per month; an hourly monitor uses about 720. Pro includes 2,000 screenshots: enough for 25 daily monitors, but not all 25 hourly. Monitor limits describe saved pages, not unlimited checks.</p>
+  </AiPage>
 </Base>
+
+<style>
+  .pricing-plans {
+    margin-top: 35px;
+    border-top: 1px solid var(--line);
+  }
+  .pricing-foot {
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    border-top: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .pricing-foot__label {
+    padding: 20px;
+    border-right: 1px solid var(--line);
+    font: 10px/1.5 var(--mono);
+  }
+  .pricing-foot > div {
+    display: grid;
+    gap: 10px;
+    padding: 22px 25px 26px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+  .pricing-foot p {
+    max-width: 80ch;
+  }
+  .pricing-foot a {
+    color: var(--green);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  @media (max-width: 767px) {
+    .pricing-plans {
+      margin-top: 20px;
+    }
+    .pricing-foot {
+      grid-template-columns: 1fr;
+    }
+    .pricing-foot__label {
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 15px;
+    }
+    .pricing-foot > div {
+      padding: 18px 15px 22px;
+    }
+  }
+</style>
 
 <script>
   const buttons = document.querySelectorAll<HTMLButtonElement>('[data-period]');

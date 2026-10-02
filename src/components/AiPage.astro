@@ -1,0 +1,25 @@
+---
+import SiteHeader from './SiteHeader.astro';
+import SiteFooter from './SiteFooter.astro';
+import '../styles/adon/ai-source.css';
+import '../styles/adon/ai-landing.css';
+import '../styles/adon/ai-pages.css';
+
+interface Props {
+  user?: { id: string } | null;
+  class?: string;
+}
+
+const { user = null, class: className } = Astro.props;
+---
+
+<a class="adon-skip-link" href="#main-content">
+  Skip to content
+</a>
+<div class="page ai-landing">
+  <SiteHeader user={user} />
+  <main id="main-content" class:list={['ai-grid wrap', className]}>
+    <slot />
+  </main>
+  <SiteFooter />
+</div>

@@ -30,6 +30,11 @@ The theme is intentionally isolated:
 | `src/scripts/adon-motion.ts`         | Optional marketing motion                             |
 | `src/components/AdonPreview.astro`   | Product illustrations                                 |
 | `src/components/AdonAuthStory.astro` | Account-page editorial panel                          |
+| `src/components/AiPage.astro`        | Public page shell: header, ruled grid and footer      |
+| `src/components/AiPageHead.astro`    | Page hero: label rule, display title and lede row     |
+| `src/components/AiDoc.astro`         | Long-form layout with a sticky section index          |
+| `src/styles/adon/ai-pages.css`       | Page head, doc, prose and action primitives           |
+| `src/styles/adon/ai-report.css`      | Before/after report layout (sample, links and app)    |
 | `public/vendor/adon/`                | Selected fonts, original shapes and motion libraries  |
 
 To try a different Adon demo, replace the landing composition/source stylesheet and adapt the shared tokens and motion hooks on this same branch. No database, billing, capture engine, monitor or API changes are needed. This is a single chosen demo, not a runtime demo switcher.

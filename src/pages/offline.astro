@@ -1,21 +1,21 @@
 ---
 import Base from '../layouts/Base.astro';
-import Icon from '../components/Icon.astro';
+import AiPage from '../components/AiPage.astro';
+import AiPageHead from '../components/AiPageHead.astro';
 
 export const prerender = true;
 ---
 
 <Base title="Offline">
-  <div class="shell">
-    <div class="empty" style="margin: auto">
-      <div class="empty__icon"><Icon name="offline" size={34} /></div>
-      <h1 class="h3" style="margin-top: 12px">You are offline</h1>
-      <p class="small muted" style="margin-top: 8px; max-width: 30ch; margin-inline: auto">
-        Easy Screen Capture needs a connection to render captures. Your library will be here when you are back.
-      </p>
-      <button type="button" class="btn btn--ink" style="max-width: 220px; margin: 20px auto 0" onclick="location.reload()">
-        Try again
-      </button>
-    </div>
-  </div>
+  <AiPage>
+    <AiPageHead label="OFFLINE" meta="NO CONNECTION" aside="Waiting for a connection">
+      <Fragment slot="title">You are <span>offline</span></Fragment>
+      <p>Easy Screen Capture needs a connection to render captures. Your library will be here when you are back.</p>
+      <div class="ai-actions">
+        <button type="button" class="rr-btn-classic" onclick="location.reload()">
+          Try again <span aria-hidden="true">↻</span>
+        </button>
+      </div>
+    </AiPageHead>
+  </AiPage>
 </Base>

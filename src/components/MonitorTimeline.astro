@@ -41,7 +41,7 @@ const link = (n:number) => `/app/library?collection=monitors&watch=${encodeURICo
 })}
 </form>
 <nav class="row-between" aria-label="Timeline pages"><span>{page>1&&<a href={link(page-1)}>← Previous</a>}</span>{results && results.length>40&&page<250&&<a href={link(page+1)}>Next →</a>}</nav>
-<style>.comparison-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.comparison-pair img{width:100%;height:240px;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:12px}@media(max-width:600px){.comparison-pair{grid-template-columns:1fr}}</style>
+<style>.comparison-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.comparison-pair img{width:100%;height:240px;object-fit:cover;object-position:top;border:1px solid var(--line)}@media(max-width:600px){.comparison-pair{grid-template-columns:1fr}}</style>
 <script>
 const form=document.querySelector<HTMLFormElement>('#timeline-report');
 form?.addEventListener('submit',async e=>{

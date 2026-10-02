@@ -1,0 +1,275 @@
+/* Before/after review reports: the public sample, shared review links and the
+ * in-app report view all render with these rules. They rely only on the global
+ * tokens, so they work inside the marketing grid and inside the app shell. */
+.ai-report {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+.ai-report-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+  font: 10px var(--mono);
+  overflow-wrap: anywhere;
+}
+.ai-report-head {
+  padding: 56px 25px 50px;
+}
+.ai-report-eyebrow {
+  font: 9px var(--mono);
+  color: var(--green);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.ai-report-title {
+  margin-top: 26px;
+  font: 300 clamp(40px, 5.6vw, 88px) / 0.95 var(--font_astronebula);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.ai-report-facts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  margin: 0;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.ai-report-facts > div {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  margin-right: -1px;
+}
+.ai-report-facts dt {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--line);
+  font: 9px/1.4 var(--mono);
+}
+.ai-report-facts dd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 22px 20px 26px;
+  font-size: clamp(18px, 1.7vw, 24px);
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.ai-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--theme);
+}
+.ai-report-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--paper);
+}
+.ai-report-shot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  border-right: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.ai-report-shot:nth-child(2n) {
+  border-right: 0;
+}
+.ai-report-shot:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+.ai-report-shot figcaption {
+  padding-bottom: 22px;
+}
+.ai-report-shot-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 25px;
+  border-bottom: 1px solid var(--line);
+  font: 9px/1.4 var(--mono);
+}
+.ai-report-shot--after .ai-report-shot-label {
+  background: var(--theme);
+}
+.ai-report-shot :is(h2, h3) {
+  padding: 30px 25px 0;
+  font: 300 clamp(26px, 2.6vw, 37px) / 1 var(--font_astronebula);
+  text-transform: uppercase;
+}
+.ai-report-meta {
+  padding: 14px 25px 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ai-report-stage {
+  flex: 1;
+  margin: 0 25px 25px;
+  padding: clamp(18px, 3vw, 40px);
+  background-color: #e5e5e1;
+  background-image: radial-gradient(#1111111a 0.8px, transparent 0.8px);
+  background-size: 10px 10px;
+}
+.ai-report-stage > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: white;
+  box-shadow:
+    12px 25px 0 #11111112,
+    0 35px 60px #68321e1f;
+}
+.ai-report-missing {
+  padding: 22px;
+  background: white;
+  border: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.ai-report-notes {
+  display: grid;
+  grid-template-columns: 1fr 3fr;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.ai-report-notes > span {
+  padding: 20px;
+  border-right: 1px solid var(--line);
+  font: 10px/1.5 var(--mono);
+}
+.ai-report-notes > div {
+  padding: 28px 25px 32px;
+}
+.ai-report-notes h2 {
+  font: 300 clamp(30px, 3.4vw, 48px) / 1 var(--font_astronebula);
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.ai-report-notes p {
+  font-size: 16px;
+  line-height: 1.8;
+  max-width: 72ch;
+}
+.ai-report-foot {
+  padding: 18px 25px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+@media (max-width: 1100px) {
+  .ai-report-compare {
+    grid-template-columns: 1fr;
+  }
+  .ai-report-shot {
+    border-right: 0;
+  }
+  .ai-report-shot + .ai-report-shot {
+    border-top: 1px solid var(--line);
+  }
+}
+@media (max-width: 767px) {
+  .ai-report-facts {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ai-report-facts > div {
+    border-bottom: 1px solid var(--line);
+    margin-bottom: -1px;
+  }
+  .ai-report-label {
+    padding: 18px 14px;
+    font-size: 8px;
+  }
+  .ai-report-head {
+    padding: 34px 15px;
+  }
+  .ai-report-facts dt {
+    padding: 12px;
+    font-size: 8px;
+  }
+  .ai-report-facts dd {
+    padding: 16px 12px 20px;
+    font-size: 17px;
+  }
+  .ai-report-shot-label {
+    padding: 12px 15px;
+    font-size: 8px;
+  }
+  .ai-report-shot :is(h2, h3) {
+    padding: 24px 15px 0;
+  }
+  .ai-report-meta {
+    padding-inline: 15px;
+  }
+  .ai-report-stage {
+    margin: 0 15px 15px;
+  }
+  .ai-report-notes {
+    grid-template-columns: 1fr;
+  }
+  .ai-report-notes > span {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 14px 15px;
+  }
+  .ai-report-notes > div {
+    padding: 22px 15px 26px;
+  }
+  .ai-report-foot {
+    padding: 16px 15px;
+  }
+}
+@media print {
+  .ai-report {
+    border: 0;
+  }
+  .ai-report-compare {
+    display: block;
+  }
+  .ai-report-shot {
+    break-before: page;
+    border: 0;
+  }
+  .ai-report-shot-label {
+    border: 0;
+    padding-inline: 0;
+  }
+  .ai-report-shot :is(h2, h3),
+  .ai-report-meta {
+    padding-inline: 0;
+  }
+  .ai-report-meta {
+    color: #333;
+  }
+  .ai-report-stage > img {
+    max-height: 230mm;
+    object-fit: contain;
+  }
+  .ai-report-notes {
+    break-inside: avoid;
+  }
+  .ai-report-stage {
+    margin: 0;
+    padding: 0;
+    background: none;
+  }
+  .ai-report-stage > img {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+  .ai-report-shot--after .ai-report-shot-label {
+    background: none;
+  }
+}

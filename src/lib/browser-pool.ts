@@ -38,17 +38,28 @@ const MAX_KEEP_ALIVE_MS = 600_000;
 /** Free sessions can be claimed by another isolate between listing and connecting. */
 const MAX_CONNECT_ATTEMPTS = 3;
 
+/**
+ * A full pool usually frees up within seconds — another capture finishing — so
+ * a launch refused for that reason is tried again before the caller is told:
+ * three tries over roughly five seconds, jittered so isolates that were turned
+ * away together do not all come back together.
+ */
+const LAUNCH_ATTEMPTS = 3;
+const LAUNCH_RETRY_MS = 1_500;
+const LAUNCH_RETRY_JITTER_MS = 1_000;
+
 export function keepAliveMs(): number {
   const raw = Number.parseInt(env.BROWSER_KEEP_ALIVE_MS ?? '0', 10);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   return Math.min(raw, MAX_KEEP_ALIVE_MS);
 }
 
-/**
- * Returns a browser to render with, reusing an idle session when one exists and
- * launching a fresh one otherwise.
- */
-export async function acquireBrowser(puppeteer: any): Promise<BrowserLease> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Connects to an idle session if there is one to have. */
+async function reuseIdleSession(puppeteer: any): Promise<BrowserLease | null> {
   const binding = env.BROWSER;
 
   try {
@@ -80,27 +91,49 @@ export async function acquireBrowser(puppeteer: any): Promise<BrowserLease> {
     const message = error instanceof Error ? error.message : String(error);
     console.log(`[browser] session reuse unavailable (${message}); launching`);
   }
+  return null;
+}
 
+async function launchBrowser(puppeteer: any): Promise<BrowserLease> {
   const keepAlive = keepAliveMs();
-  try {
-    const browser = await puppeteer.launch(binding, keepAlive > 0 ? { keep_alive: keepAlive } : undefined);
-    return { browser, reused: false };
-  } catch (error) {
-    // Running out of concurrent sessions is the one launch failure worth naming:
-    // the raw error is opaque, and with keep-alive enabled it is self-inflicted.
-    const limits = await puppeteer.limits(binding).catch(() => null);
-    if (limits && limits.allowedBrowserAcquisitions === 0) {
+  const browser = await puppeteer.launch(env.BROWSER, keepAlive > 0 ? { keep_alive: keepAlive } : undefined);
+  return { browser, reused: false };
+}
+
+/**
+ * Returns a browser to render with, reusing an idle session when one exists and
+ * launching a fresh one otherwise.
+ */
+export async function acquireBrowser(puppeteer: any): Promise<BrowserLease> {
+  for (let attempt = 1; ; attempt++) {
+    const reused = await reuseIdleSession(puppeteer);
+    if (reused) return reused;
+
+    try {
+      return await launchBrowser(puppeteer);
+    } catch (error) {
+      // Running out of concurrent sessions is the one launch failure worth
+      // waiting out, and worth naming: the raw error is opaque, and with
+      // keep-alive enabled it is self-inflicted.
+      const limits =
+        typeof puppeteer.limits === 'function' ? await puppeteer.limits(env.BROWSER).catch(() => null) : null;
+      if (!limits || limits.allowedBrowserAcquisitions !== 0) throw error;
+
+      if (attempt < LAUNCH_ATTEMPTS) {
+        await sleep(LAUNCH_RETRY_MS + Math.random() * LAUNCH_RETRY_JITTER_MS);
+        continue;
+      }
+
       const active = limits.activeSessions?.length ?? 0;
       throw new HttpError(
         503,
         'browser_unavailable',
         `All ${limits.maxConcurrentSessions} browser sessions are in use (${active} active). ` +
-          (keepAlive > 0
+          (keepAliveMs() > 0
             ? 'Idle sessions are being held open by BROWSER_KEEP_ALIVE_MS; lower or disable it if this persists.'
             : 'Retry shortly, or raise the concurrency limit on your Cloudflare account.'),
       );
     }
-    throw error;
   }
 }
 
@@ -119,4 +152,95 @@ export async function releaseBrowser(lease: BrowserLease, succeeded: boolean): P
   } catch (error) {
     console.error('[browser] failed to release session', error);
   }
+}
+
+export interface PageLease {
+  lease: BrowserLease;
+  /** The capture's own browser context; null when the browser would not make one. */
+  context: any | null;
+  page: any;
+}
+
+/**
+ * A page in a browser context of its own.
+ *
+ * The default context is shared by everything a session ever opens, and a
+ * session kept warm with BROWSER_KEEP_ALIVE_MS outlives the request: cookies,
+ * localStorage and HTTP auth set during one customer's capture would still be
+ * there for the next customer's. A fresh context starts empty and is thrown
+ * away with the page.
+ */
+async function openIsolatedPage(browser: any): Promise<{ context: any | null; page: any }> {
+  const create =
+    typeof browser.createBrowserContext === 'function'
+      ? browser.createBrowserContext
+      : typeof browser.createIncognitoBrowserContext === 'function'
+        ? browser.createIncognitoBrowserContext
+        : null;
+
+  let context: any = null;
+  if (create) {
+    try {
+      context = await create.call(browser);
+    } catch (error) {
+      console.error('[browser] could not create a browser context; using the default one', error);
+    }
+  }
+  if (!context) return { context: null, page: await browser.newPage() };
+
+  try {
+    return { context, page: await context.newPage() };
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * Acquires a browser and opens an isolated page in it.
+ *
+ * A session can be listed as idle and still be on its way out, torn down by the
+ * platform between listing and use. A page that will not open on a reused
+ * session is therefore worth one fresh launch; one that will not open on a
+ * fresh launch is a real failure.
+ */
+export async function openPage(puppeteer: any): Promise<PageLease> {
+  const lease = await acquireBrowser(puppeteer);
+  try {
+    return { lease, ...(await openIsolatedPage(lease.browser)) };
+  } catch (error) {
+    await releaseBrowser(lease, false);
+    if (!lease.reused) throw error;
+    console.log('[browser] reused session could not open a page; launching a fresh one');
+  }
+
+  const fresh = await launchBrowser(puppeteer);
+  try {
+    return { lease: fresh, ...(await openIsolatedPage(fresh.browser)) };
+  } catch (error) {
+    await releaseBrowser(fresh, false);
+    throw error;
+  }
+}
+
+/**
+ * Closes the page and its context, then hands the session back.
+ *
+ * A session whose page ran in the default context is never kept warm, however
+ * the capture went: whatever that page stored is still in there.
+ */
+export async function closePage(session: PageLease, succeeded: boolean): Promise<void> {
+  try {
+    await session.page.close();
+  } catch {
+    /* the session may already be gone */
+  }
+  if (session.context) {
+    try {
+      await session.context.close();
+    } catch {
+      /* closing the browser below takes it along */
+    }
+  }
+  await releaseBrowser(session.lease, succeeded && session.context !== null);
 }

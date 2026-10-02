@@ -6,7 +6,7 @@ This branch applies **Adon / AI Agency / Light**, selected by the owner, from th
 
 ## Coverage
 
-- Rebuilt homepage: oversized three-line hero, working URL handoff, product preview, keyboard-accessible feature tabs, horizontal showcase, capture modes, floating 3D monitoring section, plan-derived counters, API example, native FAQ and closing CTA.
+- Rebuilt homepage: oversized three-line hero with a custom floating 3D camera, working URL handoff, product preview, keyboard-accessible feature tabs, horizontal showcase, capture modes, floating 3D monitoring section, plan-derived counters, API example, native FAQ and closing CTA.
 - Shared AI Agency typography, palette, square buttons, inputs, header and grid footer across pricing, features, API docs, legal/support pages and reports.
 - Grid-based login/signup layouts, preserving form IDs, submit handlers and redirect fields.
 - Matching workspace rail, active navigation, capture panels, inputs, selected presets and usage cards. The responsive bottom navigation and existing app controls remain intact.
@@ -62,3 +62,5 @@ Capture workspace:
 Pricing:
 
 ![Pricing](design/pricing-desktop.webp)
+
+The camera is original AI-generated artwork, delivered as a transparent WebP. See [camera-hero.md](camera-hero.md) for the exact generation prompt and motion behavior.

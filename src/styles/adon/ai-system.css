@@ -335,6 +335,58 @@ body.adon-theme .shell--app > .tabbar {
   color: var(--green);
 }
 
+/* The page's one primary action can sit beside the intro heading. */
+.adon-workspace .workspace-intro > .btn {
+  width: auto;
+  flex: none;
+}
+
+/* Disclosures: a square +/− marker and a 44px row to tap. */
+.adon-workspace details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+.adon-workspace details > summary::-webkit-details-marker {
+  display: none;
+}
+.adon-workspace details > summary::before {
+  content: "+";
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  font: 500 12px/1 var(--mono);
+}
+.adon-workspace details[open] > summary::before {
+  content: "−";
+}
+
+/* Empty states. */
+.empty__title {
+  margin-top: 10px;
+}
+.empty__text {
+  max-width: 46ch;
+  margin: 6px auto 0;
+}
+.empty__action {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  margin: 18px auto 0;
+}
+.empty--panel {
+  padding: 32px 20px;
+  border: 1px dashed var(--line);
+  background: white;
+}
+
 /* A row of actions: buttons keep their own width and wrap. */
 .btn-row {
   display: flex;

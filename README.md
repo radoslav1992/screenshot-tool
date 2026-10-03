@@ -74,7 +74,7 @@ CI=1 npm run dev
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
 SEO rules, retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1
-schema files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+schema files, signup attribution and referrals) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
 Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
@@ -132,6 +132,7 @@ npx wrangler kv namespace create RATE
    | `db/0014-upgrade.sql` | pinned baselines |
    | `db/0015-upgrade.sql` | report sign-off and branding |
    | `db/0016-upgrade.sql` | smart checks for rule-based monitors |
+   | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -810,6 +811,58 @@ every check, exactly as before.
 stays hidden in the app. Apply it with `npm run db:migrate`, or paste `db/0016-upgrade.sql` into the D1
 console; it is picked up within a minute. `npm run fast:check` runs the HTML reader in workerd (through
 Miniflare, against the real `HTMLRewriter`) and the check flow against SQLite with and without the table.
+
+### Signup sources, referrals and the growth dashboard (0017)
+
+Growth built into the product, for the freelancers and small agencies who look after client websites.
+
+- **First-touch attribution** (`lib/attribution.ts`, `src/middleware.ts`). A signed-out visitor whose request
+  carries `?ref=`, `utm_source`, `utm_medium` or `utm_campaign`, or a `Referer` from another site, gets one
+  first-party cookie, `sf_src`: HttpOnly, `SameSite=Lax`, `Secure` on https, 30 days, set only when there is none.
+  It holds the ref, the three UTM values, the landing path (no query), the referring host name (never a URL) and
+  the time, each sanitised and capped. The app, the APIs, files, share links (`/r/…`), `/verify` and
+  `/reset-password` never set it; the middleware appends it after the page's own headers, so cache and security
+  headers are untouched. Signup saves it to `signup_sources` and clears it. The iOS app signs up with JSON, no
+  Origin and no cookie: that is recorded as `source = 'ios'`, and the response is unchanged. Each signup also
+  keeps a shortened SHA-256 of its IP address, used only by the referral rules below. No third-party analytics.
+- **Referral programme** (`lib/growth.ts`). Every account gets a stable code and the link `/join/<code>`
+  (`/r/` is taken by share links). The link notes `ref=referral:<code>` in the cookie — over an earlier
+  non-referral first touch, keeping its campaign and landing; the first referral link followed wins — and
+  redirects to `/signup`, which explains the offer. `/join` is limited to 30 links an hour per address in KV.
+  The referred account is rewarded once its email is confirmed (only asked for when this deployment can send
+  mail) and it has a finished capture or monitor check: both sides get **100 bonus screenshots**, the referrer is
+  emailed once. The check runs after every successful capture, on `/verify` and on the account page; most calls
+  end at one indexed read.
+- **Abuse rules.** One referral per referred account (`referrals.referred_id` is unique). Rejected at signup
+  when the referrer has the same email domain *and* the same signup IP hash (`same_person`), or already has
+  20 rewarded referrals (`limit_reached`, also enforced inside the reward batch). Deleting a referred account
+  keeps the referrer's bonus and their row (pointing nowhere); a pending one is closed as `account_deleted`.
+- **Bonus screenshots** (`lib/captures.ts`). A balance in `bonus_balances` that never expires and is spent only
+  once the month's allowance is: `reserveQuota` tries the allowance alone first (unchanged), then takes what is
+  left of it plus the rest from the bonus in one batch of conditional UPDATEs, coordinated by a token on the
+  month's `bonus_usage` row. `refundQuota` gives back bonus screenshots first, up to what the month drew from it.
+  `getUsage().remaining` includes the bonus, so every capture path, batches, the queue, monitors' quota skip and
+  smart checks honour it; `quota` stays the plan's allowance and `used` its use. `/api/mobile/profile` adds
+  `usage.bonus` and `referral_url`, both optional.
+- **Report attribution.** "Shared with Easy Screen Capture" under a shared report links to
+  `/client-sign-off?ref=report`; a white-labelled report still shows no line and no link. PDF exports carry no
+  attribution, as before.
+- **Landing page.** `/client-sign-off`: the monitor → highlight → branded report → client approval → proof
+  workflow, the free offer (3 monitors checked weekly, from `lib/plans.ts`), the sample report and an FAQ. Its
+  signup and pricing links carry `ref=client-sign-off`.
+- **Owner dashboard.** `/app/growth`, for the emails in `OWNER_EMAILS` only (a 404 for everyone else): signups
+  by ref, UTM and referring site, report-link and `tool-…` signups, referrals and rejection reasons, activation
+  (a capture or a monitor) and paid plans by channel, over 7, 30 and 90 days. Every query reads at most 90
+  days through a `created_at` index. Set the list as a secret:
+
+  ```bash
+  npx wrangler secret put OWNER_EMAILS   # e.g. you@example.com,partner@example.com
+  ```
+
+**Before the migration** the cookie is still set but nothing is saved, the invite section and the signup offer
+stay hidden, `/join` just redirects to signup, quotas count the allowance alone, the landing page and report link
+work, and `/app/growth` asks for 0017. Apply it with `npm run db:migrate`, or paste `db/0017-upgrade.sql` into
+the D1 console; it is picked up within a minute. `npm run growth:check` covers all of it against SQLite.
 
 ### iOS push notifications
 

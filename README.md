@@ -260,6 +260,10 @@ matter are the ones protecting the render pool and storage rather than the month
   is latency, not cost. If sessions are held open but not actually reused they accumulate against
   the concurrency cap, which surfaces as a `browser_unavailable` error naming the setting.
 
+- **Free tools.** The public tools under `/tools` render without an account, so they have limits of their
+  own: 5 renders per visitor a day, a daily cap across everyone (`FREE_TOOLS_DAILY_RENDERS`, default 300, `0`
+  to switch them off), and they start only when the browser pool has sessions to spare. See *Free tools* below.
+
 - **Email verification.** Optional and off by default. Set `REQUIRE_EMAIL_VERIFICATION=1` *and*
   configure a transport to require a confirmed address before capturing. The gate only engages when
   mail can actually be sent, so it can never lock accounts out of a deployment with no mailer. If a
@@ -810,6 +814,48 @@ every check, exactly as before.
 stays hidden in the app. Apply it with `npm run db:migrate`, or paste `db/0016-upgrade.sql` into the D1
 console; it is picked up within a minute. `npm run fast:check` runs the HTML reader in workerd (through
 Miniflare, against the real `HTMLRewriter`) and the check flow against SQLite with and without the table.
+
+### Free tools (no migration)
+
+Four public pages under `/tools`, for anyone, with no account: a full-page screenshot, a responsive preview
+(phone, tablet and desktop, first screen, side by side), an SEO tag checker, and a visual comparison of two
+pages with the changed areas boxed. `/tools` lists them; they are in the sitemap (`/sitemap.xml`, with
+`/robots.txt` pointing at it), the footer and the features page. Each result ends with "Monitor this page free",
+linking to `/signup?next=/app/watches/setup?url=…&ref=tool-<name>` (signed in, straight to the setup page,
+which takes the `url` prefill).
+
+- **Plain forms first.** Each page posts to itself and comes back with the result in it; `scripts/tools.ts`
+  posts the same form with `fetch()`, shows the seconds while it works, swaps in the result from the same
+  markup and turns the inline images into object URLs. Same origin only: a POST needs an `Origin` that matches,
+  or `Sec-Fetch-Site: same-origin`. There is no API and no key access.
+- **Nothing stored.** Images go back inline in the response and nowhere else — no D1 row, no R2 object, no KV
+  entry — and nothing logs the visitor or the page. The comparison hands the two images to the diff as data URLs.
+- **Few renders per visitor.** `lib/free-tools.ts`: 5 renders per visitor per UTC day across the browser tools
+  (a screenshot 1, a preview 3, a comparison 2) and 30 SEO checks an hour, counted in KV `RATE` under a SHA-256
+  of the address (an IPv6 one by its /64) and the date, so no key holds an address and keys change daily.
+  Counters fail open, as `rate-limit.ts` does.
+- **Few renders in all.** A daily cap across every visitor, 300 by default, set with the optional
+  `FREE_TOOLS_DAILY_RENDERS` var; `0` switches the browser tools off (the SEO checker stays). Past it visitors
+  are told the tools are busy and offered a free account.
+- **Customers first.** A free render starts only when the Browser Rendering pool has more than 2 sessions
+  spare (`spareSessions`, from `limits()`), and it never waits for one: `acquireBrowser({ wait: false })`
+  answers a full pool with "busy, try again in a minute" at once, and the renders drawn for it are given back.
+  Nothing anonymous goes through the capture queue.
+- **Bounded renders.** Built in `toolOptions` from the address and a preset device alone: scale 1 everywhere
+  (`sizes` included), JPEG at quality 70, a full page cut at 8,000 px (the mark placed inside the cut), the
+  free-plan mark on every image, the normal 100 s capture deadline, ads blocked and consent dismissed, and
+  the same private-address and `CAPTURE_HOST_DENYLIST` checks. No credentials, headers, cookies, actions or
+  other options exist on this path. The renderer reads these limits from `CaptureOptions.bounded`, which only
+  this module sets.
+- **SEO checker without a browser.** `lib/seo-check.ts` fetches with `safe-fetch.ts` (each redirect hop checked,
+  10 s, 3 MB) and reads with `fast-extract.ts`'s `readSeoTags` — the SEO rule's HTMLRewriter reading plus
+  Twitter tags, the viewport, `lang` and several h1s, which monitors never ask for — then words its findings
+  (missing or long title and description, noindex in meta or `X-Robots-Tag`, a canonical elsewhere, several
+  h1s, no `og:image`, redirect chains, hreflang without the page itself, …) with a Google and a share preview.
+
+`npm run tools:check` covers the limits and their fail-open, the refusals, the cost weights, the bounded
+render (through the real renderer against a fake page), same-origin enforcement and the `ref` on every call to
+action, and runs the SEO checker in workerd against HTML fixtures and fixture redirects.
 
 ### iOS push notifications
 

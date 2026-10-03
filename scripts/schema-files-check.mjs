@@ -295,6 +295,17 @@ try {
   assert.match(r.body.checks.database.detail, /0011_apple_lite\.sql \([^)]*users\.apple_expires_at/);
   assert.match(r.body.checks.database.detail, /paste db\/0011-upgrade\.sql, then db\/0012-upgrade\.sql/);
 
+  // Only an optional migration missing: named, but not an outage.
+  const optionalOnly = migrated();
+  optionalOnly.exec('DROP INDEX idx_watch_runs_user');
+  r = await health(optionalOnly);
+  assert.equal(r.status, 200, 'a deployment ahead of an optional migration is still healthy');
+  assert.equal(r.body.checks.database.ok, true);
+  assert.match(r.body.checks.database.detail, /optional.*0012_watch_runs_user_index\.sql.*db\/0012-upgrade\.sql/);
+  const pendingOptional = r.body.migrations.find((entry) => entry.name === '0012_watch_runs_user_index.sql');
+  assert.equal(pendingOptional.applied, false);
+  assert.equal(pendingOptional.optional, true);
+
   r = await health(empty);
   assert.equal(r.status, 503);
   assert.deepEqual(r.body.checks.database.missing, CORE_TABLES, 'an empty database still names the core tables');

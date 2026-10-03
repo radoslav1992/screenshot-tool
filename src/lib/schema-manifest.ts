@@ -18,6 +18,12 @@ export interface MigrationManifest {
   name: string;
   /** The schema every route has needed since the start; missing any of it means nothing works. */
   core?: boolean;
+  /**
+   * Every feature that needs it checks for it first and stays hidden until it
+   * is there, so a deployment ahead of it still works. `/api/health` names it
+   * without failing.
+   */
+  optional?: boolean;
   tables?: string[];
   /** Columns added to an existing table with ALTER TABLE, as `table.column`. */
   columns?: string[];
@@ -91,7 +97,7 @@ export const MIGRATIONS: MigrationManifest[] = [
     columns: ['users.free_quota', 'users.apple_expires_at'],
     indexes: ['apple_subscriptions_due'],
   },
-  { name: '0012_watch_runs_user_index.sql', indexes: ['idx_watch_runs_user'] },
+  { name: '0012_watch_runs_user_index.sql', optional: true, indexes: ['idx_watch_runs_user'] },
 ];
 
 /** The tables `/api/health` has always required. */
@@ -108,7 +114,7 @@ export function upgradeFileFor(name: string): string {
 
 export type MigrationStatus =
   | { name: string; applied: true }
-  | { name: string; applied: false; missing: string[]; upgrade: string };
+  | { name: string; applied: false; optional: boolean; missing: string[]; upgrade: string };
 
 /** Checks every migration's tables, columns and indexes in one query. */
 export async function migrationStatus(db: D1Database): Promise<MigrationStatus[]> {
@@ -131,7 +137,7 @@ export async function migrationStatus(db: D1Database): Promise<MigrationStatus[]
       ...(entry.indexes ?? []).filter((index) => !present.has(`index:${index}`)),
     ];
     return missing.length
-      ? { name: entry.name, applied: false, missing, upgrade: upgradeFileFor(entry.name) }
+      ? { name: entry.name, applied: false, optional: Boolean(entry.optional), missing, upgrade: upgradeFileFor(entry.name) }
       : { name: entry.name, applied: true };
   });
 }

@@ -43,9 +43,13 @@ async function checkDatabase(): Promise<
       };
     }
     if (pending.length) {
+      // Optional ones only switch a feature on, so on their own they are a
+      // note rather than a failed check: each deploy goes out before its
+      // migration is pasted, and that is not an outage.
+      const required = pending.some((entry) => !entry.optional);
       return {
-        ok: false,
-        detail: `Missing ${pending.map((entry) => `${entry.name} (${entry.missing.join(', ')})`).join('; ')}. Run \`npm run db:migrate\`, or paste ${pending.map((entry) => entry.upgrade).join(', then ')} into the D1 console.`,
+        ok: !required,
+        detail: `${required ? 'Missing' : 'Not applied yet (optional; the features that need them stay hidden)'}: ${pending.map((entry) => `${entry.name} (${entry.missing.join(', ')})`).join('; ')}. Run \`npm run db:migrate\`, or paste ${pending.map((entry) => entry.upgrade).join(', then ')} into the D1 console.`,
         tables: present,
         migrations,
       };

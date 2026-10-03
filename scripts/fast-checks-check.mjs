@@ -944,7 +944,7 @@ try {
   await section('the minute cron runs only 15-minute monitors at :15, :30 and :45; the hourly sweep runs everything, never twice', async () => {
     const calls = [];
     globalThis.__fcCalls = calls;
-    const quiet = { failStrandedCaptures: 0, sweepExpiredCaptures: { scanned: 0, deleted: 0, filesDeleted: 0, bytesFreed: 0, tokensPurged: 0, failed: 0, truncated: false } };
+    const quiet = { failStrandedCaptures: 0, pruneQuietRuns: 0, sweepExpiredCaptures: { scanned: 0, deleted: 0, filesDeleted: 0, bytesFreed: 0, tokensPurged: 0, failed: 0, truncated: false } };
     globalThis.__fcQuiet = quiet;
     const record = (name) =>
       `export const ${name} = async (...args) => { globalThis.__fcCalls.push([${JSON.stringify(name)}, ...args.slice(1)]);` +
@@ -953,7 +953,7 @@ try {
       '@astrojs/cloudflare/entrypoints/server': 'export default { fetch: () => new Response("ok") };',
       './lib/apple-billing': record('refreshAppleSubscriptions'),
       './lib/push': record('drainPush'),
-      './lib/retention': `${record('failStrandedCaptures')}\n${record('sweepExpiredCaptures')}`,
+      './lib/retention': `${record('failStrandedCaptures')}\n${record('sweepExpiredCaptures')}\n${record('pruneQuietRuns')}`,
       './lib/watches': `${record('runDueWatches')}\n${record('retryAlerts')}`,
       './lib/digests': record('runProjectDigests'),
       './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,

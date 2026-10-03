@@ -2,7 +2,7 @@ import { refreshAppleSubscriptions } from './lib/apple-billing';
 import { drainPush } from './lib/push';
 import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
-import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
+import { failStrandedCaptures, pruneQuietRuns, sweepExpiredCaptures } from './lib/retention';
 import { runDueWatches, retryAlerts, type WatchSweepResult } from './lib/watches';
 import { runProjectDigests } from './lib/digests';
 import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
@@ -114,6 +114,14 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
       .catch((error) => {
         console.error('[retention] sweep failed', error);
       }),
+  );
+
+  ctx.waitUntil(
+    pruneQuietRuns(now.getTime())
+      .then((pruned) => {
+        if (pruned) console.log(`[retention] pruned quiet monitor runs=${pruned}`);
+      })
+      .catch((error) => console.error('[retention] quiet run prune failed', error)),
   );
 
   ctx.waitUntil(

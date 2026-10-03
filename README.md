@@ -862,19 +862,24 @@ action, and runs the SEO checker in workerd against HTML fixtures and fixture re
 
 Growth built into the product, for the freelancers and small agencies who look after client websites.
 
-- **First-touch attribution** (`lib/attribution.ts`, `src/middleware.ts`). A signed-out visitor whose request
-  carries `?ref=`, `utm_source`, `utm_medium` or `utm_campaign`, or a `Referer` from another site, gets one
-  first-party cookie, `sf_src`: HttpOnly, `SameSite=Lax`, `Secure` on https, 30 days, set only when there is none.
-  It holds the ref, the three UTM values, the landing path (no query), the referring host name (never a URL) and
-  the time, each sanitised and capped. The app, the APIs, files, share links (`/r/…`), `/verify` and
-  `/reset-password` never set it; the middleware appends it after the page's own headers, so cache and security
-  headers are untouched. Signup saves it to `signup_sources` and clears it. The iOS app signs up with JSON, no
-  Origin and no cookie: that is recorded as `source = 'ios'`, and the response is unchanged. Each signup also
-  keeps a shortened SHA-256 of its IP address, used only by the referral rules below. No third-party analytics.
+- **First-touch attribution** (`lib/attribution.ts`, `src/middleware.ts`). Where a signed-out visitor came
+  from — `?ref=`, `utm_source`, `utm_medium`, `utm_campaign`, or a `Referer` from another site — is noted
+  (the ref, the three UTM values, the landing path without its query, the referring host name, never a URL,
+  and the time, each sanitised and capped) and saved to `signup_sources` when they sign up. **By default
+  nothing is stored in the browser:** the landing page's links towards signing up (`/signup`, `/pricing`,
+  `/client-sign-off`, `/sample-report`, `/features`, `/tools`) carry it in a `src` parameter, rewritten by the
+  middleware with HTMLRewriter on signed-out GETs of HTML pages, and the signup form posts it in a hidden
+  field. A cookie that is not strictly necessary needs consent under the EU's ePrivacy rules and the site asks
+  for none, so a visitor who leaves and comes back later is not remembered. Set `ATTRIBUTION_COOKIE=1` to keep
+  the first touch in a 30-day first-party cookie, `sf_src`, as well — only once the site asks for consent; the
+  privacy page follows the setting. The app, the APIs, files, share links (`/r/…`), `/verify` and
+  `/reset-password` are never landings. The iOS app signs up with JSON, no Origin and nothing carried: that is
+  recorded as `source = 'ios'`, and the response is unchanged. Each signup also keeps a shortened SHA-256 of its
+  IP address, used only by the referral rules below. No third-party analytics.
 - **Referral programme** (`lib/growth.ts`). Every account gets a stable code and the link `/join/<code>`
-  (`/r/` is taken by share links). The link notes `ref=referral:<code>` in the cookie — over an earlier
-  non-referral first touch, keeping its campaign and landing; the first referral link followed wins — and
-  redirects to `/signup`, which explains the offer. `/join` is limited to 30 links an hour per address in KV.
+  (`/r/` is taken by share links). The link redirects to `/signup`, which explains the offer, carrying
+  `ref=referral:<code>` in its `src` (with the cookie on, it notes it there instead — over an earlier
+  non-referral first touch, keeping its campaign and landing; the first referral link followed wins). `/join` is limited to 30 links an hour per address in KV.
   The referred account is rewarded once its email is confirmed (only asked for when this deployment can send
   mail) and it has a finished capture or monitor check: both sides get **100 bonus screenshots**, the referrer is
   emailed once. The check runs after every successful capture, on `/verify` and on the account page; most calls
@@ -905,7 +910,7 @@ Growth built into the product, for the freelancers and small agencies who look a
   npx wrangler secret put OWNER_EMAILS   # e.g. you@example.com,partner@example.com
   ```
 
-**Before the migration** the cookie is still set but nothing is saved, the invite section and the signup offer
+**Before the migration** nothing is saved (links still carry the touch, the cookie is still set where it is on), the invite section and the signup offer
 stay hidden, `/join` just redirects to signup, quotas count the allowance alone, the landing page and report link
 work, and `/app/growth` asks for 0017. Apply it with `npm run db:migrate`, or paste `db/0017-upgrade.sql` into
 the D1 console; it is picked up within a minute. `npm run growth:check` covers all of it against SQLite.

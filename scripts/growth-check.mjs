@@ -150,6 +150,8 @@ function world({ growth = true } = {}) {
     PUBLIC_SITE_URL: 'https://easyscreencapture.test',
     REQUIRE_EMAIL_VERIFICATION: '0',
     CAPTURE_HOST_DENYLIST: '',
+    // Most sections exercise the opt-in cookie; 'by default nothing is stored in the browser' runs without it.
+    ATTRIBUTION_COOKIE: '1',
   });
   kv.clear();
   objects.clear();
@@ -384,9 +386,9 @@ try {
   /* Referrals                                                                 */
   /* ------------------------------------------------------------------------ */
 
-  const joinLink = async (code, { cookie, user, ip = '192.0.2.10' } = {}) => {
+  const joinLink = async (code, { cookie, user, ip = '192.0.2.10', referer } = {}) => {
     const url = new URL(`${ORIGIN}/join/${code}`);
-    const request = new Request(url, { headers: { 'cf-connecting-ip': ip } });
+    const request = new Request(url, { headers: { 'cf-connecting-ip': ip, ...(referer ? { referer } : {}) } });
     const cookies = { get: (name) => (name === 'sf_src' && cookie !== undefined ? { value: decodeURIComponent(cookie) } : undefined) };
     const response = await join_.GET({ params: { code }, request, locals: { user: user ?? null }, cookies, url });
     return { status: response.status, location: response.headers.get('location'), setCookie: response.headers.getSetCookie(), headers: response.headers };
@@ -435,6 +437,73 @@ try {
     assert.equal(r.status, 429, '/join is rate-limited per address in KV');
     assert.ok(Number(r.headers.get('retry-after')) > 0);
     assert.equal((await joinLink(code, { ip: '192.0.2.100' })).status, 302, 'other addresses are unaffected');
+  });
+
+  await section('by default nothing is stored in the browser: the links carry the first touch to signup', async () => {
+    const db = world();
+    delete fx.env.ATTRIBUTION_COOKIE;
+    addUser(db, 'carrier', { email: 'carrier@agency.test' });
+    const at = new Date('2026-10-03T09:00:00.000Z');
+
+    // What a landing page knows, and the links it carries it on.
+    const touch = attribution.carriedTouch(new URL(`${ORIGIN}/client-sign-off?ref=report&utm_campaign=fall`), null, at);
+    assert.deepEqual([touch.ref, touch.campaign, touch.landing], ['report', 'fall', '/client-sign-off']);
+    const signupLink = attribution.withTouch('/signup?next=%2Fapp', touch, ORIGIN);
+    const carried = new URL(signupLink, ORIGIN);
+    assert.equal(carried.searchParams.get('next'), '/app', 'the link keeps its own parameters');
+    assert.deepEqual(attribution.parseAttribution(carried.searchParams.get('src')), touch);
+    for (const href of ['/login', '/app/watches', 'https://other.example/signup', '//other.example/signup', 'mailto:x@y.z', '#plans'])
+      assert.equal(attribution.withTouch(href, touch, ORIGIN), null, `${href} is left alone`);
+    assert.equal(attribution.withTouch(signupLink, touch, ORIGIN), null, 'never twice');
+    // A tool's call to action names the tool when the visitor's first touch had no ref of its own.
+    const fromSearch = attribution.carriedTouch(new URL(`${ORIGIN}/tools/seo-tag-checker`), 'https://www.google.com/', at);
+    assert.deepEqual([fromSearch.ref, fromSearch.referrerHost], [null, 'www.google.com']);
+    const cta = new URL(attribution.withTouch('/signup?ref=tool-seo-tag-checker', fromSearch, ORIGIN), ORIGIN);
+    assert.deepEqual(
+      [attribution.parseAttribution(cta.searchParams.get('src')).ref, attribution.parseAttribution(cta.searchParams.get('src')).referrerHost],
+      ['tool-seo-tag-checker', 'www.google.com'],
+    );
+    // The signup page reads what it was carried, or its own ref.
+    assert.equal(attribution.carriedTouch(new URL(`${ORIGIN}/signup?${new URLSearchParams({ src: attribution.touchParam(touch) })}`), null).ref, 'report');
+    assert.equal(attribution.carriedTouch(new URL(`${ORIGIN}/signup?ref=tool-compare-pages`), null).ref, 'tool-compare-pages');
+
+    // The middleware sets no cookie. (It rewrites links with HTMLRewriter, which only workerd has: checked live.)
+    const url = new URL(`${ORIGIN}/client-sign-off?ref=report`);
+    const response = await middleware.onRequest(
+      { url, request: new Request(url), cookies: { get: () => undefined }, locals: {}, redirect: () => null },
+      async () => new Response('<a href="/signup">Start</a>', { headers: { 'content-type': 'text/html' } }),
+    );
+    assert.equal(response.headers.getSetCookie().length, 0, 'no attribution cookie');
+
+    // The signup form posts it; it is saved, and no cookie is set or cleared.
+    const request = new Request(`${ORIGIN}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', origin: ORIGIN, 'cf-connecting-ip': '203.0.113.20', 'user-agent': 'Mozilla/5.0 (Macintosh)' },
+      body: JSON.stringify({ email: 'carried@studio.test', password: 'growth-pass-1', src: attribution.touchParam(touch) }),
+    });
+    const r = await signup({ request, locals: {}, cookies: { get: () => undefined } });
+    assert.equal(r.status, 201);
+    assert.deepEqual(r.headers.getSetCookie().map((c) => c.split('=')[0]), ['sf_session'], 'only the session cookie');
+    const saved = db.prepare('SELECT ref, campaign, landing FROM signup_sources WHERE user_id = ?').get((await r.json()).user.id);
+    assert.deepEqual({ ...saved }, { ref: 'report', campaign: 'fall', landing: '/client-sign-off' });
+
+    // A referral link carries the referral in the signup link instead of a cookie.
+    const code = await growth.referralCodeFor('carrier');
+    const joined = await joinLink(code, { referer: 'https://news.example.org/post' });
+    assert.equal(joined.setCookie.length, 0, 'no cookie');
+    const next = new URL(joined.location, ORIGIN);
+    assert.equal(next.pathname, '/signup');
+    const noted = attribution.parseAttribution(next.searchParams.get('src'));
+    assert.deepEqual([noted.ref, noted.landing, noted.referrerHost], [`referral:${code}`, '/join', 'news.example.org']);
+    const invitedRequest = new Request(`${ORIGIN}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', origin: ORIGIN, 'cf-connecting-ip': '203.0.113.21', 'user-agent': 'Mozilla/5.0 (Macintosh)' },
+      body: JSON.stringify({ email: 'invited@other.test', password: 'growth-pass-1', src: next.searchParams.get('src') }),
+    });
+    const invited = await signup({ request: invitedRequest, locals: {}, cookies: { get: () => undefined } });
+    assert.equal(invited.status, 201);
+    const referral = db.prepare('SELECT status FROM referrals WHERE referrer_id = ?').get('carrier');
+    assert.equal(referral?.status, 'pending', 'the referral is opened from the carried touch');
   });
 
   /** A referrer, and a signup through their link. */

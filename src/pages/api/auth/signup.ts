@@ -8,7 +8,7 @@ import { redirectWithFlash } from '../../../lib/flash';
 import { safeNext } from '../../../lib/safe-next';
 import { confirmationEmailsEnabled, issueVerificationToken, sendVerificationEmail } from '../../../lib/verification';
 import { ATTRIBUTION_COOKIE, clearedAttributionCookie } from '../../../lib/attribution';
-import { recordSignup } from '../../../lib/growth';
+import { attributionCookieEnabled, recordSignup } from '../../../lib/growth';
 
 export const prerender = false;
 
@@ -57,8 +57,10 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
 
     // Where the account came from (lib/growth.ts), once migration 0017 exists.
     // Like the email, never a reason for the signup itself to fail.
-    const attribution = cookies.get(ATTRIBUTION_COOKIE)?.value;
-    const recorded = await recordSignup(user, request, attribution).catch((error) => {
+    // The form carries it in `src` (lib/attribution.ts); the cookie only where it is switched on.
+    const carried = typeof body.src === 'string' && body.src ? body.src : undefined;
+    const fromCookie = carried === undefined && attributionCookieEnabled() ? cookies.get(ATTRIBUTION_COOKIE)?.value : undefined;
+    const recorded = await recordSignup(user, request, carried ?? fromCookie).catch((error) => {
       console.error('[signup] signup source not recorded', error);
       return false;
     });
@@ -73,7 +75,7 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
         })
       : new Response(null, { status: 303, headers: { location: next, 'set-cookie': cookie } });
     // Saved with the account, so it is done with; another signup in this browser starts afresh.
-    if (recorded && attribution !== undefined) {
+    if (recorded && fromCookie !== undefined) {
       response.headers.append('set-cookie', clearedAttributionCookie(isSecureRequest(request)));
     }
     return response;

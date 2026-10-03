@@ -103,6 +103,13 @@ declare namespace Cloudflare {
      */
     OWNER_EMAILS?: string;
 
+    /**
+     * "1" keeps where a visitor first came from in a 30-day cookie, sf_src, as
+     * well as in the links (lib/attribution.ts). Off by default: the cookie is
+     * not strictly necessary, so turning it on means asking for consent first.
+     */
+    ATTRIBUTION_COOKIE?: string;
+
     /** Recurring price ids (price_…) per plan and interval. */
     STRIPE_PRICE_PLUS_MONTHLY?: string;
     STRIPE_PRICE_PLUS_YEARLY?: string;

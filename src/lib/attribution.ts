@@ -2,10 +2,17 @@
  * First-touch signup attribution.
  *
  * A visitor who arrives with `?ref=`, a `utm_source`/`utm_medium`/
- * `utm_campaign`, or from another site gets one first-party cookie saying so,
- * for 30 days. Signup saves it with the new account (lib/growth.ts) and clears
- * it. Nothing here touches a binding, so the middleware, the routes and the
- * check script share it as plain functions.
+ * `utm_campaign`, or from another site is noted, and signup saves the note
+ * with the new account (lib/growth.ts). Nothing here touches a binding, so the
+ * middleware, the routes and the check script share it as plain functions.
+ *
+ * By default the note travels in the links, not in a cookie: the page the
+ * visitor lands on carries it in a `src` parameter on its links towards
+ * signing up (withTouch), the signup form posts it, and nothing is stored in
+ * the browser. A cookie that is not strictly necessary needs consent under
+ * the EU's ePrivacy rules, and the site asks for none. The 30-day cookie
+ * below, which also survives a visitor leaving and coming back, is switched
+ * on with ATTRIBUTION_COOKIE=1, for a deployment that does ask for consent.
  *
  * Only what is listed below is kept, sanitised and capped: never a full
  * referrer URL, never a query string, never anything from a path that carries
@@ -110,7 +117,68 @@ export function touchFrom(url: URL, referer: string | null, now = new Date()): A
 }
 
 /* -------------------------------------------------------------------------- */
-/* The cookie                                                                  */
+/* In the links (the default)                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** The query parameter that carries a first touch from page to page. */
+export const ATTRIBUTION_PARAM = 'src';
+
+/** The first touch as a plain query string, the value of a `src` parameter or hidden field. */
+export function touchParam(touch: Attribution): string {
+  return decodeURIComponent(encodeAttribution(touch));
+}
+
+/**
+ * Where this visitor came from, as far as this request can tell: a `src`
+ * carried from the page they landed on, or what this request itself says.
+ * A carried touch keeps its own ref; one without takes this page's, so a
+ * tool's call to action still names the tool.
+ */
+export function carriedTouch(url: URL, referer: string | null, now = new Date()): Attribution | null {
+  const carried = parseAttribution(url.searchParams.get(ATTRIBUTION_PARAM));
+  const ref = cleanRef(url.searchParams.get('ref'));
+  if (carried) return carried.ref || !ref ? carried : { ...carried, ref };
+  return touchFrom(url, referer, now);
+}
+
+/** Links on the way to signing up, which carry the first touch onward. */
+const CARRIED_TO = /^\/(?:signup|pricing|client-sign-off|sample-report|features|tools)(?:[/?#]|$)/;
+
+/**
+ * A link on a landing page with the first touch added, or null to leave it as
+ * it is: only same-site links towards signing up, and never one that already
+ * carries a touch. The link's own ref names the hop when the touch has none.
+ */
+export function withTouch(href: string, touch: Attribution, origin: string): string | null {
+  if (!CARRIED_TO.test(href)) return null;
+  let url: URL;
+  try {
+    url = new URL(href, origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== origin || url.searchParams.has(ATTRIBUTION_PARAM)) return null;
+  const ref = cleanRef(url.searchParams.get('ref'));
+  url.searchParams.set(ATTRIBUTION_PARAM, touchParam(touch.ref || !ref ? touch : { ...touch, ref }));
+  return url.pathname + url.search + url.hash;
+}
+
+/** The touch a referral link starts, for its redirect to signup. */
+export function referralTouch(code: string, url: URL, referer: string | null, now = new Date()): Attribution {
+  const host = referrerHostOf(referer);
+  return {
+    ref: `${REFERRAL_PREFIX}${code}`,
+    source: cleanUtm(url.searchParams.get('utm_source')),
+    medium: cleanUtm(url.searchParams.get('utm_medium')),
+    campaign: cleanUtm(url.searchParams.get('utm_campaign')),
+    landing: '/join',
+    referrerHost: host && isExternal(host, url.hostname) ? host : null,
+    at: now.toISOString(),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The cookie (ATTRIBUTION_COOKIE=1 only)                                      */
 /* -------------------------------------------------------------------------- */
 
 const KEYS = { ref: 'ref', source: 'src', medium: 'med', campaign: 'cmp', landing: 'land', referrerHost: 'host', at: 'at' } as const;
@@ -225,7 +293,7 @@ export function referralCookie(existing: Attribution | null, code: string, secur
 }
 
 /**
- * The iOS app signs up with JSON, no Origin header and no attribution cookie;
+ * The iOS app signs up with JSON, no Origin header and no attribution;
  * a browser always sends Origin with a POST. URLSession's own user agent
  * (`<App>/<build> CFNetwork/… Darwin/…`) says so too when it is there.
  */

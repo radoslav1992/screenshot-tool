@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { ATTRIBUTION_COOKIE, parseAttribution, referralCookie } from '../../lib/attribution';
+import { ATTRIBUTION_COOKIE, parseAttribution, referralCookie, referralTouch, touchParam } from '../../lib/attribution';
 import { clientIp } from '../../lib/auth-throttle';
-import { referrerOf } from '../../lib/growth';
+import { attributionCookieEnabled, referrerOf } from '../../lib/growth';
 import { checkRateLimit } from '../../lib/rate-limit';
 
 export const prerender = false;
@@ -10,9 +10,10 @@ export const prerender = false;
 export const JOIN_LIMIT = { limit: 30, windowSeconds: 3600 };
 
 /**
- * GET /join/<code> — a referral link. Notes who invited the visitor in the
- * attribution cookie (lib/attribution.ts) and sends them to sign up, where
- * the offer is explained. An unknown code, or a deployment without migration
+ * GET /join/<code> — a referral link. Sends the visitor to sign up, where the
+ * offer is explained, with who invited them carried in the signup link's
+ * `src` (or in the attribution cookie where that is switched on;
+ * lib/attribution.ts). An unknown code, or a deployment without migration
  * 0017, goes to the same signup page with nothing noted.
  */
 export const GET: APIRoute = async ({ params, request, locals, cookies, url }) => {
@@ -35,9 +36,12 @@ export const GET: APIRoute = async ({ params, request, locals, cookies, url }) =
     console.error('[join] referral code lookup failed', error);
     return null;
   });
-  if (referrer) {
+  if (referrer && attributionCookieEnabled()) {
     const cookie = referralCookie(parseAttribution(cookies.get(ATTRIBUTION_COOKIE)?.value), code, url.protocol === 'https:');
     if (cookie) headers.append('set-cookie', cookie);
+  } else if (referrer) {
+    const touch = referralTouch(code, url, request.headers.get('referer'));
+    headers.set('location', `/signup?${new URLSearchParams({ src: touchParam(touch) })}`);
   }
   return new Response(null, { status: 302, headers });
 };

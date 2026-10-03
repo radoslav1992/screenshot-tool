@@ -10,7 +10,9 @@ import { COMPANY } from '../lib/company';
 import { PLANS } from '../lib/plans';
 import { SESSION_COOKIE } from '../lib/auth';
 import { ATTRIBUTION_COOKIE, ATTRIBUTION_DAYS } from '../lib/attribution';
-import { REFERRAL_BONUS } from '../lib/growth';
+import { REFERRAL_BONUS, attributionCookieEnabled } from '../lib/growth';
+// Where a visitor came from travels in the links unless the cookie is switched on (lib/attribution.ts).
+const attributionCookie = attributionCookieEnabled();
 
 const user = Astro.locals.user;
 
@@ -57,7 +59,7 @@ const { list: sections, byId: s } = docSections(toc);
           <li><b>Captures:</b> the URL and host you captured, the device, viewport, mode and format, status, duration, byte size, and the rendered image or PDF files.</li>
           <li><b>Usage:</b> a monthly counter of captures made through the app and through the API, your balance of bonus screenshots and how many of each month's screenshots came from it, and short-lived per-minute rate-limit counters.</li>
           <li><b>Free tools:</b> the page address you enter, used only to answer that request, and a hashed form of your IP address used to count requests for rate limiting. See <a href="#free-tools">The free tools</a>.</li>
-          <li><b>Signup source:</b> when you sign up, where you first came from in the previous {ATTRIBUTION_DAYS} days, if you came from somewhere: the <span class="mono">ref</span>, <span class="mono">utm_source</span>, <span class="mono">utm_medium</span> and <span class="mono">utm_campaign</span> values of the link, the page you landed on (without its query string), the host name of the site that linked to us (never the full address) and when that was. A signup from the iOS app is recorded as coming from the app. We also keep a shortened one-way hash of the IP address you signed up from, used only to stop people rewarding themselves through their own referral link.</li>
+          <li><b>Signup source:</b> when you sign up, where you came from, if you came from somewhere: {attributionCookie ? `the first time in the previous ${ATTRIBUTION_DAYS} days,` : 'carried in the links you followed to the signup page, not in a cookie:'} the <span class="mono">ref</span>, <span class="mono">utm_source</span>, <span class="mono">utm_medium</span> and <span class="mono">utm_campaign</span> values of the link, the page you landed on (without its query string), the host name of the site that linked to us (never the full address) and when that was. A signup from the iOS app is recorded as coming from the app. We also keep a shortened one-way hash of the IP address you signed up from, used only to stop people rewarding themselves through their own referral link.</li>
           <li><b>Referrals:</b> your referral code; for each account created through your link, its status (pending, rewarded or not rewarded, and why) and the dates; and the {REFERRAL_BONUS} bonus screenshots each side receives. The person who invited you can see how many people signed up through their link and how many were rewarded, never who they are.</li>
           <li><b>Report sign-offs:</b> when someone approves or requests changes on a report shared with them, the name they type, their decision, an optional note and the time. The report's owner and everyone with the link can see them; no account or email address is collected.</li>
           <li><b>Report branding:</b> the logo, accent colour and footer line you set for a project.</li>
@@ -177,10 +179,14 @@ const { list: sections, byId: s } = docSections(toc);
             <span class="deflist__label">Signup source, referral records and bonus balance</span>
             <span class="deflist__value">While the account exists</span>
           </div>
-          <div class="deflist__row">
-            <span class="deflist__label">The <span class="mono">{ATTRIBUTION_COOKIE}</span> cookie</span>
-            <span class="deflist__value">{ATTRIBUTION_DAYS} days, or until you sign up</span>
-          </div>
+          {
+            attributionCookie && (
+              <div class="deflist__row">
+                <span class="deflist__label">The <span class="mono">{ATTRIBUTION_COOKIE}</span> cookie</span>
+                <span class="deflist__value">{ATTRIBUTION_DAYS} days, or until you sign up</span>
+              </div>
+            )
+          }
           <div class="deflist__row">
             <span class="deflist__label">Invoices and accounting records</span>
             <span class="deflist__value">As Bulgarian law requires, currently 10 years</span>
@@ -242,23 +248,38 @@ const { list: sections, byId: s } = docSections(toc);
       </DocSection>
 
       <DocSection {...s['cookies']}>
-        <p>
-          <span class="mono">{SESSION_COOKIE}</span> keeps you signed in. It is strictly necessary, HttpOnly, Secure and
-          SameSite=Lax, and it is removed when you sign out.
-        </p>
-        <p>
-          <span class="mono">{ATTRIBUTION_COOKIE}</span> remembers where you first came from, so that it can be saved with
-          your account if you sign up and a referral can be credited to the person who invited you. It is set only when
-          you arrive through a link carrying a <span class="mono">ref</span> or <span class="mono">utm_</span> value, a
-          referral link, or a link on another site, and only if there is not one already. It holds the values listed
-          under What we collect and nothing that identifies you, it is first-party, HttpOnly, Secure and SameSite=Lax,
-          it is read by nobody but us, and it expires after {ATTRIBUTION_DAYS} days or is removed when you sign up.
-        </p>
-        <p>
-          There are no analytics, advertising or third-party cookies or trackers. The app also stores a small offline
-          cache in your browser so it works without a connection; you can clear it, and both cookies, from your
-          browser settings.
-        </p>
+        {
+          attributionCookie ? (
+            <>
+              <p>
+                <span class="mono">{SESSION_COOKIE}</span> keeps you signed in. It is strictly necessary, HttpOnly, Secure
+                and SameSite=Lax, and it is removed when you sign out.
+              </p>
+              <p>
+                <span class="mono">{ATTRIBUTION_COOKIE}</span> remembers where you first came from, so that it can be saved
+                with your account if you sign up and a referral can be credited to the person who invited you. It is set
+                only when you arrive through a link carrying a <span class="mono">ref</span> or{' '}
+                <span class="mono">utm_</span> value, a referral link, or a link on another site, and only if there is not
+                one already. It holds the values listed under What we collect and nothing that identifies you, it is
+                first-party, HttpOnly, Secure and SameSite=Lax, it is read by nobody but us, and it expires after{' '}
+                {ATTRIBUTION_DAYS} days or is removed when you sign up.
+              </p>
+              <p>
+                There are no analytics, advertising or third-party cookies or trackers. The app also stores a small
+                offline cache in your browser so it works without a connection; you can clear it, and both cookies, from
+                your browser settings.
+              </p>
+            </>
+          ) : (
+            <p>
+              One cookie, <span class="mono">{SESSION_COOKIE}</span>, keeps you signed in. It is strictly necessary,
+              HttpOnly, Secure and SameSite=Lax, and it is removed when you sign out. Where you came from is carried in
+              the links you follow on this site, not in a cookie, and there are no analytics or advertising cookies,
+              which is why the site does not ask for cookie consent. The app also stores a small offline cache in your
+              browser so it works without a connection; you can clear it from your browser settings.
+            </p>
+          )
+        }
       </DocSection>
 
       <DocSection {...s['your-rights']}>

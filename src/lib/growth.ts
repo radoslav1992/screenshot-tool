@@ -61,14 +61,24 @@ const domainOf = (email: string) => email.trim().toLowerCase().split('@').pop() 
  * the referral. Returns whether anything was saved, so signup knows to clear
  * the cookie.
  */
+/**
+ * Whether first touches travel in a 30-day cookie (lib/attribution.ts) as
+ * well as in the links. Off unless ATTRIBUTION_COOKIE=1: the cookie is not
+ * strictly necessary, so a deployment that turns it on must ask for consent.
+ */
+export function attributionCookieEnabled(): boolean {
+  return (env as unknown as Record<string, unknown>).ATTRIBUTION_COOKIE === '1';
+}
+
 export async function recordSignup(
   user: Pick<SessionUser, 'id' | 'email'>,
   request: Request,
-  cookie: string | undefined,
+  /** The first touch the signup carried: its form's `src` field, or the cookie when that is on. */
+  carried: string | undefined,
 ): Promise<boolean> {
   if (!(await growthReady())) return false;
-  const touch = parseAttribution(cookie);
-  const app = cookie === undefined && looksLikeAppSignup(request);
+  const touch = parseAttribution(carried);
+  const app = carried === undefined && looksLikeAppSignup(request);
   const ipHash = await signupIpHash(request);
   const now = new Date().toISOString();
   await env.DB.prepare(

@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS report_signoffs (id TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES review_reports(id) ON DELETE CASCADE, decision TEXT NOT NULL CHECK(decision IN ('approved','changes','reset')), name TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS report_signoffs_report ON report_signoffs(report_id, created_at);
+CREATE TABLE IF NOT EXISTS project_branding (project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE, logo_key TEXT NOT NULL DEFAULT '', logo_type TEXT NOT NULL DEFAULT '', logo_width INTEGER NOT NULL DEFAULT 0, logo_height INTEGER NOT NULL DEFAULT 0, accent TEXT NOT NULL DEFAULT '', footer TEXT NOT NULL DEFAULT '', hide_attribution INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0015_report_signoff_branding.sql');

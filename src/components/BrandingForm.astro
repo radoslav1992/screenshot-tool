@@ -1,0 +1,171 @@
+---
+/**
+ * The project's report branding: logo, accent colour, footer line and, on the
+ * top plans, hiding our attribution. Posts through ProjectForms to
+ * /api/projects/branding. The preview is rendered with the saved values and
+ * follows the inputs as they change when scripts run.
+ */
+import {
+  FOOTER_MAX,
+  LOGO_MAX_BYTES,
+  accentStyle,
+  resolveBranding,
+  whiteLabelPlans,
+  type BrandingRow,
+} from '../lib/branding-rules';
+import '../styles/adon/ai-report.css';
+interface Props {
+  projectId: string;
+  /** The report eyebrow, for the logo's alt text. */
+  brand: string;
+  row: BrandingRow | null;
+  /** Whether the project owner's plan may hide the attribution. */
+  canHide: boolean;
+  /** The bracketed section number, when the page numbers its sections. */
+  number?: string;
+  /** Owners can upgrade; editors cannot change the owner's plan. */
+  owner?: boolean;
+}
+const { projectId, brand, row, canHide, number, owner = false } = Astro.props;
+// The same sanitising the report applies; the plan only decides the attribution, which the preview leaves out.
+const branding = resolveBranding(row, null);
+const accent = branding.accent;
+const footerPlaceholder = 'No footer line';
+---
+
+<section class="project-panel branding-panel" aria-labelledby="branding-heading" data-branding>
+  <h2 class="section-heading" id="branding-heading">{number && <span>[ {number} ]</span>} Report branding</h2>
+  <p class="small muted">
+    Applies to this project’s review links, the report view here and PDF exports. Sample reports keep the default look.
+  </p>
+  <div class="brand-preview" style={accentStyle(branding) || undefined} data-brand-preview aria-label="Preview">
+    <div class="brand-preview__logo">
+      <img
+        src={branding.logoUrl ?? undefined}
+        alt={branding.logoUrl ? `${brand} logo` : ''}
+        width={branding.logoWidth || undefined}
+        height={branding.logoHeight || undefined}
+        hidden={!branding.logoUrl}
+        data-brand-logo
+      />
+      <span class="small muted" hidden={!!branding.logoUrl} data-brand-nologo>No logo</span>
+    </div>
+    <span class="brand-preview__label">[ AFTER ] <span>CURRENT / 02</span></span>
+    <span class="brand-preview__state"><span class="ai-dot" aria-hidden="true"></span> Approved</span>
+    <p class="brand-preview__foot" data-brand-foot data-placeholder={footerPlaceholder}>
+      {branding.footer || footerPlaceholder}
+    </p>
+  </div>
+  <form data-project-form data-endpoint="/api/projects/branding" data-pending="Saving branding…">
+    <input type="hidden" name="action" value="save" />
+    <input type="hidden" name="project_id" value={projectId} />
+    <label>
+      {branding.logoUrl ? 'Replace logo' : 'Logo'}
+      <input class="input" type="file" name="logo" accept="image/png,image/jpeg,image/webp" data-brand-file />
+    </label>
+    <p class="small muted">
+      PNG, JPEG or WebP, up to {LOGO_MAX_BYTES / 1024} KB. SVG is not accepted. Shown up to 64 px tall.
+    </p>
+    <label>
+      Accent colour
+      <span class="brand-accent">
+        <input type="color" value={accent || '#fb7515'} aria-label="Pick the accent colour" data-accent-picker />
+        <input
+          class="input input--mono"
+          name="accent"
+          value={accent}
+          placeholder="#fb7515"
+          maxlength="7"
+          pattern="#[0-9a-fA-F]{6}"
+          autocomplete="off"
+          spellcheck="false"
+          data-accent-text
+        />
+      </span>
+    </label>
+    <p class="small muted">
+      Behind the “After” label and on status dots. Text on it switches between black and white for contrast. Leave it
+      empty for the default orange.
+    </p>
+    <label>
+      Footer line
+      <input class="input" name="footer" maxlength={FOOTER_MAX} value={row?.footer ?? ''} data-brand-footer />
+    </label>
+    <label class="brand-check">
+      <input type="checkbox" name="hide_attribution" value="1" checked={canHide && !!row?.hide_attribution} disabled={!canHide} />
+      Hide “Shared with Easy Screen Capture” under the report
+    </label>
+    <p class="small muted">
+      {canHide ? 'Included on this project’s plan.' : `Included on ${whiteLabelPlans()}.`}
+      {!canHide && owner && (
+        <>
+          {' '}
+          <a href="/app/upgrade">Compare plans</a>.
+        </>
+      )}
+      {' '}PDF exports do not carry it.
+    </p>
+    <div class="btn-row">
+      <button type="submit" class="btn btn--outline-ink">Save branding</button>
+    </div>
+    <p role="status"></p>
+  </form>
+  {
+    branding.logoUrl && (
+      <form
+        data-project-form
+        data-endpoint="/api/projects/branding"
+        data-pending="Removing…"
+        data-confirm="Remove the logo from this project’s reports? Review links and PDF exports stop showing it."
+      >
+        <input type="hidden" name="action" value="remove_logo" />
+        <input type="hidden" name="project_id" value={projectId} />
+        <div class="btn-row">
+          <button type="submit" class="btn btn--sm btn--danger-outline">
+            Remove logo
+          </button>
+        </div>
+        <p role="status"></p>
+      </form>
+    )
+  }
+</section>
+
+<script>
+  import { accentInk } from '../lib/branding-rules';
+  // The preview follows the inputs; the saved values are already rendered, so
+  // without scripts nothing is missing but the live update.
+  document.querySelectorAll<HTMLElement>('[data-branding]').forEach((root) => {
+    const preview = root.querySelector<HTMLElement>('[data-brand-preview]')!;
+    const text = root.querySelector<HTMLInputElement>('[data-accent-text]')!;
+    const picker = root.querySelector<HTMLInputElement>('[data-accent-picker]')!;
+    const footer = root.querySelector<HTMLInputElement>('[data-brand-footer]')!;
+    const foot = root.querySelector<HTMLElement>('[data-brand-foot]')!;
+    const file = root.querySelector<HTMLInputElement>('[data-brand-file]')!;
+    const logo = root.querySelector<HTMLImageElement>('[data-brand-logo]')!;
+    const noLogo = root.querySelector<HTMLElement>('[data-brand-nologo]')!;
+    const apply = () => {
+      const value = text.value.trim().toLowerCase();
+      const valid = /^#[0-9a-f]{6}$/.test(value);
+      preview.style.setProperty('--report-accent', valid ? value : '');
+      preview.style.setProperty('--report-accent-ink', valid ? accentInk(value) : '');
+      if (valid) picker.value = value;
+    };
+    picker.addEventListener('input', () => {
+      text.value = picker.value;
+      apply();
+    });
+    text.addEventListener('input', apply);
+    footer.addEventListener('input', () => {
+      foot.textContent = footer.value.trim() || foot.dataset.placeholder || '';
+    });
+    file.addEventListener('change', () => {
+      const chosen = file.files?.[0];
+      // Only what the server would accept is previewed; it checks the bytes again.
+      if (!chosen || !/^image\/(png|jpeg|webp)$/.test(chosen.type)) return;
+      logo.src = URL.createObjectURL(chosen);
+      logo.hidden = false;
+      noLogo.hidden = true;
+    });
+  });
+</script>

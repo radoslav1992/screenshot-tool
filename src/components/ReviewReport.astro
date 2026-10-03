@@ -3,15 +3,22 @@ import type { Project, Report } from '../lib/projects';
 import { safeParseFiles, type CaptureRow } from '../lib/captures';
 import { changedAreas, reportRegions } from '../lib/change-highlights';
 import ChangeFrame from './ChangeFrame.astro';
+import { accentStyle, type ReportBranding } from '../lib/branding-rules';
+import type { SignoffView } from '../lib/signoff';
 import '../styles/adon/ai-report.css';
 interface Props {
   project: Project;
   report: Report;
   captures: (CaptureRow & { position: number })[];
   token?: string;
+  /** Per-project branding. Absent or null renders the report exactly as before branding existed. */
+  branding?: ReportBranding | null;
+  /** The current client sign-off. Absent while sign-off is unavailable, and then no cell is shown. */
+  signoff?: SignoffView;
 }
-const { project, report, captures, token } = Astro.props;
+const { project, report, captures, token, branding, signoff } = Astro.props;
 const brand = project.brand || project.name;
+const signoffText = { approved: 'Approved', changes: 'Changes requested', awaiting: 'Awaiting sign-off' };
 const prepared = new Date(report.created_at).toISOString().slice(0, 10);
 const titles = ['Before · baseline', 'After · current', 'Comparison 2 · before', 'Comparison 2 · after'];
 // A pair taken from a monitor run shows that run's changed areas over its "after" image.
@@ -22,12 +29,24 @@ const regions = await reportRegions(
 );
 ---
 
-<article class="ai-report">
+<article class="ai-report" style={accentStyle(branding) || undefined}>
   <div class="ai-report-label">
     <span>[ WEBSITE REVIEW ]</span>
     <span>PREPARED {prepared}</span>
   </div>
   <header class="ai-report-head">
+    {
+      branding?.logoUrl && (
+        <img
+          class="ai-report-logo"
+          src={branding.logoUrl}
+          alt={`${brand} logo`}
+          width={branding.logoWidth || undefined}
+          height={branding.logoHeight || undefined}
+          decoding="async"
+        />
+      )
+    }
     <span class="ai-report-eyebrow">{brand} · WEBSITE REVIEW</span>
     <h1 class="ai-report-title">{report.title}</h1>
   </header>
@@ -44,6 +63,17 @@ const regions = await reportRegions(
       <dt>CAPTURES</dt>
       <dd>{captures.length}</dd>
     </div>
+    {
+      signoff && (
+        <div>
+          <dt>SIGN-OFF</dt>
+          <dd>
+            <span class:list={['ai-dot', `ai-dot--${signoff.state}`]} aria-hidden="true" />
+            {signoffText[signoff.state]}
+          </dd>
+        </div>
+      )
+    }
   </dl>
   {
     report.notes && (
@@ -108,7 +138,19 @@ const regions = await reportRegions(
       })
     }
   </div>
+  <slot />
   <footer class="ai-report-foot">
+    {branding?.footer && <p class="ai-report-foot-line">{branding.footer}</p>}
     Images are retained under the account’s capture retention policy. This report does not extend retention.
+    {
+      branding?.attribution && (
+        <p class="ai-report-attribution">
+          Shared with{' '}
+          <a href="/" rel="noreferrer">
+            Easy Screen Capture
+          </a>
+        </p>
+      )
+    }
   </footer>
 </article>

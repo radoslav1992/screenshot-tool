@@ -100,11 +100,21 @@ async function launchBrowser(puppeteer: any): Promise<BrowserLease> {
   return { browser, reused: false };
 }
 
+export interface AcquireOptions {
+  /**
+   * Whether a launch refused for a full pool is tried again before giving up.
+   * The free tools pass false: anonymous work never waits for a session that
+   * a customer's capture could have had, it is told the pool is busy instead.
+   */
+  wait?: boolean;
+}
+
 /**
  * Returns a browser to render with, reusing an idle session when one exists and
  * launching a fresh one otherwise.
  */
-export async function acquireBrowser(puppeteer: any): Promise<BrowserLease> {
+export async function acquireBrowser(puppeteer: any, options: AcquireOptions = {}): Promise<BrowserLease> {
+  const attempts = options.wait === false ? 1 : LAUNCH_ATTEMPTS;
   for (let attempt = 1; ; attempt++) {
     const reused = await reuseIdleSession(puppeteer);
     if (reused) return reused;
@@ -119,7 +129,7 @@ export async function acquireBrowser(puppeteer: any): Promise<BrowserLease> {
         typeof puppeteer.limits === 'function' ? await puppeteer.limits(env.BROWSER).catch(() => null) : null;
       if (!limits || limits.allowedBrowserAcquisitions !== 0) throw error;
 
-      if (attempt < LAUNCH_ATTEMPTS) {
+      if (attempt < attempts) {
         await sleep(LAUNCH_RETRY_MS + Math.random() * LAUNCH_RETRY_JITTER_MS);
         continue;
       }
@@ -134,6 +144,24 @@ export async function acquireBrowser(puppeteer: any): Promise<BrowserLease> {
             : 'Retry shortly, or raise the concurrency limit on your Cloudflare account.'),
       );
     }
+  }
+}
+
+/**
+ * Sessions the account could still launch on top of those running, or null
+ * when the pool cannot say (no binding, or a runtime without `limits`, like
+ * the local one). A snapshot: another isolate may take one a moment later,
+ * which acquireBrowser still answers for.
+ */
+export async function spareSessions(puppeteer: any): Promise<number | null> {
+  if (!env.BROWSER || typeof puppeteer.limits !== 'function') return null;
+  try {
+    const limits = await puppeteer.limits(env.BROWSER);
+    if (!limits || typeof limits.maxConcurrentSessions !== 'number') return null;
+    if (limits.allowedBrowserAcquisitions === 0) return 0;
+    return Math.max(0, limits.maxConcurrentSessions - (limits.activeSessions?.length ?? 0));
+  } catch {
+    return null;
   }
 }
 
@@ -204,8 +232,8 @@ async function openIsolatedPage(browser: any): Promise<{ context: any | null; pa
  * session is therefore worth one fresh launch; one that will not open on a
  * fresh launch is a real failure.
  */
-export async function openPage(puppeteer: any): Promise<PageLease> {
-  const lease = await acquireBrowser(puppeteer);
+export async function openPage(puppeteer: any, options: AcquireOptions = {}): Promise<PageLease> {
+  const lease = await acquireBrowser(puppeteer, options);
   try {
     return { lease, ...(await openIsolatedPage(lease.browser)) };
   } catch (error) {

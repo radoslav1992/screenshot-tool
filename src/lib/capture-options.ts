@@ -293,6 +293,12 @@ export interface CaptureOptions {
    * otherwise anyone could ask for an unmarked capture.
    */
   watermark: boolean;
+  /**
+   * Set only by the free tools (free-tools.ts), never from request input: every
+   * viewport, `sizes` included, at `scale`; a full page cut at `maxHeight`; and
+   * no waiting for a browser when the pool is full.
+   */
+  bounded?: { scale: number; maxHeight: number };
 }
 
 const PRIVATE_HOST_PATTERNS: RegExp[] = [

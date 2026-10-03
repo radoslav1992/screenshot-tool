@@ -383,7 +383,8 @@ async function renderWithBinding(options: CaptureOptions, onFile?: FileSink): Pr
   let session: PageLease;
   try {
     const puppeteer = (await import('@cloudflare/puppeteer')).default;
-    session = await openPage(puppeteer);
+    // A free-tool render never waits for a session: a full pool is its answer.
+    session = await openPage(puppeteer, { wait: !options.bounded });
   } catch (error) {
     throw new BindingUnavailable(error);
   }
@@ -647,7 +648,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
       }
     }
 
-    if (options.mode !== 'visible') await autoScroll(page, options.height);
+    if (options.mode !== 'visible') await autoScroll(page, options.height, options.bounded?.maxHeight);
     if (options.delayMs > 0) await sleep(options.delayMs);
 
     /*
@@ -689,7 +690,8 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
     // over the mark, and after auto-scroll, so the document height it anchors to
     // is the final one.
     const markId = watermarkId();
-    if (options.watermark && options.format !== 'pdf') await applyWatermark(page, options.mode, markId);
+    const tallest = options.bounded?.maxHeight;
+    if (options.watermark && options.format !== 'pdf') await applyWatermark(page, options.mode, markId, tallest);
 
     const extras = { facts, finalUrl, status, redirects };
 
@@ -731,7 +733,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
             id: size,
             width: DEVICES[size].width,
             height: DEVICES[size].height,
-            scale: DEVICES[size].scale,
+            scale: options.bounded?.scale ?? DEVICES[size].scale,
             mobile: browserIdentity(size).isMobile,
           })),
       ];
@@ -745,7 +747,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
        */
       const prepare = async (): Promise<void> => {
         await applyMasks(page, options);
-        if (options.watermark) await applyWatermark(page, options.mode, markId);
+        if (options.watermark) await applyWatermark(page, options.mode, markId, tallest);
       };
 
       const files: RenderedFile[] = [];
@@ -761,7 +763,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
         // A reflow after a viewport change is not instant, and a shot taken
         // mid-reflow shows the previous layout at the new width.
         await sleep(SETTLE_MS);
-        if (options.mode === 'fullpage') await autoScroll(page, preset.height);
+        if (options.mode === 'fullpage') await autoScroll(page, preset.height, tallest);
         await page.evaluate(() => window.scrollTo(0, 0));
         await sleep(SETTLE_MS);
 
@@ -769,7 +771,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
 
         const shot =
           options.mode === 'fullpage'
-            ? await captureTallViewport(page, preset, shotOptions, prepare)
+            ? await captureTallViewport(page, preset, shotOptions, prepare, tallest)
             : {
                 data: toUint8(
                   await page.screenshot({ ...shotOptions, fullPage: false, captureBeyondViewport: false }),
@@ -801,6 +803,8 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
           mobile: identity.isMobile,
         },
         shotOptions,
+        undefined,
+        tallest,
       );
       return {
         files: [
@@ -926,6 +930,9 @@ interface ViewportPreset {
  * has to be placed against the final layout. A failure there is the capture's,
  * not the viewport's, and is not answered by stitching.
  *
+ * `maxHeight` cuts the page shorter than LIMITS.maxFullPageHeight, as the free
+ * tools do; the stitched fallback is clipped to it too.
+ *
  * Exported so `scripts/fullpage-check.mjs` can run this exact function against
  * a scroll-reveal page in local Chromium.
  */
@@ -934,8 +941,9 @@ export async function captureTallViewport(
   preset: ViewportPreset,
   shotOptions: Record<string, unknown>,
   beforeShot?: () => Promise<void>,
+  maxHeight?: number,
 ): Promise<{ data: Uint8Array; height: number }> {
-  const tallest = LIMITS.maxFullPageHeight;
+  const tallest = Math.min(maxHeight ?? LIMITS.maxFullPageHeight, LIMITS.maxFullPageHeight);
   let height = Math.min(await documentHeight(page), tallest) || preset.height;
 
   const resize = async (to: number): Promise<void> => {
@@ -995,13 +1003,22 @@ export async function captureTallViewport(
     await page.evaluate(() => window.scrollTo(0, 0));
     await sleep(SETTLE_MS);
     if (beforeShot) await beforeShot();
-    const buffer = await page.screenshot({ ...shotOptions, fullPage: true });
-    return { data: toUint8(buffer), height: Math.min(await documentHeight(page), tallest) };
+    if (maxHeight === undefined) {
+      const buffer = await page.screenshot({ ...shotOptions, fullPage: true });
+      return { data: toUint8(buffer), height: Math.min(await documentHeight(page), tallest) };
+    }
+    const clipped = Math.min(await documentHeight(page), tallest) || preset.height;
+    const buffer = await page.screenshot({
+      ...shotOptions,
+      clip: { x: 0, y: 0, width: preset.width, height: clipped },
+      captureBeyondViewport: true,
+    });
+    return { data: toUint8(buffer), height: clipped };
   }
 }
 
-/** Scrolls to the bottom in viewport steps so lazy-loaded content renders. */
-async function autoScroll(page: any, step: number): Promise<void> {
+/** Scrolls to the bottom in viewport steps so lazy-loaded content renders; no further than `cap`. */
+async function autoScroll(page: any, step: number, cap: number = LIMITS.maxFullPageHeight): Promise<void> {
   try {
     await page.evaluate(
       async (stepSize: number, cap: number) =>
@@ -1018,7 +1035,7 @@ async function autoScroll(page: any, step: number): Promise<void> {
           }, 80);
         }),
       step,
-      LIMITS.maxFullPageHeight,
+      cap,
     );
     await sleep(SETTLE_MS);
   } catch {

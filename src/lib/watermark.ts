@@ -43,9 +43,15 @@ function anchorFor(mode: CaptureMode): 'fixed' | 'absolute' {
  *
  * Applying it again with the same id replaces the mark rather than adding a
  * second one, which is how it follows a viewport change.
+ *
+ * `maxHeight` is where a full page that is cut short ends: the mark goes at the
+ * bottom of what is captured rather than below it, where it would be cut off.
  */
-export function watermarkScript(mode: CaptureMode, id: string = watermarkId()): string {
+export function watermarkScript(mode: CaptureMode, id: string = watermarkId(), maxHeight?: number): string {
   const anchor = anchorFor(mode);
+  const bottom = maxHeight
+    ? `Math.min(document.documentElement.scrollHeight, ${Math.max(40, Math.floor(maxHeight))})`
+    : 'document.documentElement.scrollHeight';
   return `(function () {
   var id = ${JSON.stringify(id)};
   var existing = document.getElementById(id);
@@ -93,7 +99,7 @@ export function watermarkScript(mode: CaptureMode, id: string = watermarkId()): 
   if (${JSON.stringify(anchor)} === 'absolute') {
     // Anchor to the document so the mark lands inside the bottom of the
     // stitched image rather than near its top.
-    badge.style.setProperty('top', Math.max(0, document.documentElement.scrollHeight - 40) + 'px', 'important');
+    badge.style.setProperty('top', Math.max(0, ${bottom} - 40) + 'px', 'important');
   } else {
     badge.style.setProperty('bottom', '14px', 'important');
   }
@@ -103,9 +109,9 @@ export function watermarkScript(mode: CaptureMode, id: string = watermarkId()): 
 }
 
 /** Injects the mark. Best-effort: a page that blocks evaluation still gets its screenshot. */
-export async function applyWatermark(page: any, mode: CaptureMode, id?: string): Promise<void> {
+export async function applyWatermark(page: any, mode: CaptureMode, id?: string, maxHeight?: number): Promise<void> {
   try {
-    await page.evaluate(watermarkScript(mode, id));
+    await page.evaluate(watermarkScript(mode, id, maxHeight));
   } catch (error) {
     // Log so an unmarked free capture is at least visible in the logs.
     console.error('[watermark] could not apply the mark', error);

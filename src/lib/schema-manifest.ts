@@ -98,6 +98,7 @@ export const MIGRATIONS: MigrationManifest[] = [
     indexes: ['apple_subscriptions_due'],
   },
   { name: '0012_watch_runs_user_index.sql', optional: true, indexes: ['idx_watch_runs_user'] },
+  { name: '0014_pinned_baseline.sql', optional: true, columns: ['watches.baseline_pinned_at'] },
 ];
 
 /** The tables `/api/health` has always required. */

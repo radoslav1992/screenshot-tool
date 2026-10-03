@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS watches (
   last_error          TEXT,
   consecutive_errors  INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT NOT NULL,
-  updated_at          TEXT NOT NULL
+  updated_at          TEXT NOT NULL,
+  baseline_pinned_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_watches_user ON watches(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_watches_due ON watches(status, next_run_at);
@@ -326,3 +327,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0009_monitor_workflows.sql')
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0010_mobile_push.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0011_apple_lite.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0012_watch_runs_user_index.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0014_pinned_baseline.sql');

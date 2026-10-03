@@ -11,6 +11,8 @@
  * Make expect.
  */
 
+import type { ChangeRegion } from './visual-diff-fn';
+
 export type WebhookFlavour = 'slack' | 'discord' | 'teams' | 'google_chat' | 'json';
 
 export function webhookFlavour(url: string): WebhookFlavour {
@@ -55,6 +57,10 @@ export interface ChangeNotice {
    * where a pixel percentage would read "0% of the page changed".
    */
   rule?: { kind: string; detail: string | null } | null;
+  /** The "after" image with the changed areas boxed, when the comparison drew one. */
+  highlightUrl?: string | null;
+  /** The changed areas, as fractions of the "after" image. */
+  regions?: ChangeRegion[];
 }
 
 /** What a message leads with: a rule's own finding, then the summary, then the percentage. */
@@ -81,6 +87,8 @@ export function webhookBody(flavour: WebhookFlavour, notice: ChangeNotice): unkn
     after: notice.afterUrl,
     detail_url: notice.watchUrl,
     rule: notice.rule ? { kind: notice.rule.kind, detail: notice.rule.detail } : null,
+    highlight_url: notice.highlightUrl ?? null,
+    regions: notice.regions ?? [],
   };
   if (flavour === 'json') return json;
 
@@ -88,6 +96,7 @@ export function webhookBody(flavour: WebhookFlavour, notice: ChangeNotice): unkn
   const links = [
     notice.beforeUrl ? `<${notice.beforeUrl}|before>` : null,
     notice.afterUrl ? `<${notice.afterUrl}|after>` : null,
+    notice.highlightUrl ? `<${notice.highlightUrl}|changes highlighted>` : null,
   ].filter(Boolean);
 
   if (flavour === 'slack') {
@@ -133,6 +142,7 @@ export function webhookBody(flavour: WebhookFlavour, notice: ChangeNotice): unkn
               ...open('Open monitor', notice.watchUrl),
               ...open('Before', notice.beforeUrl),
               ...open('After', notice.afterUrl),
+              ...open('Changes highlighted', notice.highlightUrl ?? null),
             ],
           },
         },
@@ -144,6 +154,7 @@ export function webhookBody(flavour: WebhookFlavour, notice: ChangeNotice): unkn
   const discordLinks = [
     notice.beforeUrl ? `[before](${notice.beforeUrl})` : null,
     notice.afterUrl ? `[after](${notice.afterUrl})` : null,
+    notice.highlightUrl ? `[changes highlighted](${notice.highlightUrl})` : null,
   ]
     .filter(Boolean)
     .join(' · ');

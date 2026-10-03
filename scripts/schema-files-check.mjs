@@ -254,15 +254,13 @@ try {
   assert.ok(nothing.every((entry) => !entry.applied));
   assert.equal(nothing[0].upgrade, 'db/apply-manually.sql');
 
-  // Deployed ahead of 0011 and 0012: the two are named, with the files to paste.
+  // Deployed ahead of 0011 and later ones: each is named, with the files to paste.
   const behind = migrated(migrations.indexOf('0011_apple_lite.sql'));
   const status = await migrationStatus(d1(behind));
   assert.deepEqual(
     status.filter((entry) => !entry.applied).map((entry) => [entry.name, entry.upgrade]),
-    [
-      ['0011_apple_lite.sql', 'db/0011-upgrade.sql'],
-      ['0012_watch_runs_user_index.sql', 'db/0012-upgrade.sql'],
-    ],
+    // 0011 and everything after it, including migrations added later.
+    migrations.slice(migrations.indexOf('0011_apple_lite.sql')).map((name) => [name, upgradeFileFor(name)]),
   );
   assert.ok(status.find((entry) => entry.name === '0011_apple_lite.sql').missing.includes('users.free_quota'));
 

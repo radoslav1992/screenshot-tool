@@ -1,6 +1,14 @@
 import { env } from 'cloudflare:workers';
 import { acquireBrowser, releaseBrowser } from './browser-pool';
-import { CHANNEL_TOLERANCE, MAX_COMPARE_PIXELS, compareInPage, type DiffResult } from './visual-diff-fn';
+import {
+  CHANNEL_TOLERANCE,
+  HIGHLIGHT_LIMITS,
+  MAX_COMPARE_PIXELS,
+  MAX_REGIONS,
+  compareInPage,
+  type ChangeRegion,
+  type DiffResult,
+} from './visual-diff-fn';
 
 /**
  * Comparing two screenshots.
@@ -16,9 +24,31 @@ import { CHANNEL_TOLERANCE, MAX_COMPARE_PIXELS, compareInPage, type DiffResult }
  * browser make two ordinary HTTP requests.
  */
 
-export type { DiffResult };
+export type { ChangeRegion, DiffResult };
 
-export async function compareImages(beforeUrl: string, afterUrl: string, region?: { x: number; y: number; width: number; height: number }): Promise<DiffResult> {
+export interface CompareOptions {
+  /** Draw the highlighted copy when the change reaches this threshold, in percent (0: any change). */
+  highlight?: number;
+  /**
+   * A second "before" to measure the same "after" against, in the same page:
+   * the version a pinned monitor last alerted about. Its comparison is best
+   * effort — one that fails leaves `previous` out rather than failing the check.
+   */
+  previous?: string;
+}
+
+const rounded = (result: DiffResult): DiffResult => ({
+  ...result,
+  changedPct: Math.round(result.changedPct * 100) / 100,
+  sharedPct: Math.round(result.sharedPct * 100) / 100,
+});
+
+export async function compareImages(
+  beforeUrl: string,
+  afterUrl: string,
+  region?: { x: number; y: number; width: number; height: number },
+  options: CompareOptions = {},
+): Promise<DiffResult & { previous?: DiffResult }> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
   const lease = await acquireBrowser(puppeteer);
   let succeeded = false;
@@ -28,6 +58,7 @@ export async function compareImages(beforeUrl: string, afterUrl: string, region?
     page = await lease.browser.newPage();
     await page.setViewport({ width: 400, height: 400, deviceScaleFactor: 1 });
 
+    const highlight = options.highlight === undefined ? undefined : { ...HIGHLIGHT_LIMITS, minPct: options.highlight };
     const result = (await page.evaluate(
       compareInPage,
       beforeUrl,
@@ -35,14 +66,32 @@ export async function compareImages(beforeUrl: string, afterUrl: string, region?
       CHANNEL_TOLERANCE,
       MAX_COMPARE_PIXELS,
       region,
+      highlight,
+      MAX_REGIONS,
     )) as DiffResult;
 
+    let previous: DiffResult | undefined;
+    if (options.previous) {
+      try {
+        previous = rounded(
+          (await page.evaluate(
+            compareInPage,
+            options.previous,
+            afterUrl,
+            CHANNEL_TOLERANCE,
+            MAX_COMPARE_PIXELS,
+            region,
+            undefined,
+            MAX_REGIONS,
+          )) as DiffResult,
+        );
+      } catch (error) {
+        console.error('[diff] comparison with the last alerted version failed', error);
+      }
+    }
+
     succeeded = true;
-    return {
-      ...result,
-      changedPct: Math.round(result.changedPct * 100) / 100,
-      sharedPct: Math.round(result.sharedPct * 100) / 100,
-    };
+    return { ...rounded(result), ...(previous ? { previous } : {}) };
   } finally {
     if (page) {
       try {

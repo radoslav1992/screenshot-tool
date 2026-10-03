@@ -16,8 +16,11 @@ import { checkInProgress, getWatch, listRuns, listWatches } from '../../../lib/w
 import { safeParseFacts } from '../../../lib/page-facts';
 import { describeSeo } from '../../../lib/seo-signals';
 import { diffText } from '../../../lib/text-diff';
-import { formatDateTime } from '../../../lib/dates';
+import { formatDate, formatDateTime } from '../../../lib/dates';
 import { env } from 'cloudflare:workers';
+import ChangeFrame from '../../../components/ChangeFrame.astro';
+import { PINNED_ALERTS, pinReady } from '../../../lib/baseline-pin';
+import { changedAreas, highlightUrl } from '../../../lib/change-highlights';
 
 const user = Astro.locals.user!;
 const watch = await getWatch(Astro.params.id ?? '');
@@ -76,6 +79,33 @@ function firstUrl(row: CaptureRow | null): string | null {
 const beforeUrl = firstUrl(beforeRow);
 const afterUrl = firstUrl(afterRow);
 const changedPct = lastComparison?.change_pct ?? null;
+const lastRegions = lastComparison?.regions ?? [];
+const lastHighlight = lastComparison?.highlight && afterRow ? highlightUrl(afterRow, origin) : null;
+
+/*
+ * The baseline, and which of the history's captures could become it. Pinning
+ * stays out of sight until migration 0014 adds its column.
+ */
+const pinsReady = watch.baseline_pinned_at !== undefined || (await pinReady());
+const pinnedAt = pinsReady ? (watch.baseline_pinned_at ?? null) : null;
+const baselineRow = await capture(watch.baseline_capture_id);
+const baselineUrl = firstUrl(baselineRow);
+const runCaptureIds = [...new Set(runs.map((run) => run.capture_id).filter((id): id is string => Boolean(id)))];
+const runShots = new Map(
+  (runCaptureIds.length
+    ? ((
+        await env.DB.prepare(
+          `SELECT id, user_id, share_token, files FROM captures WHERE user_id = ? AND status = 'done' AND id IN (${runCaptureIds.map(() => '?').join(',')})`,
+        )
+          .bind(user.id, ...runCaptureIds)
+          .all<Pick<CaptureRow, 'id' | 'user_id' | 'share_token' | 'files'>>()
+      ).results ?? [])
+    : []
+  ).map((row) => [row.id, row]),
+);
+const isPinnedCapture = (id: string | null) => Boolean(pinnedAt && id && id === watch.baseline_capture_id);
+const canPin = (id: string | null) =>
+  Boolean(pinsReady && id && !isPinnedCapture(id) && safeParseFiles(runShots.get(id)?.files ?? '[]').length);
 
 /*
  * The same diff the alert email carries, recomputed from the two captures
@@ -186,6 +216,42 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
         </section>
       )}
 
+      {pinsReady && (
+        <section class="card card--pad stack gap-10" id="baseline-card" data-watch={watch.id} aria-labelledby="baseline-heading">
+          <h2 class="h4" id="baseline-heading">What each check is compared with</h2>
+          <p class="baseline-line">
+            <span class:list={['baseline-tag', { 'baseline-tag--pinned': pinnedAt }]}>[ BASELINE ]</span>{' '}
+            {pinnedAt
+              ? `Pinned on ${formatDate(pinnedAt)} · comparing every check against this version`
+              : watch.baseline_capture_id
+                ? 'Follows the latest check · each check is compared with the one before it'
+                : 'The first check becomes the baseline'}
+          </p>
+          {baselineUrl && baselineRow && (
+            <a class="baseline-thumb" href={baselineUrl} target="_blank" rel="noopener">
+              <img src={baselineUrl} alt="The current baseline screenshot" loading="lazy" />
+              <span class="xs muted-2">Captured {formatDateTime(baselineRow.created_at)}</span>
+            </a>
+          )}
+          {watch.baseline_capture_id && (
+            <p class="xs muted">
+              {pinnedAt
+                ? PINNED_ALERTS
+                : 'Keep it as the baseline to compare every later check against this approved version, until you unpin it.'}
+            </p>
+          )}
+          {watch.baseline_capture_id && (
+            <div class="btn-row">
+              {pinnedAt ? (
+                <button type="button" class="btn btn--outline" data-pin="unpin">Unpin</button>
+              ) : (
+                <button type="button" class="btn btn--outline" data-pin="pin">Keep as baseline</button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {latestAlert && (
         <section class="card card--pad stack gap-8">
           <h2 class="h4">Most recent alert</h2>
@@ -246,7 +312,7 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
       </form>
 
       {beforeUrl && afterUrl && (
-      <section class="stack gap-8">
+      <section class="stack gap-8 changes">
           <div class="row-between">
             <h2 class="h4">Latest comparison</h2>
             {changedPct !== null && <span class="pill">{changedPct}% different</span>}
@@ -279,14 +345,33 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
               )
             }
 
+          {lastRegions.length > 0 && (
+            <div class="change-bar">
+              <span class="xs muted">
+                {changedAreas(lastRegions)} outlined on the after image
+                {lastHighlight && (
+                  <>
+                    {' · '}
+                    <a href={lastHighlight} target="_blank" rel="noopener">Open highlighted image</a>
+                  </>
+                )}
+              </span>
+              <label class="change-toggle">
+                <input type="checkbox" checked /> Show changes
+              </label>
+            </div>
+          )}
+
           <div class="compare">
             <figure class="compare__side">
-              <figcaption class="xs muted-2">Before</figcaption>
+              <figcaption class="xs muted-2">
+                Before{isPinnedCapture(lastComparison?.baseline_capture_id ?? null) ? ' · pinned baseline' : ''}
+              </figcaption>
               <img src={beforeUrl} alt="The page before the change" loading="lazy" />
             </figure>
             <figure class="compare__side">
               <figcaption class="xs muted-2">After</figcaption>
-              <img src={afterUrl} alt="The page after the change" loading="lazy" />
+              <ChangeFrame src={afterUrl} alt="The page after the change" regions={lastRegions} maxHeight="60vh" />
             </figure>
           </div>
         </section>
@@ -385,6 +470,21 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
                     {runLabel(run)}
                   </span>
                   <time class="xs muted-2" datetime={run.created_at}>{formatDateTime(run.created_at)}</time>
+                  {(isPinnedCapture(run.capture_id) || canPin(run.capture_id) || (run.highlight && run.capture_id && runShots.has(run.capture_id))) && (
+                    <span class="run-actions">
+                      {isPinnedCapture(run.capture_id) && <span class="baseline-tag baseline-tag--pinned">[ PINNED BASELINE ]</span>}
+                      {run.highlight && run.capture_id && runShots.has(run.capture_id) && (
+                        <a href={highlightUrl(runShots.get(run.capture_id)!, origin)} target="_blank" rel="noopener">
+                          View changes
+                        </a>
+                      )}
+                      {canPin(run.capture_id) && (
+                        <button type="button" class="link-button" data-pin="pin" data-capture={run.capture_id}>
+                          Keep as baseline
+                        </button>
+                      )}
+                    </span>
+                  )}
                   {run.changed === 1 && (
                     <span class="xs muted" style="display:block">
                       Email: {deliveryLabel[run.delivery.email]}
@@ -441,6 +541,49 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .baseline-line {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .baseline-tag {
+    font: 500 11px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    white-space: nowrap;
+  }
+  .baseline-tag--pinned {
+    color: var(--theme-text-sm);
+  }
+  .baseline-thumb {
+    display: grid;
+    gap: 6px;
+    max-width: 240px;
+  }
+  .baseline-thumb img {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    object-position: top;
+    border: 1px solid var(--line-2);
+  }
+  .run-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 14px;
+    font-size: 12px;
+  }
+  .run-actions a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    font-weight: 600;
+  }
+  .run-actions .link-button {
+    margin-block: 0;
+    font-size: 12px;
   }
 </style>
 
@@ -560,6 +703,39 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
 </script>
 
 <script>
+  // Keep as baseline / Unpin. The card says which monitor; a history row may name a capture.
+  const baselineCard = document.querySelector<HTMLElement>('#baseline-card');
+  document.querySelectorAll<HTMLButtonElement>('[data-pin]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const errorBox = document.getElementById('watch-error');
+      if (!baselineCard || button.disabled) return;
+      button.disabled = true;
+      const original = button.textContent;
+      button.textContent = 'Working…';
+      try {
+        const response = await fetch(`/api/watches/${baselineCard.dataset.watch}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({
+            action: button.dataset.pin,
+            ...(button.dataset.capture ? { capture_id: button.dataset.capture } : {}),
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        if (!response.ok) throw new Error(payload.error?.message || 'That did not work. Try again.');
+        window.location.reload();
+      } catch (cause) {
+        button.disabled = false;
+        button.textContent = original;
+        if (errorBox) {
+          errorBox.textContent = cause instanceof Error ? cause.message : 'That did not work. Try again.';
+          errorBox.hidden = false;
+          errorBox.scrollIntoView({ block: 'nearest' });
+        }
+      }
+    });
+  });
+
   const scheduleForm = document.querySelector<HTMLFormElement>('#schedule-form');
   scheduleForm?.addEventListener('submit', async (event) => {
     event.preventDefault();

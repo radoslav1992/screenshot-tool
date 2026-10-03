@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getCapture, safeParseFiles } from '../../../lib/captures';
+import { HIGHLIGHT_NAME, highlightFile } from '../../../lib/change-highlights';
 import { timingSafeEqual } from '../../../lib/ids';
 
 export const prerender = false;
@@ -11,6 +12,9 @@ export const prerender = false;
  * Access is granted to the owner's session, or to anyone holding the
  * capture's share token (`?t=…`). Add `?download=1` for a save-to-disk
  * Content-Disposition.
+ *
+ * A monitor check's highlighted copy is served the same way under its fixed
+ * name, though it is not one of the capture's files.
  */
 export const GET: APIRoute = async ({ params, locals, url, request }) => {
   const row = await getCapture(params.id ?? '');
@@ -21,7 +25,9 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
   const hasToken = token.length === row.share_token.length && timingSafeEqual(token, row.share_token);
   if (!isOwner && !hasToken) return new Response('Not found', { status: 404 });
 
-  const file = safeParseFiles(row.files).find((entry) => entry.name === params.name);
+  const file =
+    safeParseFiles(row.files).find((entry) => entry.name === params.name) ??
+    (params.name === HIGHLIGHT_NAME && row.source === 'watch' ? highlightFile(row) : undefined);
   if (!file) return new Response('Not found', { status: 404 });
 
   const rangeRequested = request.headers.has('range');

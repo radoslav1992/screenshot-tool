@@ -72,8 +72,9 @@ CI=1 npm run dev
 ```
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
-retention, push, Apple, commerce, capture engine, auth and billing) against SQLite and local Chromium; no
-real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
+retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1 schema
+files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
 shape the app decodes.
@@ -104,18 +105,42 @@ npx wrangler kv namespace create RATE
    ```
 
    No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console (Cloudflare dashboard →
-   Storage & Databases → D1 → *screenify-data* → Console) and run it. It contains the same schema
-   plus the `d1_migrations` bookkeeping rows, so a later `npm run db:migrate` reports *No migrations
-   to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
+   Storage & Databases → D1 → *screenify-data* → Console) and run it. It is for a **fresh, empty
+   database**: the schema every migration through `0012` adds up to, plus the `d1_migrations`
+   bookkeeping rows, so a later `npm run db:migrate` reports *No migrations to apply* rather than
+   trying to create the tables twice. It is idempotent — safe to re-run.
 
-   **Upgrading a database that already has an older schema?** Run the matching `db/000N-upgrade.sql`
-   files in order (`0002-upgrade.sql` through `0005-upgrade.sql`) — `apply-manually.sql` creates tables
-   but cannot add columns to existing ones.
+   **Upgrading a database that already has an older schema?** Not with `apply-manually.sql`: it
+   creates missing tables but cannot add columns to existing ones, and it would still record every
+   migration as applied. Paste the upgrade file for each migration the database is missing, in order:
+
+   | File | Migration |
+   | --- | --- |
+   | `db/0002-upgrade.sql` | email verification and retention |
+   | `db/0003-upgrade.sql` | Stripe billing |
+   | `db/0004-upgrade.sql` | watches |
+   | `db/0005-upgrade.sql` | page facts |
+   | `db/0006-upgrade.sql` | projects and review reports |
+   | `db/0007-upgrade.sql` | collaboration and digests |
+   | `db/0008-upgrade.sql` | monitor noise settings |
+   | `db/0009-upgrade.sql` | monitor rules and alert retries |
+   | `db/0010-upgrade.sql` | mobile push |
+   | `db/0011-upgrade.sql` | Apple subscriptions and the free quota |
+   | `db/0012-upgrade.sql` | watch-run index |
+
+   `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
+   Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
+   afterwards.
 
    The D1 console flattens pasted SQL onto one line, which makes `--` comments swallow everything
-   after them. The `db/000N-upgrade.sql` files are therefore comment-free and safe to paste as-is.
+   after them. `apply-manually.sql` and the upgrade files are therefore comment-free and safe to
+   paste as-is; `npm test` checks that, and that each one builds exactly what its migrations do.
    `ALTER TABLE … ADD COLUMN` is not idempotent in SQLite: if a re-run reports *duplicate column
-   name*, that column is already there — drop that line and run the rest.
+   name*, that column is already there — drop that line and run the rest. The exceptions are 0002
+   and 0011, which also update existing rows (0002 marks existing accounts as confirmed, 0011 gives
+   existing free accounts the grandfathered 200-capture quota): if their first `ALTER` reports a
+   duplicate column, that upgrade has already run, and running its `UPDATE` again would hand the
+   same to every account created since.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 
@@ -125,18 +150,24 @@ npx wrangler kv namespace create RATE
 
 ### Checking a deployment
 
-`GET /api/health` reports whether each binding is wired up and whether the D1 schema exists. It
-returns booleans and setup hints only — no data, no credentials.
+`GET /api/health` reports whether each binding is wired up and which D1 migrations the database
+has. It returns booleans, schema object names and setup hints only — no data, no credentials.
 
 ```bash
 curl https://your-domain/api/health
 # {"ok":true,"checks":{"database":{"ok":true,…},"storage":{"ok":true},"kv":{"ok":true},
-#  "renderer":{"ok":true,"engine":"binding"}}}
+#  "renderer":{"ok":true,"engine":"binding"}},
+#  "migrations":[{"name":"0001_init.sql","applied":true},…]}
 ```
 
 A deployment whose schema was never applied answers `503` with `missing: ["users", …]`, and signup
-fails with `schema_missing` rather than a generic error. Server-side causes are logged with a
-context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
+fails with `schema_missing` rather than a generic error. Because production deploys before anyone
+applies the migration that came with it, every later migration is checked too, by the tables,
+columns and indexes it creates (listed in `src/lib/schema-manifest.ts`). One that is missing, or
+only partly applied, also answers `503`, with an entry such as
+`{"name":"0011_apple_lite.sql","applied":false,"missing":["apple_accounts","users.free_quota",…],"upgrade":"db/0011-upgrade.sql"}`
+and a `database.detail` naming the upgrade files to paste, in order. Server-side causes are logged
+with a context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
 
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and
 `CF_API_TOKEN` (a token with *Browser Rendering: Edit*) as secrets to use the REST fallback — it
@@ -376,6 +407,18 @@ answers `503`, and the app behaves exactly as it did before billing existed.
    reports what exists rather than making duplicates. It prints the price ids formatted for the
    next step. Run it once per mode: Stripe's test and live worlds share nothing.
 
+   Give every plan product a **tax code**: Stripe Managed Payments rejects checkout for a product
+   without one (*Product tax code is required for Managed Payments*). With `STRIPE_TAX_CODE` set,
+   setup puts it on new products and updates existing ones whose code is missing or different:
+
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_… STRIPE_TAX_CODE=txcd_10103001 npm run stripe:setup
+   ```
+
+   `txcd_10103001` is SaaS for business use, `txcd_10103000` SaaS for personal use; check Stripe's
+   Managed Payments eligibility list before choosing. `npm run stripe:check` fails for any plan
+   product that still has none.
+
 2. Add a webhook endpoint pointing at `https://<your-domain>/api/billing/webhook`, subscribed to
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`
    and `customer.subscription.deleted`. Copy its signing secret.
@@ -394,6 +437,30 @@ answers `503`, and the app behaves exactly as it did before billing existed.
 
    A plan with no price id configured is still listed on `/pricing` but is not purchasable, so you
    can launch one tier at a time. `GET /api/health` reports which ones are live under `billing`.
+
+### When Stripe says no
+
+A failed checkout or portal visit sends the customer back to `/pricing` or `/app/account` with a
+short code (`?billing_error=checkout_unavailable`), and the page shows a fixed message for it from
+`src/lib/billing-errors.ts`. Unknown codes get one generic message; nothing from the URL is ever
+shown, so a crafted link cannot put words on the real pricing page. JSON callers keep
+`{error:{type,message}}`.
+
+When Stripe *rejects* the request (a 4xx — nearly always a dashboard setting, such as a product
+with no tax code), the customer is told checkout isn't available and the site owner has been told,
+and Stripe's own message goes to the log and by email to the operator: what Stripe said, the
+request path, and the likely fix when the cause is a known one. At most one email per Stripe error
+code per hour (throttled in the `RATE` KV, which fails open). The address is `BILLING_ALERT_EMAIL`,
+falling back to the contact address in `src/lib/company.ts`; it needs a working mailer (see
+*Sending mail*). Set it as a secret, since a deploy replaces plain-text variables with those in
+`wrangler.jsonc`:
+
+```bash
+npx wrangler secret put BILLING_ALERT_EMAIL
+```
+
+`GET /api/billing/diagnose`, for the signed-in account owner, still shows Stripe's own wording for
+a plan change that fails.
 
 ### Tax
 

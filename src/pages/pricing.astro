@@ -7,6 +7,7 @@ import AiPage from '../components/AiPage.astro';
 import AiPageHead from '../components/AiPageHead.astro';
 import { PLANS, PLAN_ORDER } from '../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, planPurchasable } from '../lib/billing';
+import { billingErrorMessage } from '../lib/billing-errors';
 
 const user = Astro.locals.user;
 const plans = PLAN_ORDER.map((id) => PLANS[id]);
@@ -14,7 +15,8 @@ const plans = PLAN_ORDER.map((id) => PLANS[id]);
 const checkout = billingEnabled();
 const purchasable = new Set(plans.filter((plan) => planPurchasable(plan.id)).map((plan) => plan.id));
 const cancelled = Astro.url.searchParams.get('checkout') === 'cancelled';
-const billingError = Astro.url.searchParams.get('billing_error');
+// A code, looked up in a fixed list: nothing from the URL is ever shown as text.
+const billingError = billingErrorMessage(Astro.url.searchParams.get('billing_error'));
 
 // Someone Stripe is already billing switches plan in the portal — a second
 // Checkout would start a second subscription and charge for both. The billing

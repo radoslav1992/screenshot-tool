@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { PLANS, PAID_PLANS } from '../src/lib/plans.ts';
-import { validateStripePrice } from '../src/lib/stripe-price-check.mjs';
+import { productTaxCode, productTaxCodeIssue, validateStripePrice } from '../src/lib/stripe-price-check.mjs';
 
 const key = process.env.STRIPE_SECRET_KEY || '';
 if (!/^(sk|rk)_(live|test)_/.test(key)) throw new Error('Set STRIPE_SECRET_KEY to a secret or restricted key.');
@@ -17,6 +17,8 @@ async function get(path) {
   return response.json();
 }
 console.log('Read-only Stripe configuration check: ' + (live ? 'LIVE' : 'TEST'));
+// Monthly and yearly prices share a product; judge each product once.
+const products = new Set();
 for (const id of PAID_PLANS) {
   for (const interval of ['monthly', 'yearly']) {
     const name = PLANS[id].priceEnv[interval];
@@ -30,6 +32,13 @@ for (const id of PAID_PLANS) {
       });
       if (issues.length) fail(name + ': ' + issues.join('; '));
       else console.log('OK: ' + name);
+      const product = price.product;
+      if (product && typeof product === 'object' && !products.has(product.id)) {
+        products.add(product.id);
+        const taxIssue = productTaxCodeIssue(product);
+        if (taxIssue) fail((product.name || product.id) + ' (' + product.id + '): ' + taxIssue);
+        else console.log('OK: ' + (product.name || product.id) + ' tax code ' + productTaxCode(product));
+      }
     } catch (error) { fail(name + ': ' + error.message); }
   }
 }

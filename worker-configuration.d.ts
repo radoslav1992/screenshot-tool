@@ -81,6 +81,14 @@ declare namespace Cloudflare {
      */
     STRIPE_TOS_CONSENT?: string;
 
+    /**
+     * Who is emailed when Stripe rejects a checkout or portal request — at most
+     * once per Stripe error code per hour. Optional: falls back to the contact
+     * address in src/lib/company.ts. Set it as a secret: a deploy replaces the
+     * plain-text variables with the ones in wrangler.jsonc.
+     */
+    BILLING_ALERT_EMAIL?: string;
+
     /** Recurring price ids (price_…) per plan and interval. */
     STRIPE_PRICE_PLUS_MONTHLY?: string;
     STRIPE_PRICE_PLUS_YEARLY?: string;

@@ -5,6 +5,7 @@ import PasswordField from '../../components/PasswordField.astro';
 import { getUsage } from '../../lib/captures';
 import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription } from '../../lib/billing';
+import { billingErrorMessage } from '../../lib/billing-errors';
 import { PASSWORD_MIN_LENGTH, countSessions } from '../../lib/auth';
 import { canSendEmail } from '../../lib/mailer';
 
@@ -58,7 +59,8 @@ const otherSessions = Math.max(0, sessions - 1);
 
 const params = Astro.url.searchParams;
 const justUpgraded = params.get('checkout') === 'success';
-const billingError = params.get('billing_error');
+// A code, looked up in a fixed list: nothing from the URL is ever shown as text.
+const billingError = billingErrorMessage(params.get('billing_error'));
 const passwordNotice =
   params.get('password') === 'changed'
     ? 'Password changed. Every other device was signed out.'

@@ -13,3 +13,4 @@ CREATE TABLE IF NOT EXISTS alert_retries (
  updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS alert_retries_due ON alert_retries(status,next_attempt_at);
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0009_monitor_workflows.sql');

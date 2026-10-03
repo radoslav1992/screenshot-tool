@@ -1,0 +1,36 @@
+---
+import type { ChangeRegion } from '../lib/change-highlights';
+import '../styles/changes.css';
+
+/**
+ * An "after" image with its changed areas outlined on top. The boxes are
+ * positioned in percentages of the image, so they stay on the change at any
+ * width; a `maxHeight` crops the frame, never the image under the boxes.
+ * A `.changes` ancestor with a `.change-toggle` checkbox shows or hides them.
+ */
+interface Props {
+  src: string;
+  alt: string;
+  regions: ChangeRegion[];
+  maxHeight?: string;
+  loading?: 'lazy' | 'eager';
+  class?: string;
+}
+const { src, alt, regions, maxHeight, loading = 'lazy', class: className } = Astro.props;
+const pct = (n: number) => `${Math.round(n * 10_000) / 100}%`;
+---
+
+<div class:list={['change-frame', className]} style={maxHeight ? `max-height: ${maxHeight}` : undefined}>
+  <div class="change-frame__image">
+    <img src={src} alt={alt} loading={loading} />
+    {
+      regions.map((region) => (
+        <span
+          class="change-box"
+          aria-hidden="true"
+          style={`left: ${pct(region.x)}; top: ${pct(region.y)}; width: ${pct(region.w)}; height: ${pct(region.h)}`}
+        />
+      ))
+    }
+  </div>
+</div>

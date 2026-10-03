@@ -94,6 +94,8 @@
   //   CF_ACCOUNT_ID         - enables the REST Browser Rendering fallback
   //   CF_API_TOKEN          - token with "Browser Rendering: Edit" for that fallback
   //   RESEND_API_KEY        - enables sending confirmation emails via Resend
+  //   OWNER_EMAILS          - comma-separated account emails that may open the
+  //                           growth dashboard at /app/growth; unset, nobody can
   //
   // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
   // do not render and /api/billing/* answers 503.

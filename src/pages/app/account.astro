@@ -10,6 +10,7 @@ import { takeFlash } from '../../lib/flash';
 import { PASSWORD_MIN_LENGTH, countSessions } from '../../lib/auth';
 import { canSendEmail } from '../../lib/mailer';
 import { REFERRAL_BONUS, REFERRAL_CAP, referralSummary, referralUrl, rewardReferral } from '../../lib/growth';
+import { isOwner } from '../../lib/growth-report';
 
 const user = Astro.locals.user!;
 // Catches a referral that became payable some other way (a password reset that
@@ -19,6 +20,7 @@ const usage = await getUsage(user);
 // The invite section exists once migration 0017 does.
 const referral = await referralSummary(user.id).catch(() => null);
 const inviteLink = referral ? referralUrl(Astro.url.origin, referral.code) : '';
+const owner = isOwner(user.email);
 const plan = getPlan(user.plan);
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
@@ -332,6 +334,14 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
         <span class="row__label">API documentation</span>
         <span class="row__value" style="color: var(--muted-2)">›</span>
       </a>
+      {
+        owner && (
+          <a class="row" href="/app/growth">
+            <span class="row__label">Growth dashboard</span>
+            <span class="row__value" style="color: var(--muted-2)">Owner ›</span>
+          </a>
+        )
+      }
       {
         hasPassword ? (
           <button

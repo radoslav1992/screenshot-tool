@@ -20,6 +20,7 @@ const toc = [
   { id: 'what-we-collect', title: 'What we collect' },
   { id: 'why-and-on-what-legal-basis', title: 'Why, and on what legal basis' },
   { id: 'pages-you-capture', title: 'Pages you capture' },
+  { id: 'free-tools', title: 'The free tools' },
   { id: 'how-long-we-keep-it', title: 'How long we keep it' },
   { id: 'who-processes-it-for-us', title: 'Who processes it for us' },
   { id: 'the-ios-companion-app', title: 'The iOS companion app' },
@@ -53,6 +54,7 @@ const { list: sections, byId: s } = docSections(toc);
           <li><b>API keys:</b> a SHA-256 hash of each key with its visible prefix and last four characters, a label, and when it was last used. The key itself is shown once and never stored.</li>
           <li><b>Captures:</b> the URL and host you captured, the device, viewport, mode and format, status, duration, byte size, and the rendered image or PDF files.</li>
           <li><b>Usage:</b> a monthly counter of captures made through the app and through the API, and short-lived per-minute rate-limit counters.</li>
+          <li><b>Free tools:</b> the page address you enter, used only to answer that request, and a hashed form of your IP address used to count requests for rate limiting. See <a href="#free-tools">The free tools</a>.</li>
           <li><b>Report sign-offs:</b> when someone approves or requests changes on a report shared with them, the name they type, their decision, an optional note and the time. The report's owner and everyone with the link can see them; no account or email address is collected.</li>
           <li><b>Report branding:</b> the logo, accent colour and footer line you set for a project.</li>
           <li><b>Mobile notifications:</b> if enabled, your APNs device token, notification environment, account/session association, registration time, and delivery status for monitor alerts.</li>
@@ -112,6 +114,20 @@ const { list: sections, byId: s } = docSections(toc);
         </p>
       </DocSection>
 
+      <DocSection {...s['free-tools']}>
+        <p>
+          The tools under <a href="/tools">/tools</a> work without an account. To answer a request we process the page
+          address you enter: we load that page, take the screenshot or read its tags, and send the result straight back
+          to your browser. We do not store the images or the results, and we keep no log of who asked for which page.
+        </p>
+        <p>
+          To stop the tools being abused we count how many requests come from each visitor. The count is keyed by a
+          SHA-256 hash of your IP address (for IPv6, of its first half) combined with the date, so the key changes every
+          day and does not contain your address. The counters expire by themselves within two days. The legal basis is
+          our legitimate interest in keeping the service available (Art. 6(1)(f) GDPR).
+        </p>
+      </DocSection>
+
       <DocSection {...s['how-long-we-keep-it']}>
         <div class="deflist">
           <div class="deflist__row">
@@ -132,6 +148,14 @@ const { list: sections, byId: s } = docSections(toc);
           <div class="deflist__row">
             <span class="deflist__label">Rate-limit counters</span>
             <span class="deflist__value">Minutes — they expire by themselves</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Free tools: results and images</span>
+            <span class="deflist__value">Not stored — sent straight back to your browser</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Free tools: hashed-IP counters</span>
+            <span class="deflist__value">Up to two days — they expire by themselves</span>
           </div>
           <div class="deflist__row">
             <span class="deflist__label">Report sign-offs and branding</span>

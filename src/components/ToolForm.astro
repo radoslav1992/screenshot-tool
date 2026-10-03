@@ -1,0 +1,70 @@
+---
+import { TOOL_PAGES, costNote, type ToolRun } from '../lib/tool-pages';
+import type { ToolId } from '../lib/free-tools';
+
+interface Props {
+  tool: ToolId;
+  run: ToolRun;
+  /** The submit button's words. */
+  action: string;
+  /** What the loading state says while the tool works. */
+  working: string;
+}
+
+/**
+ * A tool's form, and the result under it. It is a plain form that posts to
+ * its own page; the page's script (scripts/tools.ts) posts it with fetch()
+ * instead, says how long it has been working, and swaps in the result from the
+ * same markup. The `fields` slot holds the tool's inputs; the default slot, its result.
+ */
+const { tool, run, action, working } = Astro.props;
+const page = TOOL_PAGES[tool];
+const done = Boolean(run.result);
+// Out of renders, or the day's are spent: an account is the way on. A busy pool only needs a minute.
+const signUp = run.error?.status === 429 || run.error?.type === 'tools_busy';
+const busy = signUp || run.error?.type === 'browser_busy';
+---
+
+<section class="tool-run" aria-labelledby="tool-run-title">
+  <div class="tool-run__grid">
+    <span class="section-subtitle-5">[ 01 / TRY IT ]</span>
+    <div class="tool-run__body">
+      <h2 id="tool-run-title" class="tool-run__title">{page.name}</h2>
+      <form
+        class="tool-form"
+        method="post"
+        action={`${page.path}#tool-result`}
+        data-tool-form
+        data-working={working}
+      >
+        <slot name="fields" />
+        <div class="tool-form__submit">
+          <button class:list={['rr-btn-classic', { 'ai-btn-outline': done }]} type="submit" data-tool-submit>
+            <span class="tool-form__label" data-tool-label>{done ? 'Run again' : action}</span> <span aria-hidden="true">↗</span>
+          </button>
+          <p class="tool-form__note">{costNote(tool)}</p>
+        </div>
+        <div class="tool-status" data-tool-status role="status" aria-live="polite" hidden>
+          <span class="tool-status__bar" aria-hidden="true"></span>
+          <span data-tool-status-text></span>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="tool-result" class="tool-result" tabindex="-1" data-tool-result>
+    {
+      run.error && (
+        <div class="tool-error" role="alert">
+          <span class="tool-error__label">[ {busy ? 'BUSY' : 'COULD NOT RUN'} ]</span>
+          <p>{run.error.message}</p>
+          {signUp && (
+            <a class="tool-error__link" href={`/signup?ref=tool-${tool}`}>
+              Sign up free <span aria-hidden="true">↗</span>
+            </a>
+          )}
+        </div>
+      )
+    }
+    <slot />
+  </div>
+</section>

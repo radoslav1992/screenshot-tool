@@ -94,6 +94,10 @@
   //   CF_ACCOUNT_ID         - enables the REST Browser Rendering fallback
   //   CF_API_TOKEN          - token with "Browser Rendering: Edit" for that fallback
   //   RESEND_API_KEY        - enables sending confirmation emails via Resend
+  //   FREE_TOOLS_DAILY_RENDERS - renders a day across every visitor of the free
+  //                           tools under /tools (default 300; "0" turns the
+  //                           browser tools off). A plain number, not a secret,
+  //                           but set in the dashboard so a deploy keeps it.
   //
   // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
   // do not render and /api/billing/* answers 503.

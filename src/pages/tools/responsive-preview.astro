@@ -1,0 +1,71 @@
+---
+import ToolShell from '../../components/ToolShell.astro';
+import ToolForm from '../../components/ToolForm.astro';
+import ToolCta from '../../components/ToolCta.astro';
+import { handleToolRequest } from '../../lib/tool-pages';
+import { imageDataUrl } from '../../lib/free-tools';
+import { DEVICES, displayUrl } from '../../lib/capture-options';
+
+export const prerender = false;
+
+const run = await handleToolRequest(Astro, 'responsive-preview');
+const result = run.result?.tool === 'responsive-preview' ? run.result : null;
+const LABELS = { mobile: 'PHONE / IPHONE', tablet: 'TABLET / IPAD', desktop: 'DESKTOP' } as const;
+const shots = (result?.images ?? []).map((image) => ({ ...image, src: imageDataUrl(image) }));
+const name = result ? displayUrl(result.url).replace(/[^a-z0-9.-]+/gi, '-').replace(/-+$/, '') : '';
+---
+
+<ToolShell tool="responsive-preview">
+  <ToolForm tool="responsive-preview" run={run} action="Preview" working="Loading the page at three sizes">
+    <Fragment slot="fields">
+      <label class="tool-field">
+        <span>[ PAGE ADDRESS ]</span>
+        <input
+          name="url"
+          type="text"
+          inputmode="url"
+          autocomplete="url"
+          spellcheck="false"
+          placeholder="example.com"
+          required
+          maxlength="2048"
+          value={run.input.url}
+          aria-invalid={run.error?.param === 'url' ? 'true' : undefined}
+        />
+      </label>
+    </Fragment>
+    {
+      result && (
+        <div class="tool-output">
+          <div class="tool-output__head">
+            <span>[ RESULT ]</span>
+            <span>{displayUrl(result.url)} · first screen on each device</span>
+          </div>
+          <div class="tool-devices">
+            {shots.map((shot) => (
+              <figure class={`tool-device tool-device--${shot.device}`} style={`--w: ${DEVICES[shot.device].width}`}>
+                <figcaption>
+                  <span>[ {LABELS[shot.device as keyof typeof LABELS]} ]</span>
+                  <span>
+                    {shot.width} × {shot.height}
+                  </span>
+                </figcaption>
+                <img
+                  src={shot.src}
+                  alt={`${displayUrl(result.url)} on a ${shot.device === 'mobile' ? 'phone' : shot.device}`}
+                  width={shot.width}
+                  height={shot.height}
+                  data-tool-image
+                />
+                <a class="tool-download" href={shot.src} download={`${name}-${shot.device}.jpg`} data-tool-download>
+                  Download <span aria-hidden="true">↓</span>
+                </a>
+              </figure>
+            ))}
+          </div>
+          <ToolCta tool="responsive-preview" url={result.url} />
+        </div>
+      )
+    }
+  </ToolForm>
+</ToolShell>

@@ -1,0 +1,75 @@
+---
+import ToolShell from '../../components/ToolShell.astro';
+import ToolForm from '../../components/ToolForm.astro';
+import ToolCta from '../../components/ToolCta.astro';
+import { handleToolRequest } from '../../lib/tool-pages';
+import { TOOL_RENDER, imageDataUrl } from '../../lib/free-tools';
+import { displayUrl } from '../../lib/capture-options';
+
+export const prerender = false;
+
+const run = await handleToolRequest(Astro, 'full-page-screenshot');
+const result = run.result?.tool === 'full-page-screenshot' ? run.result : null;
+const device = run.input.device === 'mobile' ? 'mobile' : 'desktop';
+const image = result ? imageDataUrl(result.image) : '';
+const name = result ? displayUrl(result.url).replace(/[^a-z0-9.-]+/gi, '-').replace(/-+$/, '') : '';
+---
+
+<ToolShell tool="full-page-screenshot">
+  <ToolForm tool="full-page-screenshot" run={run} action="Take screenshot" working="Capturing the whole page">
+    <Fragment slot="fields">
+      <label class="tool-field">
+        <span>[ PAGE ADDRESS ]</span>
+        <input
+          name="url"
+          type="text"
+          inputmode="url"
+          autocomplete="url"
+          spellcheck="false"
+          placeholder="example.com/pricing"
+          required
+          maxlength="2048"
+          value={run.input.url}
+          aria-invalid={run.error?.param === 'url' ? 'true' : undefined}
+        />
+      </label>
+      <fieldset class="tool-choice">
+        <legend>[ DEVICE ]</legend>
+        <label><input type="radio" name="device" value="desktop" checked={device === 'desktop'} /> Desktop · 1440 px</label>
+        <label><input type="radio" name="device" value="mobile" checked={device === 'mobile'} /> Mobile · iPhone</label>
+      </fieldset>
+    </Fragment>
+    {
+      result && (
+        <div class="tool-output">
+          <div class="tool-output__head">
+            <span>[ RESULT ]</span>
+            <span>
+              {displayUrl(result.url)} · {result.image.width} × {result.image.height.toLocaleString('en-US')} px · JPEG
+            </span>
+          </div>
+          <figure class="tool-shot tool-shot--tall">
+            <img
+              src={image}
+              alt={`Full-page screenshot of ${displayUrl(result.url)}`}
+              width={result.image.width}
+              height={result.image.height}
+              data-tool-image
+            />
+          </figure>
+          {result.cut && (
+            <p class="tool-output__note">
+              The page is longer than {TOOL_RENDER.maxHeight.toLocaleString('en-US')} px, so the screenshot stops there.
+            </p>
+          )}
+          <div class="tool-output__actions">
+            <a class="tool-download" href={image} download={`${name}-full-page.jpg`} data-tool-download>
+              Download JPEG <span aria-hidden="true">↓</span>
+            </a>
+          </div>
+          <ToolCta tool="full-page-screenshot" url={result.url} />
+        </div>
+      )
+    }
+  </ToolForm>
+</ToolShell>

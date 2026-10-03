@@ -35,6 +35,8 @@ export interface CompareOptions {
    * effort — one that fails leaves `previous` out rather than failing the check.
    */
   previous?: string;
+  /** False for the free tools: a full browser pool fails the comparison at once (see acquireBrowser). */
+  wait?: boolean;
 }
 
 const rounded = (result: DiffResult): DiffResult => ({
@@ -50,7 +52,7 @@ export async function compareImages(
   options: CompareOptions = {},
 ): Promise<DiffResult & { previous?: DiffResult }> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
-  const lease = await acquireBrowser(puppeteer);
+  const lease = await acquireBrowser(puppeteer, { wait: options.wait });
   let succeeded = false;
   let page: any;
 

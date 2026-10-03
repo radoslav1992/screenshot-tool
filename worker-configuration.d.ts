@@ -29,6 +29,13 @@ declare namespace Cloudflare {
      */
     BROWSER_KEEP_ALIVE_MS?: string;
 
+    /**
+     * Renders a day across every visitor of the free tools (/tools): screenshots,
+     * previews and comparisons together. Optional; 300 when unset, and "0" turns
+     * the browser tools off while the SEO checker stays up. See the README.
+     */
+    FREE_TOOLS_DAILY_RENDERS?: string;
+
     /** "1" gates capturing on a confirmed email — only when a mailer is configured. */
     REQUIRE_EMAIL_VERIFICATION?: string;
     /** Sender address for confirmation emails: an address, or `Name <address>`. */

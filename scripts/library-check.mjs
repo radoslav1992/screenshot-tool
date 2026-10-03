@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { captureCursor, captureListQuery, listLimit, monitorFoldersQuery } from '../src/lib/capture-list.ts';
 const db = new DatabaseSync(':memory:');
-db.exec("CREATE TABLE captures (id TEXT, user_id TEXT, url TEXT, mode TEXT, created_at TEXT, source TEXT NOT NULL DEFAULT 'app')");
+db.exec("CREATE TABLE captures (id TEXT, user_id TEXT, url TEXT, mode TEXT, created_at TEXT, source TEXT NOT NULL DEFAULT 'app', status TEXT NOT NULL DEFAULT 'done')");
 const insert = db.prepare('INSERT INTO captures (id, user_id, url, mode, created_at) VALUES (?, ?, ?, ?, ?)');
 for (const row of [
   ['a', 'owner', 'https://example.com/Prices', 'fullpage', '2026-09-12'],
@@ -47,7 +47,7 @@ db.exec(`
   INSERT INTO watches VALUES ('job1', 'owner', 'a', 'Desktop', 'https://example.com/Prices', 'active', '2026-09-12'),
     ('job2', 'owner', 'e', 'Mobile', 'https://example.com/Prices', 'paused', '2026-09-12'),
     ('foreign', 'other', 'c', 'Private', 'https://example.com/Prices', 'active', '2026-09-12');
-  INSERT INTO captures VALUES ('e', 'owner', 'https://example.com/Prices', 'visible', '2026-09-13', 'watch'),
+  INSERT INTO captures (id, user_id, url, mode, created_at, source) VALUES ('e', 'owner', 'https://example.com/Prices', 'visible', '2026-09-13', 'watch'),
     ('f', 'owner', 'https://example.com/Prices', 'fullpage', '2026-09-14', 'watch'),
     ('g', 'owner', 'https://example.com/Prices', 'fullpage', '2026-09-15', 'watch'),
     ('h', 'owner', 'https://example.com/Prices', 'fullpage', '2026-09-16', 'api');
@@ -61,7 +61,17 @@ assert.deepEqual(list({ collection: 'monitors', watchId: 'missing' }), []);
 assert.deepEqual(list({ collection: 'monitors', unassigned: true }), ['g']);
 assert.deepEqual(list({ collection: 'monitors', watchId: 'job1', limit: 1, offset: 1, search: 'PRICES', mode: 'fullpage' }), ['a']);
 assert.deepEqual(list({}), ['h', 'g', 'f', 'e', 'b', 'a', 'd'], 'API default remains compatible');
-db.exec("ALTER TABLE captures ADD COLUMN status TEXT DEFAULT 'done'");
+// Background captures still waiting or rendering stay out of every default list; a sync render's `pending` does not.
+db.exec(`INSERT INTO captures (id, user_id, url, mode, created_at, source, status) VALUES
+  ('q', 'owner', 'https://example.com/queued', 'fullpage', '2026-09-20', 'app', 'queued'),
+  ('r', 'owner', 'https://example.com/running', 'fullpage', '2026-09-19', 'api', 'running'),
+  ('p', 'owner', 'https://example.com/pending', 'fullpage', '2026-09-18', 'app', 'pending'),
+  ('x', 'owner', 'https://example.com/failed', 'fullpage', '2026-09-17', 'app', 'error')`);
+assert.deepEqual(list({ collection: 'regular', limit: 30, offset: 0 }), ['p', 'x', 'h', 'b', 'd'], 'the iOS library never sees queued or running captures');
+assert.deepEqual(list({}).slice(0, 2), ['p', 'x'], 'nor does the API list by default');
+assert.deepEqual(list({ collection: 'regular', includePending: true }).slice(0, 4), ['q', 'r', 'p', 'x'], 'include_pending opts in');
+assert.deepEqual(list({ collection: 'monitors', watchId: 'job1' }), ['f', 'a'], 'monitor albums are unchanged');
+db.exec("DELETE FROM captures WHERE id IN ('q', 'r', 'p', 'x')");
 db.exec("ALTER TABLE watch_runs ADD COLUMN changed INTEGER DEFAULT 1");
 assert.deepEqual(list({collection:'monitors',watchId:'job1',changedOnly:true}),['f']);
 const folders = (search = '') => {

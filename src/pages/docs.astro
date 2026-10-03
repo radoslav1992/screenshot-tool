@@ -7,7 +7,7 @@ import DocSection from '../components/DocSection.astro';
 import CodeBlock from '../components/CodeBlock.astro';
 import Icon from '../components/Icon.astro';
 import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
-import { API_RATE_LIMIT, PLANS } from '../lib/plans';
+import { API_RATE_LIMIT, MAX_BACKGROUND_BATCH, PLANS, batchLimit } from '../lib/plans';
 import { docSections } from '../lib/doc-sections';
 
 const user = Astro.locals.user;
@@ -20,13 +20,46 @@ const quickstart = `curl ${origin}/v1/capture \\
   -d mode="fullpage" \\
   -d format="png"`;
 
-const asyncExample = `# Return immediately with status "pending", then poll:
+const asyncExample = `# Answers 202 at once with status "queued"; poll until "done" or "error":
 curl ${origin}/v1/capture \\
   -H "Authorization: Bearer $ESC_API_KEY" \\
-  -d url="https://example.com" -d async=1
+  -d url="https://example.com" -d mode="fullpage" -d async=1
 
 curl ${origin}/v1/captures/cap_8Yx2 \\
   -H "Authorization: Bearer $ESC_API_KEY"`;
+
+const batchesExample = `curl ${origin}/v1/batches \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d sitemap="https://example.com/sitemap.xml" \\
+  -d devices="desktop,mobile" -d mode="fullpage" \\
+  -d label="Before the redesign" -d notify=1
+
+# → 202 { "id": "bat_3kq9…", "status": "queued", "total": 240,
+#         "queued": 240, "running": 0, "done": 0, "failed": 0, … }
+
+curl "${origin}/v1/batches/bat_3kq9…" \\
+  -H "Authorization: Bearer $ESC_API_KEY"
+
+# Stop what has not started; its screenshots are refunded:
+curl ${origin}/v1/batches/bat_3kq9… \\
+  -H "Authorization: Bearer $ESC_API_KEY" -d action=cancel`;
+
+const batchSample = `{
+  "id": "bat_3kq9w2m1x0aa",
+  "status": "running",
+  "label": "Before the redesign",
+  "total": 240, "queued": 180, "running": 2, "done": 57, "failed": 1, "cancelled": 0,
+  "shots": 240, "notify": true, "project_id": null,
+  "created_at": "2026-03-11T09:12:04.101Z", "completed_at": null, "cancelled_at": null,
+  "items": [
+    { "id": "job_…", "url": "https://example.com/", "display_url": "example.com",
+      "device": "desktop", "status": "done", "capture_id": "cap_…", "updated_at": "…" }
+  ],
+  "captures": [ { "id": "cap_…", "status": "done", "images": ["…"], … } ],
+  "failures": [ { "url": "https://example.com/old", "device": "mobile",
+                  "error": "The page could not be loaded (net::ERR_NAME_NOT_RESOLVED)." } ],
+  "as_of": "2026-03-11T09:20:31.007Z"
+}`;
 
 const htmlExample = `curl ${origin}/v1/capture \\
   -H "Authorization: Bearer $ESC_API_KEY" \\
@@ -160,7 +193,7 @@ const params = [
   { name: 'block_ads', type: 'boolean', required: false, desc: 'Block known ad and analytics hosts. Default true.' },
   { name: 'dark_mode', type: 'boolean', required: false, desc: 'Emulate prefers-color-scheme: dark. Default false.' },
   { name: 'max_frames', type: 'integer', required: false, desc: `Cap on scroll-series frames (max ${LIMITS.maxSeriesFrames}).` },
-  { name: 'async', type: 'boolean', required: false, desc: 'Return 202 immediately and render in the background.' },
+  { name: 'async', type: 'boolean', required: false, desc: 'Return 202 at once with status `queued` and capture in the background; poll the capture. `Prefer: respond-async` does the same.' },
 ];
 
 const errors = [
@@ -178,6 +211,10 @@ const endpoints = [
   { method: 'POST', path: '/v1/capture', desc: 'Create a capture.' },
   { method: 'POST', path: '/v1/compare', desc: 'Capture two pages and measure the difference.' },
   { method: 'POST', path: '/v1/batch', desc: 'Capture a list of URLs, or a whole sitemap.' },
+  { method: 'POST', path: '/v1/batches', desc: 'Queue a list or a sitemap to capture in the background.' },
+  { method: 'GET', path: '/v1/batches', desc: 'Recent background batches, newest first.' },
+  { method: 'GET', path: '/v1/batches/:id', desc: 'A batch’s progress, items and finished captures.' },
+  { method: 'POST', path: '/v1/batches/:id', desc: 'With action=cancel: stop what has not started.' },
   { method: 'GET', path: '/v1/captures', desc: 'List captures, newest first.' },
   { method: 'GET', path: '/v1/captures/:id', desc: 'Fetch one capture.' },
   { method: 'DELETE', path: '/v1/captures/:id', desc: 'Delete a capture and its files.' },
@@ -194,6 +231,7 @@ const toc = [
   { id: 'getting-past-what-is-in-the-way', title: 'Getting past what is in the way' },
   { id: 'pages-behind-a-login', title: 'Pages behind a login' },
   { id: 'a-list-or-a-whole-sitemap', title: 'A list, or a whole sitemap' },
+  { id: 'background-batches', title: 'Background batches' },
   { id: 'comparing-two-pages', title: 'Comparing two pages' },
   { id: 'watching-a-page', title: 'Watching a page' },
   { id: 'endpoints', title: 'Endpoints' },
@@ -305,6 +343,41 @@ const { list: sections, byId: s } = docSections(toc);
           to each. A page that fails is reported in <span class="mono">failed</span> rather than losing the batch.
         </p>
         <CodeBlock tag="POST /v1/batch" code={batchExample} />
+        <p class="ai-note">
+          More than 25 pages, or pages slow enough that you would rather not wait: use a
+          {' '}<a href="#background-batches">background batch</a>.
+        </p>
+      </DocSection>
+
+      <DocSection {...s['background-batches']}>
+        <p>
+          <span class="mono">POST /v1/batches</span> takes the same <span class="mono">urls</span> or
+          {' '}<span class="mono">sitemap</span> and the same capture parameters, answers
+          {' '}<span class="mono">202</span> straight away, and captures the pages on our servers a few at a time.
+          {' '}<span class="mono">devices=desktop,mobile</span> captures each page once per device;
+          {' '}<span class="mono">label</span> names the batch, and <span class="mono">notify=1</span> emails you once
+          when it finishes. URLs that cannot be captured are listed in <span class="mono">rejected</span> and the rest
+          go ahead.
+        </p>
+        <p>
+          A batch takes up to {batchLimit('business').toLocaleString()} captures on {PLANS.business.name} and
+          {' '}{batchLimit('pro').toLocaleString()} on {PLANS.pro.name} — never more than {MAX_BACKGROUND_BATCH} — and
+          never more than the screenshots you have left. The whole cost is reserved when it is created and counted
+          against the hourly capture limit at once; a page that fails or is cancelled is refunded.
+          {' '}<span class="mono">headers</span>, <span class="mono">cookies</span> and
+          {' '}<span class="mono">basic_auth</span> are refused here: credentials are never stored, and a queued capture
+          has to be.
+        </p>
+        <p>
+          Poll <span class="mono">GET /v1/batches/:id</span> for the counts, every item's state and the finished
+          captures. Pass the previous answer's <span class="mono">as_of</span> as
+          {' '}<span class="mono">changed_since</span> to get only the items that moved.
+          {' '}<span class="mono">POST /v1/batches/:id</span> with <span class="mono">action=cancel</span> stops
+          everything that has not started. The app's own <span class="mono">/api/batches</span> takes the same
+          parameters with a signed-in session instead of a key.
+        </p>
+        <CodeBlock tag="POST /v1/batches" code={batchesExample} />
+        <CodeBlock tag="RESPONSE · GET /v1/batches/:id" code={batchSample} light copyable={false} />
       </DocSection>
 
       <DocSection {...s['comparing-two-pages']}>
@@ -429,8 +502,20 @@ const { list: sections, byId: s } = docSections(toc);
       <DocSection {...s['long-pages-async-mode']}>
         <p>
           Captures normally run inline and return when the files are stored. For slow pages, pass
-          <span class="mono"> async=1</span> to get a <span class="mono">202</span> with
-          <span class="mono"> status: "pending"</span> and poll the capture until it is done.
+          <span class="mono"> async=1</span> (or send <span class="mono">Prefer: respond-async</span>) to get a
+          <span class="mono"> 202</span> with <span class="mono">status: "queued"</span>, then poll the capture: it
+          reads <span class="mono">running</span> while it renders and <span class="mono">done</span> or
+          {' '}<span class="mono">error</span> when it is over, usually within a minute or two. The screenshots are
+          reserved when you ask, and refunded if it fails.
+        </p>
+        <p>
+          Lists leave captures that are still <span class="mono">queued</span> or
+          {' '}<span class="mono">running</span> out unless you pass <span class="mono">include_pending=1</span>. A
+          capture sending <span class="mono">headers</span>, <span class="mono">cookies</span> or
+          {' '}<span class="mono">basic_auth</span> is never queued, because credentials are never stored: it renders
+          after the response instead and answers <span class="mono">status: "pending"</span>, as async captures always
+          have. The app's <span class="mono">POST /api/captures</span> takes the same <span class="mono">async</span>
+          flag and refuses credentials with it.
         </p>
         <CodeBlock tag="ASYNC" code={asyncExample} />
       </DocSection>

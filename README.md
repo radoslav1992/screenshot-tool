@@ -171,6 +171,10 @@ curl https://your-domain/v1/capture \
 | `POST /v1/capture`          | Create a capture (`async=1` returns 202 + polls)  |
 | `POST /v1/compare`          | Capture two pages and measure the difference      |
 | `POST /v1/batch`            | Capture a list of URLs, or a whole sitemap        |
+| `POST /v1/batches`          | Queue up to 500 pages to capture in the background |
+| `GET /v1/batches`           | Recent background batches                         |
+| `GET /v1/batches/:id`       | A batch's progress, items and finished captures   |
+| `POST /v1/batches/:id`      | `action=cancel`: stop what has not started        |
 | `GET /v1/captures`          | List captures, newest first                       |
 | `GET /v1/captures/:id`      | Fetch one capture                                 |
 | `DELETE /v1/captures/:id`   | Delete a capture and its files                    |
@@ -273,7 +277,8 @@ matter are the ones protecting the render pool and storage rather than the month
   pages, sequentially — the session pool is the scarce resource and a parallel batch would starve everyone
   else's captures. Sitemap indexes are followed one level, no further; that way lies a crawler. The sitemap URL
   itself goes through the capture validator, and each URL it yields is validated again. The whole batch is
-  charged against the hourly burst limit at once, otherwise a batch is the way around it.
+  charged against the hourly burst limit at once, otherwise a batch is the way around it. Anything larger goes
+  to a background batch (below).
 
 - **Slack and Discord alerts.** A watch webhook pointed at `hooks.slack.com` or Discord gets a message shaped
   for that app instead of raw JSON — one sentence and two links. Everything else, Zapier and n8n included,
@@ -559,6 +564,41 @@ are rate limited per IP and per email (`429 rate_limited`).
 
 Migration `0012_watch_runs_user_index.sql` only adds an index for the monitor dashboard; apply it with
 `npm run db:migrate` whenever convenient — no code depends on it.
+
+### Background captures and large batches (0013)
+
+`POST /api/batches` (and `/v1/batches` with a key) queues a URL list or a sitemap and answers `202` at once;
+`async=1` or `Prefer: respond-async` on `POST /api/captures` and `/v1/capture` does the same for one capture.
+The `/app/batch` page uses it: preview, start, then a progress view that polls `GET /api/batches/:id` and a
+list of recent batches. Cancel takes back whatever has not started.
+
+- **No queue service.** Jobs are rows in `capture_jobs`. A second cron, `* * * * *`, works them; the hourly
+  `0 * * * *` keeps the monitor sweep and retention exactly as before. At hh:00 both fire as separate
+  invocations, and `src/worker.ts` tells them apart by `event.cron`. A claim is one `UPDATE … RETURNING` with
+  a five-minute lease: a tick that dies leaves its jobs to lapse and be taken again, at most twice, then
+  they fail and are refunded. A full browser pool is retried once, a minute later.
+- **Bounded.** Two jobs render at once across every overlapping tick — one during the first ten minutes of
+  the hour, while the monitor sweep has its three browsers out. A tick takes new work for 45 s and finishes
+  what it started. The account with the fewest jobs running goes next, so one large batch does not hold
+  everyone else's. Each busy tick logs `[jobs] due= claimed= done= failed= … backlog= late_max=`.
+- **Quota.** A batch is parsed in full, then its whole cost is reserved at once — `sizes` count per file,
+  a series its whole frame cap — and charged against the hourly capture limit at once, as `/api/batch` is.
+  So the batch size per plan is the hourly limit, capped at 500: Free 10, Lite 30, Plus 60, Pro 120, Business
+  500 (`batchLimit` in `lib/plans.ts`). Failed and cancelled captures are refunded; a short series gets the
+  rest back. Credentials (`headers`, `cookies`, `basic_auth`) are refused — a queued capture is stored, and
+  credentials never are. `/v1/capture` with credentials and `async=1` keeps the old in-request background
+  render.
+- **The iOS app never sees them.** A queued capture row says `queued`, then `running`; the default lists
+  (`GET /api/captures`, `/v1/captures`, the library) leave both out unless `include_pending=1`, and the app
+  never sends `async`, so `POST /api/captures` stays synchronous for it.
+- **Retention.** Finished jobs and batches are pruned after 30 days by the hourly tick; their captures follow
+  the plan's own retention. Optional email on completion uses the existing mailer, once per batch.
+
+**Before the migration** nothing changes: `/app/batch` is the synchronous 25-page queue, `async` captures run
+inline (`/v1/capture` keeps its old background render), and `/api/batches` answers `503 setup_required`. Apply
+it with `npm run db:migrate`, or paste `db/0013-upgrade.sql` into the D1 console; it is picked up within a
+minute, without a redeploy. `npm run jobs:check` covers claims, leases, retries, quota, cancel, plan limits,
+the list filter, the cron dispatch and the fallback.
 
 ### iOS push notifications
 

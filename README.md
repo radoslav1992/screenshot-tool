@@ -406,6 +406,18 @@ answers `503`, and the app behaves exactly as it did before billing existed.
    reports what exists rather than making duplicates. It prints the price ids formatted for the
    next step. Run it once per mode: Stripe's test and live worlds share nothing.
 
+   Give every plan product a **tax code**: Stripe Managed Payments rejects checkout for a product
+   without one (*Product tax code is required for Managed Payments*). With `STRIPE_TAX_CODE` set,
+   setup puts it on new products and updates existing ones whose code is missing or different:
+
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_… STRIPE_TAX_CODE=txcd_10103001 npm run stripe:setup
+   ```
+
+   `txcd_10103001` is SaaS for business use, `txcd_10103000` SaaS for personal use; check Stripe's
+   Managed Payments eligibility list before choosing. `npm run stripe:check` fails for any plan
+   product that still has none.
+
 2. Add a webhook endpoint pointing at `https://<your-domain>/api/billing/webhook`, subscribed to
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`
    and `customer.subscription.deleted`. Copy its signing secret.

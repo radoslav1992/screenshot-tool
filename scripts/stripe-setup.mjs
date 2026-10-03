@@ -9,23 +9,35 @@
  * script looks those up first — so a second run reports what already exists
  * instead of creating a duplicate product for every plan.
  *
+ * Tax codes: with STRIPE_TAX_CODE set, every plan product gets that Stripe
+ * product tax code — new products when they are created, existing ones whose
+ * code is missing or different are updated, and each change is reported.
+ * Stripe Managed Payments requires a tax code on every product and rejects
+ * checkout without one ("Product tax code is required for Managed Payments");
+ * Stripe Tax uses it to pick the rate.
+ *
+ *   STRIPE_SECRET_KEY=sk_test_… STRIPE_TAX_CODE=txcd_10103001 npm run stripe:setup
+ *
+ * txcd_10103001 is SaaS for business use, txcd_10103000 SaaS for personal
+ * use. Check Stripe's Managed Payments eligibility list before choosing.
+ *
  * Test and live are separate worlds in Stripe: run this once with your
  * sk_test_… key and once with sk_live_…, and keep the two sets of price ids
  * apart. Nothing here reads or writes your Cloudflare config; it only prints.
  */
 
-import { validateStripePrice } from '../src/lib/stripe-price-check.mjs';
+import { TAX_CODE_PATTERN, productTaxCode, taxCodeUpdate, validateStripePrice } from '../src/lib/stripe-price-check.mjs';
 import { PLANS, PAID_PLANS } from '../src/lib/plans.ts';
 
 const KEY = process.env.STRIPE_SECRET_KEY;
 const CURRENCY = (process.env.STRIPE_CURRENCY ?? 'usd').toLowerCase();
 
 /**
- * Optional Stripe Tax product tax code. Leave unset to inherit the account's
- * default. The right code depends on what you sell and where — find yours at
- * https://stripe.com/docs/tax/tax-codes rather than guessing.
+ * Optional product tax code, set on every plan product. Unset, products are left
+ * with whatever code they have. The right code depends on what you sell and to
+ * whom — find yours at https://stripe.com/docs/tax/tax-codes rather than guessing.
  */
-const TAX_CODE = process.env.STRIPE_TAX_CODE;
+const TAX_CODE = process.env.STRIPE_TAX_CODE?.trim() || undefined;
 
 if (!KEY) {
   console.error('STRIPE_SECRET_KEY is not set.\n');
@@ -35,6 +47,10 @@ if (!KEY) {
 
 if (!/^(sk|rk)_(live|test)_/.test(KEY)) {
   console.error('Use a Stripe secret or restricted API key.');
+  process.exit(1);
+}
+if (TAX_CODE && !TAX_CODE_PATTERN.test(TAX_CODE)) {
+  console.error(`STRIPE_TAX_CODE should look like txcd_10103001, not "${TAX_CODE}".`);
   process.exit(1);
 }
 if (CURRENCY !== 'usd') {
@@ -140,6 +156,14 @@ async function ensureProduct(plan) {
   return { product, prices: viaPrices.byLookupKey, created: true };
 }
 
+/** Brings an existing product onto STRIPE_TAX_CODE. Re-running finds nothing left to change. */
+async function ensureTaxCode(product) {
+  const change = taxCodeUpdate(product, TAX_CODE);
+  if (!change) return { product, change: null };
+  const updated = await stripe('POST', `/products/${encodeURIComponent(product.id)}`, { tax_code: change.to });
+  return { product: updated, change };
+}
+
 async function ensurePrice(plan, product, existing, entry) {
   const key = lookupKey(plan.id, entry.key);
   const found = existing.get(key);
@@ -184,12 +208,22 @@ if (MODE === 'LIVE') console.log(`  \x1b[33mThis is your live account. Real pric
 console.log('');
 
 const secrets = [];
+const untaxed = [];
 
 try {
   for (const planId of PAID_PLANS) {
     const plan = PLANS[planId];
-    const { product, prices, created } = await ensureProduct(plan);
-    console.log(`  ${created ? '+' : '='} ${product.name.padEnd(34)} ${product.id}`);
+    const found = await ensureProduct(plan);
+    const { prices, created } = found;
+    console.log(`  ${created ? '+' : '='} ${found.product.name.padEnd(34)} ${found.product.id}`);
+
+    const { product, change } = await ensureTaxCode(found.product);
+    if (change) console.log(`      ~ tax code ${change.from ?? '(none)'} → ${change.to}`);
+    else if (productTaxCode(product)) console.log(`      = tax code ${productTaxCode(product)}`);
+    else {
+      console.log('      ! no tax code');
+      untaxed.push(product.name);
+    }
 
     for (const entry of INTERVALS) {
       const { price, created: isNew } = await ensurePrice(plan, product, prices, entry);
@@ -218,4 +252,12 @@ console.log(`\n  Still to do by hand, because they are account settings rather t
 console.log(`    · webhook endpoint → https://easyscreencapture.com/api/billing/webhook`);
 console.log(`    · customer portal  → Settings → Billing → Customer portal`);
 if (!TAX_CODE) console.log(`    · Stripe Tax       → configure only if required for your business; enable the flag after setup`);
+if (untaxed.length) {
+  const which = untaxed.length === 1 ? `${untaxed[0]} has` : `${untaxed.length} plan products have`;
+  console.log(`\n  \x1b[33m${which} no tax code.\x1b[0m Stripe Managed Payments requires one on every product and`);
+  console.log(`  rejects checkout without it. Set it in Stripe → Product catalog, or re-run with one:`);
+  console.log(`\n    STRIPE_TAX_CODE=txcd_10103001 npm run stripe:setup   # SaaS, business use`);
+  console.log(`    STRIPE_TAX_CODE=txcd_10103000 npm run stripe:setup   # SaaS, personal use`);
+  console.log(`\n  Check Stripe's Managed Payments eligibility list for your product before choosing.`);
+}
 console.log('');

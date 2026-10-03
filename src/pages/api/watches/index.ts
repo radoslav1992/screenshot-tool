@@ -8,7 +8,7 @@ import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../.
 import { toHttpError } from '../../../lib/errors';
 import { assertVerified } from '../../../lib/verification';
 import { FREQUENCIES } from '../../../lib/plans';
-import { createWatch, listWatches, nextRunAt, parseWebhookUrl, toWatchDTO } from '../../../lib/watches';
+import { createWatch, listWatches, nextRunAt, parseWebhookUrl, watchDTO, watchDTOs } from '../../../lib/watches';
 
 export const prerender = false;
 
@@ -17,7 +17,7 @@ export const GET: APIRoute = async ({ locals }) => {
   if (!user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
 
   const rows = await listWatches(user.id);
-  return json({ data: rows.map(toWatchDTO) });
+  return json({ data: await watchDTOs(rows) });
 };
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -49,7 +49,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     const frequency = (body.frequency ?? 'daily').toLowerCase();
     if (!FREQUENCIES.some((entry) => entry.id === frequency)) {
-      throw badRequest('`frequency` must be one of: hourly, daily, weekly.', 'frequency');
+      throw badRequest(`\`frequency\` must be one of: ${FREQUENCIES.map((entry) => entry.id).join(', ')}.`, 'frequency');
     }
 
     const threshold = body.threshold === undefined || body.threshold === '' ? 1 : Number(body.threshold);
@@ -88,7 +88,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .run();
       watch.baseline_capture_id = baseline;
     }
-    return json(toWatchDTO(watch), { status: 201 });
+    return json(await watchDTO(watch), { status: 201 });
   } catch (error) {
     return toHttpError(error, 'watches.create', 'The watch could not be created.').toResponse();
   }

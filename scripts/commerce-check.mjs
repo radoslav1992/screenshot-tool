@@ -18,7 +18,24 @@ assert.equal(choose({pages: 100, sizes: 3}).manual, 300);
 assert.equal(choose({monitors: 5, frequency: 'daily', baselines: true}).total, 255);
 assert.equal(choose({monitors: 1, frequency: 'hourly'}).plan.id, 'pro');
 assert.equal(choose({monitors: 25, frequency: 'hourly'}).plan, null);
-assert.equal(choose({monitors: 6, frequency: 'weekly'}).plan.id, 'pro');
+// Monitors on every plan: Free 3 weekly, Lite 10, Plus 25, Pro 100, Business 300.
+assert.equal(choose({pages: 5, monitors: 3, frequency: 'weekly'}).plan.id, 'free', 'three weekly monitors fit Free');
+assert.equal(choose({pages: 5, monitors: 3, frequency: 'weekly'}).total, 20);
+assert.equal(choose({pages: 0, monitors: 4, frequency: 'weekly'}).plan.id, 'lite', 'a fourth needs Lite');
+assert.equal(choose({monitors: 6, frequency: 'weekly'}).plan.id, 'lite');
+assert.equal(choose({pages: 0, monitors: 3, frequency: 'daily'}).plan.id, 'lite', 'daily checks start on Lite');
+assert.equal(choose({pages: 0, monitors: 11, frequency: 'daily'}).plan.id, 'plus', 'more than ten need Plus');
+assert.equal(choose({pages: 0, monitors: 26, frequency: 'weekly'}).plan.id, 'pro');
+assert.equal(choose({pages: 0, monitors: 101, frequency: 'weekly'}).plan.id, 'business');
+assert.equal(choose({pages: 0, monitors: 301, frequency: 'weekly'}).plan, null);
+// Rule-based monitors spend a screenshot per change plus a weekly full check; visual ones spend one per check.
+assert.equal(choose({monitors: 25, frequency: 'hourly', kind: 'rules'}).scheduled, 25 * 9, 'four changes and five safety-net checks each');
+assert.equal(choose({monitors: 25, frequency: 'hourly', kind: 'rules'}).plan.id, 'pro', 'where 25 hourly visual monitors fit no plan');
+assert.equal(choose({monitors: 100, frequency: 'quarter-hourly', kind: 'rules', changes: 10}).plan.id, 'pro');
+assert.equal(choose({monitors: 3, frequency: 'weekly', kind: 'rules', changes: 0}).scheduled, 15, 'never more than one per check');
+assert.equal(choose({monitors: 1, frequency: 'quarter-hourly'}).frequency, 'daily', 'a visual monitor cannot run every 15 minutes');
+assert.equal(choose({monitors: 1, frequency: 'quarter-hourly', kind: 'rules'}).plan.id, 'pro', 'and a rule-based one does so on Pro');
+assert.equal(choose({monitors: 2, kind: 'rules', baselines: true}).baselines, 8, 'it learns over its first four checks');
 assert.equal(choose({pages: -10, monitors: NaN}).total, 0);
 const price = {active: true, type: 'recurring', currency: 'usd', unit_amount: 700, billing_scheme: 'per_unit',
   livemode: true, product: {active: true}, recurring: {interval: 'month', interval_count: 1, usage_type: 'licensed'}};

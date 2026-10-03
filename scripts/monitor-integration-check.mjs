@@ -519,26 +519,27 @@ try {
   assert.doesNotMatch(state.lastMail.text, /of the picture changed/);
   state.facts = null;
 
-  // A downgrade keeps the oldest watches up to the plan running and pauses the rest.
+  // A downgrade keeps the oldest watches up to the plan running and pauses the rest:
+  // here to Free, whose three monitors are checked weekly.
   const small = { id: 'small', plan: 'pro' };
   const fleet = [];
   for (let i = 0; i < 6; i++) {
     const created = await watches.createWatch(small, {
       options: { ...plain, url: `https://example.test/small/${i}` },
-      label: `Small ${i}`, frequency: 'daily', threshold: 1, notifyEmail: false, webhookUrl: null,
+      label: `Small ${i}`, frequency: 'weekly', threshold: 1, notifyEmail: false, webhookUrl: null,
     });
     db.prepare('UPDATE watches SET created_at=? WHERE id=?').run(new Date(Date.UTC(2026, 0, 1 + i)).toISOString(), created.id);
     fleet.push(created.id);
   }
-  db.prepare("UPDATE users SET plan='plus' WHERE id='small'").run();
+  db.prepare("UPDATE users SET plan='free' WHERE id='small'").run();
   outcome = await watches.runWatch(await watches.getWatch(fleet[5]), 'https://fixture.test');
   assert.equal(outcome.status, 'skipped');
   row = await watches.getWatch(fleet[5]);
   assert.equal(row.status, 'paused', 'the newest watch beyond the plan pauses');
-  assert.equal(row.last_error, 'Paused: your plan includes 5 monitors.');
+  assert.equal(row.last_error, 'Paused: your plan includes 3 monitors.');
   outcome = await watches.runWatch(await watches.getWatch(fleet[0]), 'https://fixture.test');
   assert.equal(outcome.status, 'done', 'the oldest keep running');
-  response = await post(fleet[5], { id: 'small', plan: 'plus' }, { action: 'resume' });
+  response = await post(fleet[5], { id: 'small', plan: 'free' }, { action: 'resume' });
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error.type, 'watch_limit', 'resuming past the plan is refused with the type the app expects');
 

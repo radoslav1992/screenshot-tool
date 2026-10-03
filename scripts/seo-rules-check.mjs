@@ -379,7 +379,11 @@ try {
 /* -------------------------------------------------------------------------- */
 
 const db = new DatabaseSync(':memory:');
+// Every migration but 0016: these are the comparisons a full check makes, so
+// each check here renders, as it does before smart checks exist. Reading the
+// page first, and when that leaves the browser to decide, is fast-checks-check's.
 for (const file of readdirSync(new URL('../migrations/', import.meta.url)).sort().filter((name) => name.endsWith('.sql'))) {
+  if (file === '0016_watch_fast_checks.sql') continue;
   db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
 }
 const now = new Date().toISOString();

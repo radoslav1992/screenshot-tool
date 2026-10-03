@@ -70,9 +70,12 @@ export async function lastAlertWhilePinned(
 ): Promise<string | null> {
   if (!watch.baseline_pinned_at || !watch.baseline_capture_id) return null;
   const binds = [watch.id, watch.baseline_capture_id, watch.baseline_pinned_at];
-  // rowid breaks ties in insertion order; run ids are random.
+  // rowid breaks ties in insertion order; run ids are random. A fast check
+  // with no capture found the page as the last full check left it, so the
+  // check before means the full check before.
   const previous = await env.DB.prepare(
     `SELECT changed, detail FROM watch_runs WHERE watch_id = ? AND status = 'done' AND baseline_capture_id = ? AND created_at >= ?
+       AND capture_id IS NOT NULL
      ORDER BY created_at DESC, rowid DESC LIMIT 1`,
   )
     .bind(...binds)

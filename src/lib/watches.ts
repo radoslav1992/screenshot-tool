@@ -1,10 +1,32 @@
 import { drainPush, pushQueueStatement } from './push';
-import { getMonitorRule, workflowsReady } from './monitor-rule-store';
+import { getMonitorRule, ruleKinds, saveMonitorRule, workflowsReady } from './monitor-rule-store';
 import { evaluateRule, type MonitorRule } from './monitor-rules';
+import {
+  FAST_UNCHANGED,
+  SAFETY_NET_MS,
+  browserChanged,
+  checkMethod,
+  checkStatuses,
+  fastCheckFor,
+  fastCheckStatement,
+  fastChecksReady,
+  getFastCheck,
+  nextFastCheck,
+  readPage,
+  readingMatches,
+  resetFastCheck,
+  saveFastCheck,
+  seoNote,
+  setForced,
+  type CheckMethod,
+  type CheckStatus,
+  type CheckStep,
+  type FastCheckRow,
+} from './fast-checks';
 import { BASELINE_REFRESHED, shouldRefreshBaseline } from './capture-engine';
 import { watchSettingsReady, watchNoise, noiseStrings } from './watch-settings';
 import { parseIgnoreRegions } from './ignore-regions';
-import { decodeRunChanges, decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
+import { decodeRunChanges, decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery, type Schedule } from './monitor-health';
 import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
 import { toSessionUser, type UserRow } from './auth';
@@ -19,9 +41,9 @@ import {
 import { HttpError, badRequest } from './http';
 import { prefixedId } from './ids';
 import { canSendEmail, sendMail } from './mailer';
-import { allowedFrequencies, frequencyHours, frequencyLabel, getPlan, watchLimit } from './plans';
+import { RULE_ONLY_FREQUENCY, allowedFrequencies, frequencyHours, frequencyLabel, getPlan, watchLimit } from './plans';
 import { compareImages, diffAvailable, type DiffResult } from './visual-diff';
-import { safeParseFacts } from './page-facts';
+import { safeParseFacts, type PageFacts } from './page-facts';
 import { diffText } from './text-diff';
 import { summariseChange } from './summarise';
 import { webhookBody, webhookFlavour } from './chat-webhook';
@@ -88,13 +110,24 @@ const MAX_CONSECUTIVE_ERRORS = 5;
 const MAX_PER_TICK = 60;
 
 /**
- * Watches run at the same time. Every run holds a browser, and an unbounded
- * burst would contend with the captures customers are waiting on; strictly one
- * at a time could not get through a busy hour.
+ * Watches rendering at the same time. Every render holds a browser, and an
+ * unbounded burst would contend with the captures customers are waiting on;
+ * strictly one at a time could not get through a busy hour. Fast checks that
+ * find a change share these slots for the render they then need.
  */
 const CONCURRENCY = 3;
 
+/**
+ * Fast checks per tick, and at once. One is a plain request and a little
+ * parsing, with no browser, so a tick takes far more of them than of renders —
+ * for as long as FAST_BUDGET_MS lasts, after which the rest wait for the next.
+ */
+const MAX_FAST_PER_TICK = 240;
+const FAST_CONCURRENCY = 8;
+const FAST_BUDGET_MS = 4 * 60_000;
+
 const HOUR_MS = 3_600_000;
+const QUARTER_MS = 15 * 60_000;
 
 /**
  * The start of the hour a moment falls in.
@@ -108,8 +141,22 @@ export function hourTick(ms: number): number {
   return Math.floor(ms / HOUR_MS) * HOUR_MS;
 }
 
+/**
+ * The start of the quarter hour a moment falls in. 15-minute monitors land on
+ * :00, :15, :30 and :45, the ticks the hourly and minute crons run them at,
+ * for the reason hourTick gives.
+ */
+export function quarterTick(ms: number): number {
+  return Math.floor(ms / QUARTER_MS) * QUARTER_MS;
+}
+
+/** The tick a schedule lands on. */
+function tickFor(frequency: string): (ms: number) => number {
+  return frequency === RULE_ONLY_FREQUENCY ? quarterTick : hourTick;
+}
+
 export function nextRunAt(frequency: string, from = new Date()): string {
-  return new Date(hourTick(from.getTime() + frequencyHours(frequency) * HOUR_MS)).toISOString();
+  return new Date(tickFor(frequency)(from.getTime() + frequencyHours(frequency) * HOUR_MS)).toISOString();
 }
 
 /**
@@ -153,9 +200,18 @@ export interface WatchDTO {
   /** True while every check compares against one approved capture rather than the previous check. */
   baseline_pinned: boolean;
   baseline_pinned_at: string | null;
+  /**
+   * How checks run (fast-checks.ts): `fast` reads the page and renders only on
+   * a change, `learning` does both while it finds out whether it can, `browser`
+   * renders every time (with `check_reason` saying why), `forced` renders every
+   * time by the owner's choice, and `visual` compares screenshots. Additive;
+   * every API answer carries both (watchDTOs).
+   */
+  check_mode?: CheckStatus['mode'];
+  check_reason?: string | null;
 }
 
-export function toWatchDTO(row: WatchRow): WatchDTO {
+export function toWatchDTO(row: WatchRow, check?: CheckStatus): WatchDTO {
   return {
     id: row.id,
     label: row.label,
@@ -179,7 +235,41 @@ export function toWatchDTO(row: WatchRow): WatchDTO {
     baseline_capture_id: row.baseline_capture_id,
     baseline_pinned: Boolean(row.baseline_pinned_at),
     baseline_pinned_at: row.baseline_pinned_at ?? null,
+    ...(check ? { check_mode: check.mode, check_reason: check.reason } : {}),
   };
+}
+
+/** How each monitor is checked, for a list of them. */
+export async function watchChecks(rows: Pick<WatchRow, 'id'>[]): Promise<Map<string, CheckStatus>> {
+  const ids = rows.map((row) => row.id);
+  return checkStatuses(ids, await ruleKinds(ids));
+}
+
+/** Monitors as the API answers them: every field, how each is checked included. */
+export async function watchDTOs(rows: WatchRow[]): Promise<WatchDTO[]> {
+  const checks = await watchChecks(rows);
+  return rows.map((row) => toWatchDTO(row, checks.get(row.id)));
+}
+
+export async function watchDTO(row: WatchRow): Promise<WatchDTO> {
+  return (await watchDTOs([row]))[0]!;
+}
+
+/** What a check costs a monitor checked this way: learning soon becomes fast, so both count as on-change. */
+export function checkCost(check: CheckStatus | undefined): 'check' | 'change' {
+  return check?.mode === 'fast' || check?.mode === 'learning' ? 'change' : 'check';
+}
+
+/** Monitors as the schedule budget counts them (monitor-health forecast). */
+export async function budgetSchedules(rows: WatchRow[]): Promise<Schedule[]> {
+  const checks = await watchChecks(rows);
+  return rows.map(({ id, frequency, status, next_run_at }) => ({
+    id,
+    frequency,
+    status,
+    next_run_at,
+    cost: checkCost(checks.get(id)),
+  }));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -262,6 +352,35 @@ export async function assertCanWatch(user: SessionUser, frequency: string): Prom
 }
 
 /**
+ * Throws the reason a monitor may not be checked every 15 minutes, if there is
+ * one. Only a monitor that reads its page first can afford it: a visual one,
+ * or one that renders every check, would take 96 screenshots a day. Without
+ * migration 0016 nothing reads first, so the schedule waits for it.
+ */
+export async function assertFrequencyFits(frequency: string, ruleKind: string, watchId?: string): Promise<void> {
+  if (frequency !== RULE_ONLY_FREQUENCY) return;
+  if (ruleKind === 'visual') {
+    throw badRequest(
+      'Checks every 15 minutes are for text, phrase, price, element and SEO rules. A visual monitor takes a screenshot on every check, so choose hourly or slower.',
+      'frequency',
+    );
+  }
+  if (!(await fastChecksReady())) {
+    throw new HttpError(503, 'setup_required', 'Checks every 15 minutes are being set up. Choose hourly for now.', 'frequency');
+  }
+  const row = watchId ? await getFastCheck(watchId) : null;
+  if (row?.forced) {
+    throw badRequest('This monitor always uses a full browser, so it can be checked at most hourly.', 'frequency');
+  }
+  if (row?.mode === 'browser') {
+    throw badRequest(
+      'This page needs a full browser on every check, so it can be checked at most hourly. Try fast checks again first.',
+      'frequency',
+    );
+  }
+}
+
+/**
  * Throws the reason a paused watch may not run again, if there is one. After a
  * downgrade an account can hold more watches than its plan runs, and resuming
  * one more would only see the sweep pause another.
@@ -295,6 +414,7 @@ export function parseWebhookUrl(raw: string): string | null {
 
 export async function createWatch(user: SessionUser, input: WatchInput): Promise<WatchRow> {
   await assertCanWatch(user, input.frequency);
+  await assertFrequencyFits(input.frequency, input.rule?.kind ?? 'visual');
   const noise = noiseStrings(input.options);
   const noiseReady = await watchSettingsReady();
   if ((noise.hide || noise.ignore_regions) && !noiseReady)
@@ -380,6 +500,7 @@ export async function setWatchFrequency(watch: WatchRow, user: SessionUser, freq
   if (watch.user_id !== user.id || !allowedFrequencies(user.plan).includes(frequency as never)) {
     throw new HttpError(403, 'plan_required', 'Choose a check frequency included in your plan.');
   }
+  await assertFrequencyFits(frequency, (await getMonitorRule(watch.id)).kind, watch.id);
   const now = new Date().toISOString();
   await env.DB.prepare(
     `UPDATE watches SET frequency = ?, updated_at = ?,
@@ -417,6 +538,65 @@ export async function setWatchAlerts(watch: WatchRow, user: SessionUser, body: R
     .run();
 }
 
+/**
+ * A new alert rule. A visual rule cannot run every 15 minutes, so that
+ * schedule has to change first. A rule that watches something else starts
+ * learning afresh: what the reading was trusted for no longer applies.
+ */
+export async function setWatchRule(watch: WatchRow, rule: MonitorRule): Promise<void> {
+  if (watch.frequency === RULE_ONLY_FREQUENCY && rule.kind === 'visual') {
+    throw badRequest(
+      'A visual monitor takes a screenshot on every check, so it can be checked at most hourly. Choose another schedule first.',
+      'rule_kind',
+    );
+  }
+  const before = await getMonitorRule(watch.id);
+  await saveMonitorRule(watch.id, rule);
+  const watchesSame = before.kind === rule.kind && before.phrase === rule.phrase && before.selector === rule.selector;
+  if (!watchesSame && (await fastChecksReady())) await resetFastCheck(watch.id);
+}
+
+async function assertFastChecks(watch: WatchRow, user: SessionUser): Promise<void> {
+  if (watch.user_id !== user.id) throw new HttpError(404, 'not_found', 'No such watch.');
+  if (!(await fastChecksReady())) throw new HttpError(503, 'setup_required', 'Smart checks are being set up. Please try again later.');
+  if ((await getMonitorRule(watch.id)).kind === 'visual') {
+    throw badRequest('A visual monitor compares screenshots, so every check uses a full browser.', 'action');
+  }
+}
+
+/**
+ * The owner's "Always use a full browser". A monitor checked every 15 minutes
+ * moves to hourly with it, in the same write: every check is then a
+ * screenshot, and 96 a day would drain any allowance.
+ */
+export async function setCheckMode(watch: WatchRow, user: SessionUser, forceBrowser: boolean): Promise<void> {
+  await assertFastChecks(watch, user);
+  await setForced(watch.id, forceBrowser);
+  if (forceBrowser && watch.frequency === RULE_ONLY_FREQUENCY) await dropToHourly(watch);
+}
+
+/** "Try fast checks again": learning from nothing, as a new monitor does. */
+export async function retryFastChecks(watch: WatchRow, user: SessionUser): Promise<void> {
+  await assertFastChecks(watch, user);
+  if ((await getFastCheck(watch.id))?.forced) {
+    throw badRequest('This monitor is set to always use a full browser. Untick that option to use fast checks.', 'action');
+  }
+  await fastCheckFor(watch.id);
+  await resetFastCheck(watch.id);
+}
+
+/**
+ * Every 15 minutes becomes hourly. The next check stays when it was: at most
+ * a quarter hour away, and the hourly sweep takes it at the top of the hour
+ * either way. A claim in progress keeps its lease. True when it changed.
+ */
+async function dropToHourly(watch: Pick<WatchRow, 'id'>): Promise<boolean> {
+  const result = await env.DB.prepare(`UPDATE watches SET frequency = 'hourly' WHERE id = ? AND frequency = ?`)
+    .bind(watch.id, RULE_ONLY_FREQUENCY)
+    .run();
+  return Boolean(result.meta.changes);
+}
+
 export async function deleteWatch(id: string): Promise<void> {
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM watch_runs WHERE watch_id = ?`).bind(id),
@@ -428,11 +608,12 @@ export async function deleteWatch(id: string): Promise<void> {
 /* Running                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export async function dueWatches(now = new Date(), limit = MAX_PER_TICK): Promise<WatchRow[]> {
+export async function dueWatches(now = new Date(), limit = MAX_PER_TICK, frequency?: string): Promise<WatchRow[]> {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM watches WHERE status = 'active' AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT ?`,
+    `SELECT * FROM watches WHERE status = 'active' AND next_run_at <= ?${frequency ? ' AND frequency = ?' : ''}
+     ORDER BY next_run_at ASC LIMIT ?`,
   )
-    .bind(now.toISOString(), limit)
+    .bind(now.toISOString(), ...(frequency ? [frequency] : []), limit)
     .all<WatchRow>();
   return results ?? [];
 }
@@ -548,9 +729,15 @@ interface RunContext {
   origin: string;
 }
 
+/** What a sweep lends one run: a slot to render in, shared by every lane of the tick (see CONCURRENCY). */
+export interface RunOptions {
+  permit?: () => Promise<() => void>;
+}
+
 /**
  * Runs one watch: capture, compare against the previous run, alert if the page
- * moved by more than the threshold.
+ * moved by more than the threshold — or, for a rule-based monitor that can,
+ * read the page first and do all that only when it changed (checkWatch).
  *
  * The row should be fresh — claimed by the sweep or by "Check now" — since
  * what it says about the baseline and errors is written back.
@@ -558,7 +745,7 @@ interface RunContext {
  * Never throws. A cron tick handles many watches and one broken page must not
  * stop the rest.
  */
-export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOutcome> {
+export async function runWatch(watch: WatchRow, origin: string, options: RunOptions = {}): Promise<WatchOutcome> {
   const now = new Date();
 
   const userRow = await env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(watch.user_id).first<UserRow>();
@@ -590,13 +777,183 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     return failed(run, 'Comparison unavailable: rendering service is not configured.', { temporary: true });
   }
 
-  const usage = await getUsage(user);
-  if (usage.remaining <= 0) return quotaSkip(run);
+  return checkWatch(run, await getMonitorRule(watch.id), options);
+}
 
-  const rule = await getMonitorRule(watch.id);
+/**
+ * How this check runs (fast-checks.ts), and running it. A visual monitor, and
+ * every monitor until migration 0016 exists, takes the full check alone,
+ * exactly as before. A rule-based one reads its page first unless it renders
+ * every check; then the full check runs when the reading found a change, could
+ * not be taken, or the monitor is still learning or due its weekly full check.
+ * Only the full check ever decides an alert.
+ */
+async function checkWatch(run: RunContext, rule: MonitorRule, options: RunOptions): Promise<WatchOutcome> {
+  const { watch, user, now } = run;
+  const render = async (extras: FullCheckExtras = {}) => {
+    const release = await options.permit?.();
+    try {
+      return await fullCheck(run, rule, extras);
+    } finally {
+      release?.();
+    }
+  };
+  if (rule.kind === 'visual' || !(await fastChecksReady())) return render();
+
+  // Whatever cannot be read here leaves the check as it always was.
+  const [row, noise] = await Promise.all([
+    fastCheckFor(watch.id, now).catch(() => null),
+    watchNoise(watch.id).catch(() => null),
+  ]);
+  if (!row || !noise) return render();
+  const hide = noise.hide.split(',').filter(Boolean);
+  let method: CheckMethod = checkMethod(row, Boolean(watch.baseline_capture_id), now);
+
+  if (method === 'browser') {
+    // An SEO monitor's notes compare the page's HTML with what renders; the owner's own choice of the browser skips even that.
+    const read = rule.kind === 'seo' && !row.forced ? await readPage(watch, rule, hide) : null;
+    return render({ noise, note: (capture) => seoNote(rule, read, safeParseFacts(capture.facts)) });
+  }
+  if (method === 'learning' && (await getUsage(user)).remaining <= 0) return quotaSkip(run);
+  // Out of screenshots, a fast monitor's weekly full check waits for them; its reading goes on.
+  if (method === 'safety' && row.signature && watch.baseline_capture_id && (await getUsage(user)).remaining <= 0) method = 'gate';
+
+  const read = await readPage(watch, rule, hide);
+  if (method === 'gate' && read.ok && read.signature === row.signature) return unchangedRun(run, rule, row);
+
+  // Taken before the full check records its own run.
+  const before = await lastRenderedFacts(watch.id);
+  const extras: FullCheckExtras = {
+    noise,
+    spotted: method === 'gate' && read.ok,
+    note: (capture) => seoNote(rule, read, safeParseFacts(capture.facts)),
+  };
+  const outcome = await render(extras);
+  if (extras.quota && extras.spotted) {
+    await learn(run, rule, row, { kind: 'spotted' });
+  } else if (extras.capture) {
+    const after = safeParseFacts(extras.capture.facts);
+    await learn(run, rule, row, {
+      kind: 'rendered',
+      method,
+      read,
+      changed: extras.fresh ? null : browserChanged(rule, before, after),
+      matches: read.ok ? readingMatches(rule, read, after) : null,
+    });
+  }
+  return outcome;
+}
+
+/** Records what one check taught a monitor's fast check, and tells the owner when it moved to the browser. */
+async function learn(run: RunContext, rule: MonitorRule, row: FastCheckRow, step: CheckStep): Promise<void> {
+  const decision = nextFastCheck(row, step, rule, new Date());
+  const saved = await saveFastCheck(decision.row, row.updated_at).catch((error) => {
+    console.error(`[watch] ${run.watch.id} fast check state not saved`, error);
+    return false;
+  });
+  if (saved && decision.toBrowser) await movedToBrowser(run, decision.toBrowser);
+}
+
+/**
+ * A monitor whose page needs the browser on every check. Every 15 minutes
+ * would then be 96 screenshots a day, so such a monitor moves to hourly. Sent
+ * once: the move is a compare-and-set, and only the check that made it gets here.
+ */
+async function movedToBrowser(run: RunContext, reason: string): Promise<void> {
+  const { watch, user, origin } = run;
+  const hourly = await dropToHourly(watch);
+  const name = watchName(watch);
+  await tellOwner(
+    user,
+    `Monitor now uses a full browser: ${name}`.slice(0, 120),
+    `${name} is now checked in a full browser every time, so each check uses one screenshot.\n\n` +
+      `Why: ${reason}.\n\n` +
+      (hourly
+        ? 'It was checked every 15 minutes. With a screenshot on every check that would be 96 a day, so it now runs every hour.\n\n'
+        : '') +
+      `If the page changes how it is built, you can try fast checks again here:\n${origin}/app/watches/${watch.id}`,
+  );
+}
+
+/**
+ * A fast check that read nothing new: recorded like any check, against the
+ * baseline it still has, with no capture and nothing spent. With a baseline,
+ * `changed` 0 and no `change_pct`, the iOS app titles it "Check completed".
+ *
+ * consecutive_errors is left as it is: a reading neither counts toward the
+ * auto-pause nor excuses a page whose renders keep failing.
+ */
+async function unchangedRun(run: RunContext, rule: MonitorRule, row: FastCheckRow): Promise<WatchOutcome> {
+  const { watch, now } = run;
+  const at = now.toISOString();
+  const statements = [
+    env.DB.prepare(`UPDATE watches SET last_run_at = ?, next_run_at = ?, last_error = NULL, updated_at = ? WHERE id = ?`)
+      .bind(at, nextRunAt(watch.frequency, now), at, watch.id),
+    runStatement({
+      watch_id: watch.id,
+      user_id: watch.user_id,
+      capture_id: null,
+      baseline_capture_id: watch.baseline_capture_id,
+      status: 'done',
+      changed: 0,
+      change_pct: null,
+      detail: encodeRunDetail(FAST_UNCHANGED, { email: 'not_needed', webhook: 'not_needed' }),
+    }),
+  ];
+  // Only when there is something to reset: most fast checks write nothing here.
+  if (row.noise || row.unavailable) {
+    statements.push(fastCheckStatement(nextFastCheck(row, { kind: 'unchanged' }, rule, now).row, row.updated_at));
+  }
+  const [moved] = await env.DB.batch(statements);
+  if (!moved?.meta.changes) return { status: 'skipped', changed: false, detail: 'the monitor was deleted during the check' };
+  return { status: 'done', changed: false, detail: FAST_UNCHANGED };
+}
+
+/** The facts of the capture this monitor's last full check took: what this check's are compared with. */
+async function lastRenderedFacts(watchId: string): Promise<PageFacts | null> {
+  const row = await env.DB.prepare(
+    `SELECT facts FROM captures WHERE id = (
+       SELECT capture_id FROM watch_runs WHERE watch_id = ? AND status = 'done' AND capture_id IS NOT NULL
+       ORDER BY created_at DESC, rowid DESC LIMIT 1)`,
+  )
+    .bind(watchId)
+    .first<{ facts: string | null }>();
+  return safeParseFacts(row?.facts ?? null);
+}
+
+/** What a full check is lent, and what it reports back about itself. */
+interface FullCheckExtras {
+  /** The monitor's noise settings, when the caller has read them already. */
+  noise?: { hide: string; ignore_regions: string };
+  /** A fast check spotted a change; out of screenshots, the skip says so. */
+  spotted?: boolean;
+  /** A line for the run history that never alerts (seoNote). */
+  note?: (capture: CaptureRow) => string | null;
+  /** Set when the check was skipped for want of screenshots. */
+  quota?: boolean;
+  /** Set when the check compared and recorded its run: the capture it took. */
+  capture?: CaptureRow;
+  /** Set with `capture` when there was nothing to compare with: a first baseline, or one an engine update replaced. */
+  fresh?: boolean;
+}
+
+/**
+ * The check a monitor has always run: capture, compare with the baseline,
+ * record, alert. Every alert comes from here.
+ */
+async function fullCheck(run: RunContext, rule: MonitorRule, extras: FullCheckExtras = {}): Promise<WatchOutcome> {
+  const { watch, user, origin } = run;
+  const now = run.now;
+
+  const usage = await getUsage(user);
+  if (usage.remaining <= 0) {
+    extras.quota = true;
+    return quotaSkip(run, extras.spotted);
+  }
+
   let capture: CaptureRow;
   try {
-    const noise = await watchNoise(watch.id);
+    const noise = extras.noise ?? (await watchNoise(watch.id));
     const options = {
       ...optionsFor(watch),
       // An SEO rule keeps its signal list in `selector`; only element rules name an element there.
@@ -610,7 +967,10 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     capture = await runCapture(row, options);
   } catch (error) {
     // Another capture spent the last of the quota since it was read.
-    if (errorType(error) === 'quota_exceeded') return quotaSkip(run);
+    if (errorType(error) === 'quota_exceeded') {
+      extras.quota = true;
+      return quotaSkip(run, extras.spotted);
+    }
     return failed(run, error instanceof Error ? error.message : String(error), { temporary: temporaryFailure(error) });
   }
 
@@ -695,6 +1055,9 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   }
   const highlighted = visual?.highlight ? await storeHighlight(capture, visual.highlight) : false;
   const changes = { regions: visual?.regions ?? [], highlight: highlighted, pinned, repeat };
+  // The history shows the note; the alert says only what the rule found.
+  const note = extras.note?.(capture);
+  const recorded = note && detail ? `${detail.replace(/([^.!?])$/, '$1.')} ${note}` : (note ?? detail);
 
   const runId = prefixedId('wrn', 10);
   const alerting = changed && Boolean(baseline);
@@ -744,7 +1107,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
         status: 'done',
         changed: changed ? 1 : 0,
         change_pct: changePct,
-        detail: encodeRunDetail(detail, delivery, changes),
+        detail: encodeRunDetail(recorded, delivery, changes),
       },
       runId,
     ),
@@ -760,6 +1123,8 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     ...(push ? [push] : []),
   ]);
   if (!moved?.meta.changes) return { status: 'skipped', changed: false, detail: 'the monitor was deleted during the check' };
+  extras.capture = capture;
+  extras.fresh = !baseline || refresh;
 
   if (alerting && baseline) {
     // A push outage must not mark a successful comparison failed or block email.
@@ -778,7 +1143,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
       { kind: rule.kind, detail },
       async () => {
         await env.DB.prepare('UPDATE watch_runs SET detail = ? WHERE id = ? AND user_id = ?')
-          .bind(encodeRunDetail(detail, delivery, changes), runId, watch.user_id)
+          .bind(encodeRunDetail(recorded, delivery, changes), runId, watch.user_id)
           .run();
       },
       // Claimed exactly as a retry is, and only once there is something to
@@ -790,7 +1155,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     if (sent && retries) await finishRetry(runId, delivery, 1);
   }
 
-  return { status: 'done', changed, changePct: changePct ?? undefined, detail: detail ?? undefined };
+  return { status: 'done', changed, changePct: changePct ?? undefined, detail: recorded ?? undefined };
 }
 
 /**
@@ -878,20 +1243,30 @@ async function pauseForPlan(run: RunContext, reason: string, detail: string): Pr
 
 const QUOTA_SKIP = 'monthly quota used up';
 const FIRST_QUOTA_SKIP = `${QUOTA_SKIP} · first skip this month`;
+/** A fast check read a change with no screenshot left to confirm it. Its signature stays, so the change is read again. */
+const SPOTTED_SKIP =
+  'Change spotted, but no screenshots are left this month to confirm it; it is checked again after your allowance renews';
+const FIRST_SPOTTED_SKIP = `${SPOTTED_SKIP} · first skip this month`;
 
 /**
  * Out of quota is not a failure of the watch, so it never counts toward the
  * error budget. Nor should it push a weekly watch back a week: it tries again
  * the next day, or when the allowance renews if that is sooner, and never
- * later than its own schedule.
+ * later than its own schedule — nor sooner than the next hour, or a 15-minute
+ * monitor would record a skip every quarter hour.
+ *
+ * `spotted` is a fast check that read a change it could not confirm. Its skip
+ * says so, and shares the one notice a month with every other skip.
  */
-async function quotaSkip(run: RunContext): Promise<WatchOutcome> {
+async function quotaSkip(run: RunContext, spotted = false): Promise<WatchOutcome> {
   const { watch, user, now, origin } = run;
   // Allowances renew at the start of each UTC month, as getUsage counts them.
   const renews = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
-  const retry = Math.max(hourTick(now.getTime() + HOUR_MS), Math.min(renews, hourTick(now.getTime() + 24 * HOUR_MS)));
-  const next = new Date(Math.min(Date.parse(nextRunAt(watch.frequency, now)), retry)).toISOString();
+  const soonest = hourTick(now.getTime() + HOUR_MS);
+  const retry = Math.max(soonest, Math.min(renews, hourTick(now.getTime() + 24 * HOUR_MS)));
+  const next = new Date(Math.max(soonest, Math.min(Date.parse(nextRunAt(watch.frequency, now)), retry))).toISOString();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const [plain, first] = spotted ? [SPOTTED_SKIP, FIRST_SPOTTED_SKIP] : [QUOTA_SKIP, FIRST_QUOTA_SKIP];
   const runId = prefixedId('wrn', 10);
   /*
    * One notice per account per month. The run row decides it as it is
@@ -905,7 +1280,7 @@ async function quotaSkip(run: RunContext): Promise<WatchOutcome> {
       `INSERT INTO watch_runs (id, watch_id, user_id, capture_id, baseline_capture_id, status, changed, change_pct, detail, created_at)
        SELECT ?, ?, ?, NULL, ?, 'skipped', 0, NULL,
               CASE WHEN EXISTS (SELECT 1 FROM watch_runs WHERE user_id = ? AND status = 'skipped'
-                                  AND detail IN (?, ?) AND created_at >= ?) THEN ? ELSE ? END, ?
+                                  AND detail IN (?, ?, ?, ?) AND created_at >= ?) THEN ? ELSE ? END, ?
        WHERE EXISTS (SELECT 1 FROM watches WHERE id = ?)`,
     ).bind(
       runId,
@@ -915,26 +1290,31 @@ async function quotaSkip(run: RunContext): Promise<WatchOutcome> {
       watch.user_id,
       QUOTA_SKIP,
       FIRST_QUOTA_SKIP,
+      SPOTTED_SKIP,
+      FIRST_SPOTTED_SKIP,
       monthStart,
-      QUOTA_SKIP,
-      FIRST_QUOTA_SKIP,
+      plain,
+      first,
       new Date().toISOString(),
       watch.id,
     ),
   ]);
 
   const recorded = await env.DB.prepare(`SELECT detail FROM watch_runs WHERE id = ?`).bind(runId).first<{ detail: string }>();
-  if (recorded?.detail === FIRST_QUOTA_SKIP) {
+  if (recorded?.detail === first) {
     await tellOwner(
       user,
       'Monitor checks paused: screenshot allowance used up',
       `You have used all the screenshots in your plan this month, so scheduled monitor checks are being skipped.\n\n` +
+        (spotted
+          ? `${watchName(watch)} has changed, and confirming it takes a screenshot. It is checked again once you have screenshots.\n\n`
+          : '') +
         `They start again on their own when your allowance renews on ${formatDate(renews)}. ` +
         `To keep monitoring before then, upgrade your plan:\n${origin}/app/upgrade\n\n` +
         `Your monitors, baselines and history are unchanged.`,
     );
   }
-  return { status: 'skipped', changed: false, detail: QUOTA_SKIP };
+  return { status: 'skipped', changed: false, detail: plain };
 }
 
 /**
@@ -963,7 +1343,8 @@ const TEMPORARY = 'Temporarily unavailable: ';
 
 /**
  * When a temporarily failing watch tries again: the next hour, then twice as
- * long after each temporary failure in a row, never later than its schedule.
+ * long after each temporary failure in a row, never later than its schedule —
+ * so a 15-minute monitor simply tries again at the next quarter hour.
  */
 async function backoff(watch: WatchRow, now: Date): Promise<string> {
   const { results } = await env.DB.prepare(
@@ -978,7 +1359,7 @@ async function backoff(watch: WatchRow, now: Date): Promise<string> {
     streak++;
   }
   const hours = Math.min(frequencyHours(watch.frequency), 2 ** streak);
-  return new Date(hourTick(now.getTime() + hours * HOUR_MS)).toISOString();
+  return new Date(tickFor(watch.frequency)(now.getTime() + hours * HOUR_MS)).toISOString();
 }
 
 async function failed(
@@ -1166,51 +1547,121 @@ export interface WatchSweepResult {
   changed: number;
   errors: number;
   skipped: number;
-  /** Due but left for a later tick by MAX_PER_TICK. */
+  /** Due but left for a later tick by MAX_PER_TICK, MAX_FAST_PER_TICK or FAST_BUDGET_MS. */
   backlog: number;
   /** How long past its due time the latest-running watch started. */
   maxLateMs: number;
 }
 
-/** Runs every watch that is due. Called from the cron handler. */
-export async function runDueWatches(origin: string, now = new Date()): Promise<WatchSweepResult> {
-  const [due, total] = await Promise.all([
-    dueWatches(now),
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM watches WHERE status = 'active' AND next_run_at <= ?`)
-      .bind(now.toISOString())
+export interface SweepOptions {
+  /** Only watches on this schedule: the minute cron's quarter-hour sweeps take the 15-minute ones. */
+  frequency?: string;
+}
+
+/** At most `size` holders at once; the rest wait their turn, first come first served. */
+function slots(size: number): () => Promise<() => void> {
+  let free = size;
+  const waiting: Array<() => void> = [];
+  return async () => {
+    if (free > 0) free--;
+    else await new Promise<void>((resolve) => waiting.push(resolve));
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = waiting.shift();
+      if (next) next();
+      else free++;
+    };
+  };
+}
+
+/**
+ * Due watches with whether each is a fast monitor whose check will most likely
+ * be a reading alone (fast-checks.ts): fast, not forced, with a signature and a
+ * baseline, its weekly full check not yet due. The check decides for itself;
+ * this only picks its lane.
+ */
+async function dueWithLanes(now: Date, where: string, binds: string[]): Promise<Array<{ row: WatchRow; fast: boolean }>> {
+  const since = new Date((Math.floor(now.getTime() / HOUR_MS) - SAFETY_NET_MS / HOUR_MS + 1) * HOUR_MS).toISOString();
+  const { results } = await env.DB.prepare(
+    `SELECT w.*, CASE WHEN f.mode = 'fast' AND f.forced = 0 AND f.signature IS NOT NULL AND f.last_full_at >= ?
+                           AND w.baseline_capture_id IS NOT NULL THEN 1 ELSE 0 END AS fast_lane
+     FROM watches w LEFT JOIN watch_fast_checks f ON f.watch_id = w.id
+     WHERE ${where} ORDER BY w.next_run_at ASC LIMIT ?`,
+  )
+    .bind(since, ...binds, MAX_PER_TICK + MAX_FAST_PER_TICK)
+    .all<WatchRow & { fast_lane: number }>();
+  return (results ?? []).map(({ fast_lane, ...row }) => ({ row, fast: fast_lane === 1 }));
+}
+
+/**
+ * Runs every watch that is due. Called from the cron handlers: the hourly one
+ * for everything, the minute one at :15, :30 and :45 for 15-minute monitors
+ * only. Both claim a watch before running it (claimDue), under the same
+ * lease, so neither runs one the other has.
+ *
+ * Renders go a few at a time, as they always have (CONCURRENCY). Fast monitors
+ * get lanes of their own, many more per tick, until FAST_BUDGET_MS is spent;
+ * one whose page changed waits for a render slot like any other. Before
+ * migration 0016 there are none, and the sweep is the one it always was.
+ */
+export async function runDueWatches(origin: string, now = new Date(), options: SweepOptions = {}): Promise<WatchSweepResult> {
+  const where = `status = 'active' AND next_run_at <= ?${options.frequency ? ' AND frequency = ?' : ''}`;
+  const binds = [now.toISOString(), ...(options.frequency ? [options.frequency] : [])];
+  const [listed, total] = await Promise.all([
+    (await fastChecksReady())
+      ? dueWithLanes(now, where, binds)
+      : dueWatches(now, MAX_PER_TICK, options.frequency).then((rows) => rows.map((row) => ({ row, fast: false }))),
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM watches WHERE ${where}`)
+      .bind(...binds)
       .first<{ n: number }>(),
   ]);
+  const renders = listed.filter((entry) => !entry.fast).slice(0, MAX_PER_TICK).map((entry) => entry.row);
+  const reads = listed.filter((entry) => entry.fast).slice(0, MAX_FAST_PER_TICK).map((entry) => entry.row);
+  const taken = renders.length + reads.length;
   const result: WatchSweepResult = {
-    due: Math.max(total?.n ?? 0, due.length),
+    due: Math.max(total?.n ?? 0, taken),
     ran: 0,
     changed: 0,
     errors: 0,
     skipped: 0,
-    backlog: Math.max(0, (total?.n ?? 0) - due.length),
+    backlog: Math.max(0, (total?.n ?? 0) - taken),
     maxLateMs: 0,
   };
 
-  // A few at a time, each claimed just before it runs (see CONCURRENCY).
-  let next = 0;
-  const lane = async () => {
-    for (let listed = due[next++]; listed; listed = due[next++]) {
-      const watch = await claimDue(listed.id, now).catch((error) => {
-        console.error(`[watch] ${listed.id} could not be claimed`, error);
-        return null;
-      });
-      if (!watch) continue;
-      result.maxLateMs = Math.max(result.maxLateMs, Date.now() - Date.parse(listed.next_run_at));
-      const outcome = await runWatch(watch, origin).catch((error) => {
-        console.error(`[watch] ${watch.id} threw`, error);
-        return { status: 'error', changed: false } as WatchOutcome;
-      });
-      if (outcome.status === 'done') result.ran++;
-      if (outcome.status === 'error') result.errors++;
-      if (outcome.status === 'skipped') result.skipped++;
-      if (outcome.changed) result.changed++;
-    }
+  const permit = slots(CONCURRENCY);
+  const started = Date.now();
+  // Each queue in `width` lanes, every watch claimed just before it runs. A
+  // budgeted queue stops taking watches once it is spent; they stay due.
+  const lanes = (queue: WatchRow[], width: number, budget = Infinity) => {
+    let next = 0;
+    const lane = async () => {
+      for (let listed = queue[next++]; listed; listed = queue[next++]) {
+        if (Date.now() - started >= budget) {
+          result.backlog += queue.length - next + 1;
+          next = queue.length;
+          return;
+        }
+        const watch = await claimDue(listed.id, now).catch((error) => {
+          console.error(`[watch] ${listed.id} could not be claimed`, error);
+          return null;
+        });
+        if (!watch) continue;
+        result.maxLateMs = Math.max(result.maxLateMs, Date.now() - Date.parse(listed.next_run_at));
+        const outcome = await runWatch(watch, origin, { permit }).catch((error) => {
+          console.error(`[watch] ${watch.id} threw`, error);
+          return { status: 'error', changed: false } as WatchOutcome;
+        });
+        if (outcome.status === 'done') result.ran++;
+        if (outcome.status === 'error') result.errors++;
+        if (outcome.status === 'skipped') result.skipped++;
+        if (outcome.changed) result.changed++;
+      }
+    };
+    return Array.from({ length: Math.min(width, queue.length) }, lane);
   };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, due.length) }, lane));
+  await Promise.all([...lanes(renders, CONCURRENCY), ...lanes(reads, FAST_CONCURRENCY, FAST_BUDGET_MS)]);
 
   return result;
 }

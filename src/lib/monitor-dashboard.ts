@@ -21,9 +21,11 @@ export async function monitorDashboard(userId: string, now = new Date()) {
     )
       .bind(userId)
       .all<WatchRunRow>(),
+    // Every finished check: a visual comparison, a rule check, and a fast check
+    // that read the page and needed no screenshot.
     env.DB.prepare(
       `SELECT watch_id, MAX(created_at) AS last_success FROM watch_runs
-      WHERE user_id = ? AND status = 'done' AND (baseline_capture_id IS NULL OR change_pct IS NOT NULL)
+      WHERE user_id = ? AND status = 'done'
       GROUP BY watch_id`,
     )
       .bind(userId)

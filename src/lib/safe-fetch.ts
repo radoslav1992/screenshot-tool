@@ -40,6 +40,8 @@ export interface PublicFetchOptions {
    */
   signal: () => AbortSignal;
   headers?: Record<string, string>;
+  /** Told of each redirect followed, before the next hop is asked: the SEO checker lists them. */
+  onRedirect?: (hop: { url: string; status: number }) => void;
 }
 
 function timedOut(error: unknown): boolean {
@@ -75,10 +77,12 @@ export async function fetchPublic(raw: string, options: PublicFetchOptions): Pro
       throw new FetchFailure('bad_redirect', 'The address redirected to something that is not a URL.');
     }
     try {
-      url = assertPublicCaptureUrl(next.toString());
+      next = assertPublicCaptureUrl(next.toString());
     } catch {
       throw new FetchFailure('blocked_redirect', 'The address redirected somewhere that cannot be fetched.');
     }
+    options.onRedirect?.({ url: url.toString(), status: response.status });
+    url = next;
   }
 }
 

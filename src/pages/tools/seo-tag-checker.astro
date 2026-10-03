@@ -1,0 +1,167 @@
+---
+import ToolShell from '../../components/ToolShell.astro';
+import ToolForm from '../../components/ToolForm.astro';
+import ToolCta from '../../components/ToolCta.astro';
+import { handleToolRequest } from '../../lib/tool-pages';
+import { displayUrl } from '../../lib/capture-options';
+import { googlePreview, socialPreview, type FindingLevel } from '../../lib/seo-check';
+
+export const prerender = false;
+
+const run = await handleToolRequest(Astro, 'seo-tag-checker');
+const result = run.result?.tool === 'seo-tag-checker' ? run.result : null;
+const report = result?.report ?? null;
+const tags = report?.tags ?? null;
+const google = report ? googlePreview(report) : null;
+const social = report ? socialPreview(report) : null;
+
+const LEVELS: Record<FindingLevel, string> = { error: 'FIX', warning: 'CHECK', notice: 'NOTE' };
+const count = (level: FindingLevel) => report?.findings.filter((finding) => finding.level === level).length ?? 0;
+const summary = (
+  [
+    [count('error'), 'to fix'],
+    [count('warning'), 'to check'],
+    [count('notice'), count('notice') === 1 ? 'note' : 'notes'],
+  ] as const
+)
+  .filter(([n]) => n > 0)
+  .map(([n, words]) => `${n} ${words}`)
+  .join(' · ');
+const length = (text: string | null | undefined) => (text ? `${text.length} characters` : '');
+
+/** One row of the tag table: a name, what the page says, and how long it is when that matters. */
+type Row = { name: string; value: string | string[]; note?: string; empty?: string };
+const rows: Row[] = tags
+  ? [
+      { name: 'HTTP status', value: String(report!.status) },
+      { name: 'Final address', value: report!.finalUrl },
+      ...(report!.redirects.length
+        ? [{ name: 'Redirects', value: report!.redirects.map((hop) => `${hop.status} · ${hop.url}`) }]
+        : []),
+      { name: 'Title', value: tags.title ?? '', note: length(tags.title), empty: 'None' },
+      { name: 'Meta description', value: tags.description ?? '', note: length(tags.description), empty: 'None' },
+      { name: 'Canonical', value: tags.canonical || tags.canonicalRaw || '', empty: 'None' },
+      { name: 'Robots meta', value: tags.robots, empty: 'None (index, follow)' },
+      { name: 'X-Robots-Tag', value: tags.robotsHeader, empty: 'None' },
+      {
+        name: tags.h1Count > 1 ? `h1 headings (${tags.h1Count})` : 'h1 heading',
+        value: tags.h1.map((text) => text || '(no text)'),
+        empty: 'None',
+      },
+      { name: 'Hreflang', value: tags.hreflang.map((entry) => `${entry.lang} · ${entry.href}`), empty: 'None' },
+      { name: 'Open Graph', value: Object.entries(tags.og).map(([key, value]) => `og:${key} · ${value}`), empty: 'None' },
+      {
+        name: 'Twitter',
+        value: Object.entries(tags.twitter).map(([key, value]) => `twitter:${key} · ${value}`),
+        empty: 'None',
+      },
+      { name: 'Viewport', value: tags.viewport ?? '', empty: 'None' },
+      { name: 'Language', value: tags.lang ?? '', empty: 'None' },
+    ]
+  : [];
+---
+
+<ToolShell tool="seo-tag-checker">
+  <ToolForm tool="seo-tag-checker" run={run} action="Check tags" working="Reading the page’s tags">
+    <Fragment slot="fields">
+      <label class="tool-field">
+        <span>[ PAGE ADDRESS ]</span>
+        <input
+          name="url"
+          type="text"
+          inputmode="url"
+          autocomplete="url"
+          spellcheck="false"
+          placeholder="example.com/blog/post"
+          required
+          maxlength="2048"
+          value={run.input.url}
+          aria-invalid={run.error?.param === 'url' ? 'true' : undefined}
+        />
+      </label>
+    </Fragment>
+    {
+      report && (
+        <div class="tool-output">
+          <div class="tool-output__head">
+            <span>[ RESULT ]</span>
+            <span>
+              {displayUrl(report.finalUrl)} · HTTP {report.status}
+            </span>
+          </div>
+          <p class="seo-summary">
+            {summary || 'Nothing to fix: every tag we check is in place.'}
+          </p>
+          {report.findings.length > 0 && (
+            <ul class="seo-findings">
+              {report.findings.map((finding) => (
+                <li class={`seo-finding seo-finding--${finding.level}`} data-code={finding.code}>
+                  <span>[ {LEVELS[finding.level]} ]</span>
+                  <p>{finding.message}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {google && social && (
+            <div class="seo-previews">
+              <figure class="seo-preview">
+                <figcaption>[ ON GOOGLE / APPROXIMATE ]</figcaption>
+                <div class="seo-google">
+                  <span class="seo-google__site">{google.site}</span>
+                  <span class="seo-google__crumbs">
+                    {google.site}
+                    {google.crumbs && ` › ${google.crumbs}`}
+                  </span>
+                  <span class="seo-google__title">{google.title}</span>
+                  <span class="seo-google__text">
+                    {google.description || 'No description: Google picks a snippet from the page text.'}
+                  </span>
+                </div>
+              </figure>
+              <figure class="seo-preview">
+                <figcaption>[ WHEN SHARED / APPROXIMATE ]</figcaption>
+                <div class="seo-card">
+                  {social.image ? (
+                    <img src={social.image} alt="" loading="lazy" referrerpolicy="no-referrer" />
+                  ) : (
+                    <span class="seo-card__none">No og:image</span>
+                  )}
+                  <span class="seo-card__site">{social.site}</span>
+                  <span class="seo-card__title">{social.title}</span>
+                  {social.description && <span class="seo-card__text">{social.description}</span>}
+                </div>
+              </figure>
+            </div>
+          )}
+
+          {tags && (
+            <dl class="seo-tags">
+              {rows.map((row) => {
+                const values = Array.isArray(row.value) ? row.value : row.value ? [row.value] : [];
+                return (
+                  <div>
+                    <dt>
+                      {row.name}
+                      {row.note && <small>{row.note}</small>}
+                    </dt>
+                    {values.length ? (
+                      <dd>
+                        {values.map((value) => (
+                          <span>{value}</span>
+                        ))}
+                      </dd>
+                    ) : (
+                      <dd class="seo-tags__empty">{row.empty ?? 'None'}</dd>
+                    )}
+                  </div>
+                );
+              })}
+            </dl>
+          )}
+          <ToolCta tool="seo-tag-checker" url={result!.url} title="Get told when these tags change, free" />
+        </div>
+      )
+    }
+  </ToolForm>
+</ToolShell>

@@ -1,0 +1,135 @@
+---
+import Base from '../layouts/Base.astro';
+import AiPage from './AiPage.astro';
+import AiPageHead from './AiPageHead.astro';
+import { TOOL_ORDER, TOOL_PAGES, siteUrl, toolJsonLd } from '../lib/tool-pages';
+import { monitorHref, type ToolId } from '../lib/free-tools';
+import '../styles/adon/tools.css';
+
+interface Props {
+  tool: ToolId;
+}
+
+/**
+ * Everything on a free tool's page around the tool itself: the head a search
+ * lands on, how to use it, the questions, the other tools and the offer. The
+ * tool's form and its result go in the default slot.
+ */
+const { tool } = Astro.props;
+const page = TOOL_PAGES[tool];
+const user = Astro.locals.user;
+const number = String(TOOL_ORDER.indexOf(tool) + 1).padStart(2, '0');
+const others = TOOL_ORDER.filter((id) => id !== tool).map((id) => TOOL_PAGES[id]);
+---
+
+<Base
+  title={page.title}
+  description={page.description}
+  canonical={siteUrl(page.path)}
+  ogImage={siteUrl('/icons/icon-512.png')}
+  bodyClass="body-ai-agency"
+>
+  <script is:inline slot="head" type="application/ld+json" set:html={toolJsonLd(page)} />
+  <AiPage user={user} class="tool-page">
+    <AiPageHead label={`FREE TOOL / ${number}`} meta={page.meta} eyebrow="FREE · NO SIGNUP" aside="No account needed">
+      <Fragment slot="title">
+        {page.heading}{' '}<span>{page.accent}</span>
+      </Fragment>
+      <p>{page.description}</p>
+    </AiPageHead>
+
+    <slot />
+
+    <section class="tool-how" aria-labelledby="tool-how-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 02 / HOW IT WORKS ]</span>
+        <h2 id="tool-how-title" data-adon-title>Three steps</h2>
+      </div>
+      <ol class="tool-steps">
+        {
+          page.steps.map((step, index) => (
+            <li>
+              <span aria-hidden="true">[ 0{index + 1} ]</span>
+              <p>{step}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </section>
+
+    <section class="ai-faq" aria-labelledby="tool-faq-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 03 / QUESTIONS ]</span>
+        <h2 id="tool-faq-title" data-adon-title>Good questions</h2>
+      </div>
+      <div class="ai-faq-list">
+        {
+          page.faq.map((faq, index) => (
+            <details>
+              <summary>
+                <span>[ 0{index + 1} ]</span>
+                {faq.q}
+                <i aria-hidden="true">+</i>
+              </summary>
+              <p>{faq.a}</p>
+            </details>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="tool-more" aria-labelledby="tool-more-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 04 / MORE FREE TOOLS ]</span>
+        <h2 id="tool-more-title" data-adon-title>Try the others</h2>
+      </div>
+      <ul class="tool-links">
+        {
+          others.map((other) => (
+            <li>
+              <a href={other.path}>
+                <span class="tool-links__num">[ 0{TOOL_ORDER.indexOf(other.id) + 1} ]</span>
+                <strong>{other.name}</strong>
+                <span>{other.summary}</span>
+                <i aria-hidden="true">↗</i>
+              </a>
+            </li>
+          ))
+        }
+        <li>
+          <a href="/tools">
+            <span class="tool-links__num">[ ALL ]</span>
+            <strong>All free tools</strong>
+            <span>Four tools, no signup.</span>
+            <i aria-hidden="true">↗</i>
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <section class="tool-offer" aria-labelledby="tool-offer-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ FREE, FOREVER ]</span>
+        <div>
+          <h2 id="tool-offer-title" data-adon-title>
+            Watch your 3 most important <span class="ai-orange-text">client pages.</span>
+          </h2>
+          <p class="ai-section-lede">
+            Free, forever: 3 monitors checked every week, with an email showing what changed. No card needed.
+          </p>
+          <div class="ai-actions">
+            <a class="rr-btn-classic" href={monitorHref(tool, '', Boolean(user))}>
+              Start monitoring free <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="tool-madewith">Made with <a href="/">Easy Screen Capture</a></p>
+  </AiPage>
+</Base>
+
+<script>
+  import '../scripts/tools';
+</script>

@@ -1,0 +1,102 @@
+---
+import Base from '../../layouts/Base.astro';
+import AiPage from '../../components/AiPage.astro';
+import AiPageHead from '../../components/AiPageHead.astro';
+import { TOOL_ORDER, TOOL_PAGES, siteUrl } from '../../lib/tool-pages';
+import { FREE_TOOL_LIMITS, TOOL_RENDER, monitorHref } from '../../lib/free-tools';
+import '../../styles/adon/tools.css';
+
+export const prerender = false;
+
+const user = Astro.locals.user;
+const tools = TOOL_ORDER.map((id) => TOOL_PAGES[id]);
+const description =
+  'Free website tools, no signup: full-page screenshots, a responsive preview on phone, tablet and desktop, an SEO tag checker and a visual page comparison.';
+const jsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  name: 'Free website tools',
+  itemListElement: tools.map((tool, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    url: siteUrl(tool.path),
+    name: tool.name,
+  })),
+}).replace(/</g, '\\u003c');
+---
+
+<Base
+  title="Free website screenshot and SEO tools"
+  description={description}
+  canonical={siteUrl('/tools')}
+  ogImage={siteUrl('/icons/icon-512.png')}
+  bodyClass="body-ai-agency"
+>
+  <script is:inline slot="head" type="application/ld+json" set:html={jsonLd} />
+  <AiPage user={user} class="tool-page">
+    <AiPageHead label="FREE TOOLS" meta="NO SIGNUP / NOTHING STORED" eyebrow="FOUR TOOLS FOR CLIENT WEBSITE WORK" aside="No account needed">
+      <Fragment slot="title">Free website <span>tools</span></Fragment>
+      <p>{description}</p>
+    </AiPageHead>
+
+    <section aria-labelledby="tools-list-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 01 / PICK A TOOL ]</span>
+        <h2 id="tools-list-title" data-adon-title>Four tools</h2>
+      </div>
+      <ul class="tool-links tool-links--index">
+        {
+          tools.map((tool, index) => (
+            <li>
+              <a href={tool.path}>
+                <span class="tool-links__num">[ 0{index + 1} ]</span>
+                <strong>{tool.name}</strong>
+                <span>{tool.summary}</span>
+                <i aria-hidden="true">↗</i>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <section aria-labelledby="tools-fair-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 02 / FAIR USE ]</span>
+        <div>
+          <h2 id="tools-fair-title" data-adon-title>Free, within reason</h2>
+          <p class="ai-section-lede">
+            Screenshots, previews and comparisons run a real browser, so each visitor gets {FREE_TOOL_LIMITS.rendersPerVisitor}
+            renders a day: a preview uses three and a comparison two. Images are scale 1 JPEGs, carry a small
+            easyscreencapture.com mark, and a full page stops at {TOOL_RENDER.maxHeight.toLocaleString('en-US')} px. The SEO
+            checker reads HTML without a browser, {FREE_TOOL_LIMITS.seoChecksPerVisitor} times an hour.
+          </p>
+          <p class="ai-section-lede">
+            Nothing you check is stored: results go straight back to your browser. See the <a href="/privacy#free-tools">privacy policy</a>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tool-offer" aria-labelledby="tool-offer-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ FREE, FOREVER ]</span>
+        <div>
+          <h2 id="tool-offer-title" data-adon-title>
+            Watch your 3 most important <span class="ai-orange-text">client pages.</span>
+          </h2>
+          <p class="ai-section-lede">
+            Free, forever: 3 monitors checked every week, with an email showing what changed. No card needed.
+          </p>
+          <div class="ai-actions">
+            <a class="rr-btn-classic" href={monitorHref('index', '', Boolean(user))}>
+              Start monitoring free <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="tool-madewith">Made with <a href="/">Easy Screen Capture</a></p>
+  </AiPage>
+</Base>

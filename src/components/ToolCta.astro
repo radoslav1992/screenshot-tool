@@ -1,0 +1,27 @@
+---
+import { monitorHref, type ToolId } from '../lib/free-tools';
+
+interface Props {
+  tool: ToolId;
+  /** The page the result was for: the monitor's setup opens with it filled in. */
+  url: string;
+  title?: string;
+}
+
+/** The end of every result: monitor this page, free. The one orange button in view. */
+const { tool, url, title = 'Monitor this page for changes, free' } = Astro.props;
+const href = monitorHref(tool, url, Boolean(Astro.locals.user));
+---
+
+<div class="tool-cta">
+  <span class="tool-cta__label">[ NEXT ]</span>
+  <div class="tool-cta__body">
+    <h3>{title}</h3>
+    <p>
+      Watch your 3 most important client pages free, forever: a check every week, and an email showing what changed.
+    </p>
+    <a class="rr-btn-classic" href={href} data-tool-cta>
+      Monitor this page free <span aria-hidden="true">↗</span>
+    </a>
+  </div>
+</div>

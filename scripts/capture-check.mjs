@@ -404,7 +404,7 @@ await section('a deadline frees a hung capture', async () => {
 });
 
 /** A Puppeteer page that answers the calls the renderer makes, and records them. */
-function fakePage({ redirectTo, subrequests = [], navigateTo } = {}) {
+function fakePage({ redirectTo, subrequests = [], navigateTo, headers = {} } = {}) {
   const handlers = {};
   const mainFrame = {};
   const page = {
@@ -457,7 +457,7 @@ function fakePage({ redirectTo, subrequests = [], navigateTo } = {}) {
       }
       for (const sub of subrequests) page.request(sub, { frame: {} });
       page.current = navigateTo ?? url;
-      return { status: () => 200 };
+      return { status: () => 200, headers: () => headers };
     },
   };
   return page;
@@ -611,6 +611,34 @@ try {
 
     setEnv({ BROWSER: {} });
     await rejects(renderer.render(parse({ url: 'https://example.com/', block_ads: '0' })), statusOf(503, 'browser_unavailable'));
+  });
+
+  await section('SEO facts read the document’s headers, and only when a rule asks', async () => {
+    const page = fakePage({ headers: { 'x-robots-tag': 'noindex', 'content-type': 'text/html' } });
+    const asked = [];
+    const evaluate = page.evaluate;
+    page.evaluate = async (fn, ...args) => {
+      if (fn?.name !== 'readFactsInPage') return evaluate(fn, ...args);
+      asked.push(args[0]);
+      const raw = {
+        title: 'Shoes', description: 'Buy shoes', canonical: 'https://example.com/shoes', lang: 'en', charset: 'UTF-8',
+        favicon: '', og: { title: 'Shoes' }, twitter: {}, headings: ['Shoes'], imageCount: 0, linksInternal: 0,
+        linksExternal: 0, documentHeight: 900, text: 'Shoes', textLength: 5, textHash: 'a', html: '<h1>Shoes</h1>',
+        htmlTruncated: false, timings: { ttfbMs: null, domContentLoadedMs: null, loadMs: null },
+      };
+      return args[0]?.seo ? { ...raw, seo: { robots: 'index', h1: 'Shoes', h1Count: 1, hreflang: [] } } : raw;
+    };
+    useBrowser(page);
+    const plain = parse({ url: 'https://example.com/shoes', facts: '1' });
+    const withoutRule = await renderer.render(plain);
+    assert.equal(asked[0].seo, undefined);
+    assert.equal(withoutRule.facts.seo, undefined, 'facts are what they were for every other capture');
+    const seo = { ...plain, monitorSeo: true };
+    const result = await renderer.render(seo);
+    assert.equal(asked[1].seo, true);
+    assert.equal(result.facts.seo.robots_header, 'noindex');
+    assert.equal(result.facts.seo.status, 200);
+    assert.equal(result.facts.seo.og.image, '');
   });
 
   await section('a REST-only deployment refuses what it cannot do', async () => {

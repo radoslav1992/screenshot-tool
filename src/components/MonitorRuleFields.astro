@@ -1,5 +1,6 @@
 ---
 import { defaultRule, type MonitorRule } from '../lib/monitor-rules';
+import { SEO_SIGNALS, decodeSeoSignals } from '../lib/seo-signals';
 interface Props { rule?: MonitorRule }
 const { rule = defaultRule } = Astro.props;
 const kinds = [
@@ -9,6 +10,7 @@ const kinds = [
   ['disappeared', 'A phrase disappears'],
   ['price', 'Numbers in a price element change'],
   ['element', 'Text in a selected element changes'],
+  ['seo', 'SEO signals change'],
 ];
 // Each field is shown only for the rules that use it.
 const FOR = {
@@ -16,9 +18,12 @@ const FOR = {
   selector: ['price', 'element'],
   price: ['price'],
   text: ['text', 'appeared', 'disappeared', 'price', 'element'],
+  seo: ['seo'],
   region: ['visual'],
 };
 const shown = (kinds: string[]) => kinds.includes(rule.kind);
+// An SEO rule keeps its signals in `selector`; any other rule starts with all of them ticked.
+const watched = decodeSeoSignals(rule.kind === 'seo' ? rule.selector : '');
 ---
 <div class="stack gap-12" data-rule-fields>
   <label>Alert when
@@ -31,16 +36,58 @@ const shown = (kinds: string[]) => kinds.includes(rule.kind);
     <span class="xs muted">Phrase matching ignores case.</span>
   </label>
   <label data-rule-for={FOR.selector.join(' ')} hidden={!shown(FOR.selector)}>Element CSS selector
-    <input class="input" name="rule_selector" value={rule.selector} maxlength="200" placeholder=".product-price" required={shown(FOR.selector)} data-rule-required />
+    <input class="input" name="rule_selector" value={rule.kind === 'seo' ? '' : rule.selector} maxlength="200" placeholder=".product-price" required={shown(FOR.selector)} data-rule-required />
     <span class="xs muted" data-rule-for={FOR.price.join(' ')} hidden={!shown(FOR.price)}>Price rules compare the numbers in this element, so select a price-only element.</span>
   </label>
   <p class="small muted" data-rule-for={FOR.text.join(' ')} hidden={!shown(FOR.text)}>
     Text rules use collected page text and do not use the visual threshold or rectangular masks.
   </p>
+  <fieldset class="rule-signals" data-rule-for={FOR.seo.join(' ')} hidden={!shown(FOR.seo)}>
+    <legend>SEO signals to watch</legend>
+    <input type="hidden" name="rule_seo_form" value="1" />
+    {SEO_SIGNALS.map((signal) => (
+      <label class="rule-signals__option">
+        <input type="checkbox" name={`rule_seo_${signal.id}`} value="1" checked={watched.includes(signal.id)} />
+        {signal.label}
+      </label>
+    ))}
+    <span class="xs muted">
+      Alerts list what changed, noindex and error statuses first. The first check with this rule records the signals;
+      comparing starts with the next one. SEO rules do not use the visual threshold.
+    </span>
+  </fieldset>
   <label data-rule-for={FOR.region.join(' ')} hidden={!shown(FOR.region)}>Compare only this rectangle (optional)
     <input class="input" name="watch_region" value={rule.region} placeholder="x,y,width,height" maxlength="100" />
   </label>
 </div>
+<style>
+  .rule-signals {
+    display: grid;
+    gap: 2px;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .rule-signals legend {
+    padding: 0;
+    margin-bottom: 4px;
+  }
+  /* The whole row is the tap target, at least 44px tall. */
+  .rule-signals__option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  .rule-signals__option input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    flex: 0 0 auto;
+  }
+</style>
 <script>
   document.querySelectorAll<HTMLElement>('[data-rule-fields]').forEach((root) => {
     // Workers types redefine Element, so select elements are cast via unknown.

@@ -340,6 +340,19 @@ function isMainFrameNavigation(page: any, request: any): boolean {
   }
 }
 
+/**
+ * A response's headers, lower-cased as Puppeteer gives them; a header sent
+ * twice arrives as one value with the two joined by a newline.
+ */
+function documentHeaders(response: any): Record<string, string> | undefined {
+  try {
+    const headers = response?.headers?.();
+    return headers && typeof headers === 'object' ? (headers as Record<string, string>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Page calls that reject once the page is gone are not worth a log line. */
 function quietly(result: unknown): void {
   if (result && typeof (result as Promise<unknown>).catch === 'function') {
@@ -531,6 +544,8 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
     const redirects: string[] = [];
     let status: number | null = null;
     let finalUrl = options.url;
+    /** The main document's response headers, when there was a response to read them from. */
+    let headers: Record<string, string> | undefined;
 
     if (options.html) {
       await page.setContent(options.html, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
@@ -571,6 +586,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
         throw error;
       }
       status = response ? Number(response.status()) : null;
+      headers = documentHeaders(response);
       finalUrl = page.url() ?? options.url;
       await settleNetwork(page);
     }
@@ -631,9 +647,10 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
         // covers them itself; monitor phrases are answered against all the text.
         const raw = await page.evaluate(readFactsInPage, {
           phrases: options.monitorPhrases,
+          seo: options.monitorSeo,
           redact: options.redactPii ? PII_PATTERNS.map(({ source, flags }) => ({ source, flags })) : undefined,
         });
-        facts = buildFacts({ raw, finalUrl, status, redirects });
+        facts = buildFacts({ raw, finalUrl, status, redirects, headers });
         if (options.monitorSelector) {
           facts.monitored_element = await page.evaluate((selector: string) => {
             try {

@@ -581,8 +581,10 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     const noise = await watchNoise(watch.id);
     const options = {
       ...optionsFor(watch),
-      monitorSelector: rule.selector || undefined,
+      // An SEO rule keeps its signal list in `selector`; only element rules name an element there.
+      monitorSelector: (rule.kind === 'price' || rule.kind === 'element') && rule.selector ? rule.selector : undefined,
       monitorPhrases: (rule.kind === 'appeared' || rule.kind === 'disappeared') && rule.phrase ? [rule.phrase] : undefined,
+      monitorSeo: rule.kind === 'seo',
       hide: noise.hide.split(',').filter(Boolean),
       ignoreRegions: parseIgnoreRegions(noise.ignore_regions),
     };

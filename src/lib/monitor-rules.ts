@@ -1,13 +1,15 @@
 import { badRequest } from './http';
 import type { PageFacts } from './page-facts';
 import { parseIgnoreRegions } from './ignore-regions';
+import { compareSeo, seoSelectorFromBody } from './seo-signals';
+/** For an `seo` rule, `selector` holds the watched signals — see encodeSeoSignals. */
 export interface MonitorRule { kind: string; phrase: string; selector: string; region: string }
 export const defaultRule: MonitorRule = { kind: 'visual', phrase: '', selector: '', region: '' };
 export function parseMonitorRule(body: Record<string,string>): MonitorRule {
  const kind = body.rule_kind || 'visual';
- if (!['visual','text','appeared','disappeared','price','element'].includes(kind)) throw badRequest('Choose a valid alert rule.');
+ if (!['visual','text','appeared','disappeared','price','element','seo'].includes(kind)) throw badRequest('Choose a valid alert rule.');
  const phrase = (body.rule_phrase || '').trim();
- const selector = (body.rule_selector || '').trim();
+ const selector = kind === 'seo' ? seoSelectorFromBody(body) : (body.rule_selector || '').trim();
  if (phrase.length > 200 || selector.length > 200) throw badRequest('Rule text must be 200 characters or fewer.');
  if (['appeared','disappeared'].includes(kind) && !phrase) throw badRequest('Enter a phrase to watch.');
  if (['element','price'].includes(kind) && !selector) throw badRequest('Enter the CSS selector of the element to watch.');
@@ -17,6 +19,11 @@ export function parseMonitorRule(body: Record<string,string>): MonitorRule {
 }
 export function evaluateRule(rule: MonitorRule, before: PageFacts | null, after: PageFacts | null): { changed: boolean; detail: string } {
  const normalize = (s: string) => s.replace(/\s+/g,' ').trim();
+ // SEO signals are not page text: a baseline without them records, rather than fails.
+ if (rule.kind === 'seo') {
+  if (!after) throw new Error('SEO signals could not be read from the page. The previous baseline has been kept.');
+  return compareSeo(before ?? {}, after, rule.selector);
+ }
  if (!before || !after) throw new Error('Page text unavailable. The previous baseline has been kept.');
  if (typeof before.text !== 'string' || typeof after.text !== 'string') throw new Error('Page text unavailable.');
  let a = normalize(before.text), b = normalize(after.text);

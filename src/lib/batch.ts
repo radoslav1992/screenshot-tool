@@ -1,8 +1,9 @@
 import type { SessionUser } from './auth';
 import { createCaptureRow, getUsage, runCapture, toDTO, type CaptureDTO } from './captures';
-import { assertPublicCaptureUrl, parseCaptureOptions, plannedShots, type CaptureOptions } from './capture-options';
+import { parseCaptureOptions, plannedShots, type CaptureOptions } from './capture-options';
 import { HttpError, badRequest } from './http';
 import { MAX_BACKGROUND_BATCH, getPlan } from './plans';
+import { FetchFailure, fetchPublic, readCapped, type FetchProblem } from './safe-fetch';
 import { parseSitemap } from './sitemap';
 
 /**
@@ -25,75 +26,43 @@ export interface BatchResult {
 /** http→https, then apex→www, then a CDN's own hop: past that it is a loop. */
 const MAX_SITEMAP_REDIRECTS = 3;
 
+/** What each way of failing to read a sitemap tells the person who asked for it. */
+const SITEMAP_PROBLEMS: Record<FetchProblem, string> = {
+  unreachable: 'The sitemap could not be reached.',
+  timeout: 'The sitemap took too long to answer.',
+  too_many_redirects: 'The sitemap redirected too many times.',
+  bad_redirect: 'The sitemap redirected to an address that is not a URL.',
+  blocked_redirect: 'The sitemap redirected to an address that cannot be fetched.',
+  too_large: 'Sitemaps must be smaller than 2 MB. Use a smaller sitemap or paste page URLs.',
+  interrupted: 'The sitemap stopped answering partway through.',
+};
+
 /**
- * Fetches a sitemap, following redirects one hop at a time.
+ * Fetches a sitemap, following redirects one hop at a time (see safe-fetch).
  *
  * Sites routinely send `/sitemap.xml` from http to https or from the apex to
- * www, so refusing every redirect refused most real sitemaps. Letting fetch
- * follow them would not do either: each destination has to pass the same
- * public-address check the first URL did, or a redirect becomes the way to a
- * private one.
+ * www, so refusing every redirect refused most real sitemaps. Each hop gets its
+ * own ten seconds, and the body is refused whole past 2 MB.
  */
 async function fetchSitemap(raw: string): Promise<string> {
-  let url = assertPublicCaptureUrl(raw);
-  let response: Response;
-  for (let hop = 0; ; hop++) {
-    try {
-      response = await fetch(url.toString(), {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(10_000),
-        headers: { 'user-agent': 'EasyScreenCapture/1 (+https://easyscreencapture.com)' },
-      });
-    } catch (error) {
-      // DNS failures, refused connections and the timeout all land here, and
-      // all of them are about the address given, not about this service.
-      const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
-      throw new HttpError(
-        400,
-        'sitemap_unreachable',
-        timedOut ? 'The sitemap took too long to answer.' : 'The sitemap could not be reached.',
-      );
-    }
-    const location = response.headers.get('location');
-    if (response.status < 300 || response.status >= 400 || !location) break;
-    await response.body?.cancel().catch(() => undefined);
-    if (hop >= MAX_SITEMAP_REDIRECTS) {
-      throw new HttpError(400, 'sitemap_unreachable', 'The sitemap redirected too many times.');
-    }
-    let next: URL;
-    try {
-      next = new URL(location, url);
-    } catch {
-      throw new HttpError(400, 'sitemap_unreachable', 'The sitemap redirected to an address that is not a URL.');
-    }
-    try {
-      url = assertPublicCaptureUrl(next.toString());
-    } catch {
-      throw new HttpError(400, 'sitemap_unreachable', 'The sitemap redirected to an address that cannot be fetched.');
-    }
-  }
-  if (!response.ok) throw new HttpError(400, 'sitemap_unreachable', `The sitemap answered ${response.status}.`);
-  const reader = response.body?.getReader();
-  if (!reader) throw badRequest('The sitemap was empty.');
-  const decoder = new TextDecoder();
-  let size = 0;
-  let text = '';
   try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > 2_000_000)
-        throw badRequest('Sitemaps must be smaller than 2 MB. Use a smaller sitemap or paste page URLs.');
-      text += decoder.decode(value, { stream: true });
+    const { response } = await fetchPublic(raw, {
+      maxRedirects: MAX_SITEMAP_REDIRECTS,
+      signal: () => AbortSignal.timeout(10_000),
+      headers: { 'user-agent': 'EasyScreenCapture/1 (+https://easyscreencapture.com)' },
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new HttpError(400, 'sitemap_unreachable', `The sitemap answered ${response.status}.`);
     }
-    return text + decoder.decode();
+    const body = await readCapped(response, 2_000_000, 'error');
+    if (!body) throw badRequest('The sitemap was empty.');
+    return body.text;
   } catch (error) {
-    if (error instanceof HttpError) throw error;
-    // The timeout covers the body too; a stalled or dropped download ends here.
-    throw new HttpError(400, 'sitemap_unreachable', 'The sitemap stopped answering partway through.');
-  } finally {
-    await reader.cancel().catch(() => undefined);
+    if (!(error instanceof FetchFailure)) throw error;
+    // Too large is the sitemap's size, which the person can fix; the rest is the address.
+    if (error.problem === 'too_large') throw badRequest(SITEMAP_PROBLEMS.too_large);
+    throw new HttpError(400, 'sitemap_unreachable', SITEMAP_PROBLEMS[error.problem]);
   }
 }
 

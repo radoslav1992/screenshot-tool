@@ -3,9 +3,10 @@ import { env } from 'cloudflare:workers';
 import AppShell from '../../layouts/AppShell.astro';
 import { projectsReady, listProjects, ownProject } from '../../lib/projects';
 import { getUsage } from '../../lib/captures';
+import { fastChecksReady } from '../../lib/fast-checks';
 import '../../styles/projects.css';
 const user = Astro.locals.user!;
-const ready = await projectsReady();
+const [ready, smart] = await Promise.all([projectsReady(), fastChecksReady()]);
 const projects = ready ? await listProjects(user.id) : [];
 const requested = Astro.url.searchParams.get('project');
 let project = projects[0];
@@ -154,7 +155,8 @@ const pending = numbered.filter(({ step }) => !step.done);
             <h2>Prefer ongoing monitoring?</h2>
             <p>
               A baseline preview uses one screenshot. Daily checks use about 30 more per month; hourly checks use about
-              720. Set a schedule within your allowance, then attach the monitor from your project.
+              720.{smart ? ' Text, price, element and SEO monitors read the page first and use one only when something changes. ' : ' '}
+              Set a schedule within your allowance, then attach the monitor from your project.
             </p>
             <p class="link-row">
               <a href="/app/watches/setup">Set up a monitor →</a>

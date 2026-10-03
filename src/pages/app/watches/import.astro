@@ -1,15 +1,17 @@
 ---
 import AppShell from '../../../layouts/AppShell.astro';
-import { allowedFrequencies, frequencyLabel, watchLimit } from '../../../lib/plans';
+import { RULE_ONLY_FREQUENCY, allowedFrequencies, frequencyLabel, watchLimit } from '../../../lib/plans';
 import { getUsage } from '../../../lib/captures';
-import { listWatches } from '../../../lib/watches';
+import { budgetSchedules, listWatches } from '../../../lib/watches';
 import { forecast } from '../../../lib/monitor-health';
 import { canSendEmail } from '../../../lib/mailer';
+import { fastChecksReady } from '../../../lib/fast-checks';
 import '../../../styles/projects.css';
 const user = Astro.locals.user!;
-const [usage, existing] = await Promise.all([getUsage(user), listWatches(user.id)]);
-const current = forecast(existing, usage);
-const frequencies = allowedFrequencies(user.plan);
+const [usage, existing, smart] = await Promise.all([getUsage(user), listWatches(user.id), fastChecksReady()]);
+const current = forecast(await budgetSchedules(existing), usage);
+// Every 15 minutes needs smart checks, and SEO monitors rather than visual ones: the form enables it with the rule.
+const frequencies = allowedFrequencies(user.plan).filter((f) => f !== RULE_ONLY_FREQUENCY || smart);
 ---
 
 <AppShell title="Import monitors" tab="watches">
@@ -55,7 +57,7 @@ const frequencies = allowedFrequencies(user.plan);
 
     <section class="project-panel" aria-labelledby="import-heading">
       <h2 class="section-heading" id="import-heading"><span>[ 02 ]</span> Pages &amp; schedule</h2>
-      <form id="import-form" data-current={current.monthly} data-quota={usage.quota}>
+      <form id="import-form" data-current={current.monthly} data-quota={usage.quota} data-smart={String(smart)}>
         <label>
           One page URL per line
           <textarea class="input" name="urls" rows="10" maxlength="30000" required></textarea>
@@ -73,8 +75,8 @@ const frequencies = allowedFrequencies(user.plan);
             Schedule
             <select class="input" name="frequency">
               {frequencies.map((f) => (
-                <option value={f} selected={f === 'daily'}>
-                  {frequencyLabel(f)}
+                <option value={f} selected={f === 'daily'} disabled={f === RULE_ONLY_FREQUENCY} data-rule-only={f === RULE_ONLY_FREQUENCY ? '' : undefined}>
+                  {f === RULE_ONLY_FREQUENCY ? `${frequencyLabel(f)} · SEO monitors` : frequencyLabel(f)}
                 </option>
               ))}
             </select>
@@ -91,7 +93,8 @@ const frequencies = allowedFrequencies(user.plan);
         <p class="small muted">
           Each monitor saves its first baseline on the next hourly scheduler run, and following runs compare with it.
           SEO signals cover the title, meta description, canonical, robots, h1, hreflang, Open Graph tags and HTTP
-          status; choose fewer on each monitor. You can edit rules and test alerts from each monitor.
+          status; choose fewer on each monitor. {smart && 'SEO monitors read each page first and take a screenshot only when a signal changed, plus a weekly full check. '}You
+          can edit rules and test alerts from each monitor.
         </p>
         <div class="btn-row">
           <button class="btn btn--lime" disabled={!frequencies.length}>Create monitors</button>
@@ -107,6 +110,8 @@ const frequencies = allowedFrequencies(user.plan);
   const status = document.querySelector('#import-status')! as unknown as HTMLElement;
   const errorBox = document.querySelector<HTMLElement>('#import-error')!;
   const plural = (count: number, word: string) => `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
+  // Workers types redefine Element, so select elements are cast via unknown.
+  const frequency = form.querySelector('[name="frequency"]') as unknown as HTMLSelectElement;
   const update = () => {
     const data = new FormData(form);
     const count = new Set(
@@ -115,11 +120,21 @@ const frequencies = allowedFrequencies(user.plan);
         .map((s) => s.trim())
         .filter(Boolean),
     ).size;
-    const per = { hourly: 720, daily: 30, weekly: 5 }[String(data.get('frequency'))] || 0;
+    const visual = data.get('rule_kind') !== 'seo';
+    // Every 15 minutes only for SEO monitors, which read the page first.
+    for (const option of Array.from(frequency.options).filter((entry) => entry.dataset.ruleOnly !== undefined)) {
+      option.disabled = visual;
+      if (visual && option.selected) frequency.value = 'hourly';
+    }
+    const runs = { 'quarter-hourly': 2880, hourly: 720, daily: 30, weekly: 5 }[frequency.value] || 0;
+    // Reading first, an SEO monitor is certain to spend only its weekly full check; each change it finds adds one.
+    const smart = !visual && form.dataset.smart === 'true';
+    const per = smart ? Math.min(runs, 5) : runs;
     document.querySelector('#import-budget')!.textContent =
-      `Up to ${(count * per).toLocaleString()} additional screenshots per 30 days · ${(Number(form.dataset.current) + count * per).toLocaleString()} total scheduled / ${Number(form.dataset.quota).toLocaleString()} included. Manual captures share this allowance.`;
+      `${smart ? 'At least' : 'Up to'} ${(count * per).toLocaleString()} additional screenshots per 30 days${smart ? ', plus one for each change found' : ''} · ${(Number(form.dataset.current) + count * per).toLocaleString()} total scheduled / ${Number(form.dataset.quota).toLocaleString()} included. Manual captures share this allowance.`;
   };
   form.addEventListener('input', update);
+  form.addEventListener('change', update);
   update();
   let busy = false;
   for (const current of [form, document.querySelector<HTMLFormElement>('#sitemap-form')!])

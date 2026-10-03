@@ -60,6 +60,21 @@ assert.equal(
   'do not recommend a cadence that still exceeds the account budget',
 );
 assert.equal(forecast([], budget, new Date('2026-10-01')).untilReset, 0);
+// A rule-based monitor that reads first is certain to spend only its weekly full check.
+const onChange = (id, frequency) => ({ ...schedule(id, frequency), cost: 'change' });
+assert.equal(forecast([onChange('a', 'hourly')], budget, now).monthly, 5);
+assert.equal(forecast([onChange('a', 'quarter-hourly')], budget, now).monthly, 5, 'however often it reads');
+assert.equal(forecast([onChange('a', 'weekly')], budget, now).monthly, forecast([schedule('a', 'weekly')], budget, now).monthly, 'weekly, every check is the full one');
+assert.equal(forecast([onChange('a', 'hourly')], budget, now).untilReset, 3);
+assert.deepEqual(
+  [forecast([onChange('a', 'hourly'), schedule('b', 'daily')], budget, now).onChange, forecast([onChange('a', 'hourly'), schedule('b', 'daily')], budget, now).active],
+  [1, 2],
+);
+assert.equal(forecast([schedule('a', 'quarter-hourly')], budget, now).monthly, 2880, 'a 15-minute schedule rendering every check');
+assert.equal(
+  suggestFrequency([], schedule('new', 'quarter-hourly'), { ...budget, quota: 500, remaining: 400 }, ['quarter-hourly', 'hourly', 'daily'], now),
+  'daily',
+);
 const detail = encodeRunDetail('first baseline', { email: 'accepted', webhook: 'failed' });
 assert.deepEqual(decodeRunDetail(detail), {
   detail: 'first baseline',

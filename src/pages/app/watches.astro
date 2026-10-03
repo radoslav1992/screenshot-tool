@@ -10,7 +10,7 @@ import { DEVICE_LIST } from '../../lib/capture-options';
 import { formatDate } from '../../lib/dates';
 import {
   FREQUENCIES,
-  allowedFrequencies,
+  visualFrequencies,
   frequencyLabel,
   getPlan,
   cheapestPlanWith,
@@ -18,16 +18,24 @@ import {
   watchLimit,
 } from '../../lib/plans';
 import { WATCH_LIMIT } from '../../lib/plans';
-import { listWatches } from '../../lib/watches';
+import { budgetSchedules, listWatches } from '../../lib/watches';
+import { fastChecksReady } from '../../lib/fast-checks';
 import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
 const plan = getPlan(user.plan);
 const limit = watchLimit(user.plan);
-const [watches, usage, health] = await Promise.all([listWatches(user.id), getUsage(user), monitorDashboard(user.id)]);
-const budget = forecast(watches, usage);
+const [watches, usage, health, smart] = await Promise.all([
+  listWatches(user.id),
+  getUsage(user),
+  monitorDashboard(user.id),
+  fastChecksReady(),
+]);
+const schedules = await budgetSchedules(watches);
+const budget = forecast(schedules, usage);
 
-const frequencies = FREQUENCIES.filter((entry) => allowedFrequencies(user.plan).includes(entry.id));
+// Quick add makes a visual monitor, which never runs every 15 minutes.
+const frequencies = FREQUENCIES.filter((entry) => visualFrequencies(user.plan).includes(entry.id));
 const atLimit = watches.length >= limit;
 const upgradeTo = cheapestPlanWith((candidate) => WATCH_LIMIT[candidate.id] > 0);
 const prefillUrl = Astro.url.searchParams.get('url') ?? '';
@@ -159,8 +167,11 @@ const plural = (count: number, word: string) => `${count.toLocaleString()} ${wor
           </h2>
           <p class="small muted">
             <strong>New monitor</strong> opens guided setup: preview the baseline, hide or ignore noisy areas, choose
-            what should alert you, then set the schedule. Each check spends one screenshot from your monthly allowance
-            — {usage.remaining.toLocaleString()} left this month.
+            what should alert you, then set the schedule.
+            {smart
+              ? ' A visual monitor spends one screenshot from your monthly allowance on every check; a text, price, element or SEO monitor reads the page and spends one only when something changed — '
+              : ' Each check spends one screenshot from your monthly allowance — '}
+            {usage.remaining.toLocaleString()} left this month.
           </p>
           <p class="link-row">
             <a href="/app/watches/import">Import monitors from URLs or a sitemap →</a>
@@ -259,7 +270,7 @@ const plural = (count: number, word: string) => `${count.toLocaleString()} ${wor
                 </div>
               </details>
 
-              <MonitorBudget schedules={watches} budget={usage} allowed={frequencies.map((entry) => entry.id)} />
+              <MonitorBudget schedules={schedules} budget={usage} allowed={frequencies.map((entry) => entry.id)} smart={smart} />
 
               <div class="notice notice--error" id="watch-error" role="alert" hidden></div>
 
@@ -295,7 +306,10 @@ const plural = (count: number, word: string) => `${count.toLocaleString()} ${wor
         <article>
           <span>Monthly monitoring estimate</span>
           <strong>{budget.monthly.toLocaleString()}</strong>
-          <small>{plural(budget.active, 'active monitor')} · per 30 days</small>
+          <small>
+            {plural(budget.active, 'active monitor')} · per 30 days
+            {budget.onChange > 0 && ` · plus one for each change ${budget.onChange === 1 ? 'the rule-based monitor finds' : `the ${budget.onChange} rule-based monitors find`}`}
+          </small>
         </article>
         <article>
           <span>Remaining screenshots</span>

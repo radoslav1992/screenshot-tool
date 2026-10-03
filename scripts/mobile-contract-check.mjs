@@ -109,27 +109,45 @@ check('monitor list {data:[Monitor]}', r.status === 200 && Array.isArray(r.json?
 r = await call('/api/captures?collection=regular&limit=30&offset=0');
 check('library {data:[Capture]}', r.status === 200 && Array.isArray(r.json?.data) && r.json.data.every(capture), `status ${r.status}`);
 
-// A free account cannot create monitors: the app shows the problem message.
+// Free has three weekly monitors. The app offers the profile's schedules, shown through Swift's
+// `.capitalized`, and never the 15-minute one: it only creates visual monitors.
+check('a free profile offers weekly checks, and only them', JSON.stringify(p?.frequencies) === '["weekly"]', JSON.stringify(p?.frequencies));
+check('the profile never offers the 15-minute schedule', !p?.frequencies?.includes('quarter-hourly'));
+
+// A schedule the plan does not include is a problem the app shows as it is.
 r = await call('/api/watches', {
   method: 'POST',
   body: { url: 'https://example.com', label: '', frequency: 'daily', device: 'desktop', threshold: '1' },
 });
-if (r.status >= 200 && r.status < 300) {
-  check('monitor create returns a Monitor', monitor(r.json), JSON.stringify(r.json));
-  const id = r.json?.id;
-  if (id) {
-    const detail = await call(`/api/watches/${id}`);
-    check('monitor detail {runs:[Run]}', detail.status === 200 && Array.isArray(detail.json?.runs) && detail.json.runs.every(run));
-    for (const action of ['pause', 'resume']) {
-      const a = await call(`/api/watches/${id}`, { method: 'POST', body: { action } });
-      check(`monitor action ${action}`, a.status >= 200 && a.status < 300, `status ${a.status} ${a.text.slice(0, 120)}`);
-    }
-    const del = await call(`/api/watches/${id}`, { method: 'DELETE', body: {} });
-    check('monitor delete', del.status >= 200 && del.status < 300, `status ${del.status}`);
+check('a schedule outside the plan is a JSON problem', isProblem(r.json) && notRedirect(r) && r.status === 403, `status ${r.status} ${r.text.slice(0, 120)}`);
+check('it uses a type the app special-cases', ['plan_required', 'watch_limit'].includes(r.json?.error?.type), r.json?.error?.type);
+
+// The request the app sends, with a schedule the profile offered.
+r = await call('/api/watches', {
+  method: 'POST',
+  body: {
+    url: 'https://example.com', label: 'Contract', frequency: p?.frequencies?.[0] ?? 'weekly', device: 'desktop',
+    threshold: '1', notify_email: '1', mode: 'fullpage', format: 'png',
+  },
+});
+check('a free account creates a weekly monitor', r.status === 201, `status ${r.status} ${r.text.slice(0, 160)}`);
+check('monitor create returns a Monitor', monitor(r.json), JSON.stringify(r.json));
+check('the Monitor says how it is checked (additive)', r.json?.check_mode === 'visual' && r.json?.check_reason === null, JSON.stringify(r.json));
+const id = r.json?.id;
+if (id) {
+  const detail = await call(`/api/watches/${id}`);
+  check('monitor detail {runs:[Run]}', detail.status === 200 && monitor(detail.json) && Array.isArray(detail.json?.runs) && detail.json.runs.every(run));
+  for (const body of [{ action: 'pause' }, { action: 'resume' }, { action: 'schedule', frequency: 'weekly' }, { action: 'threshold', threshold: '2' }]) {
+    const a = await call(`/api/watches/${id}`, { method: 'POST', body });
+    check(`monitor action ${body.action} answers a Monitor`, a.status >= 200 && a.status < 300 && monitor(a.json), `status ${a.status} ${a.text.slice(0, 120)}`);
   }
-} else {
-  check('monitor create on a free plan is a JSON problem', isProblem(r.json) && notRedirect(r), `status ${r.status} ${r.text.slice(0, 120)}`);
-  check('monitor limit uses a type the app special-cases', ['plan_required', 'watch_limit'].includes(r.json?.error?.type), r.json?.error?.type);
+  // A check renders, so without a browser here it records a failure: still a Monitor with an outcome.
+  const ran = await call(`/api/watches/${id}`, { method: 'POST', body: { action: 'run' } });
+  check('monitor action run answers a Monitor and an outcome', ran.status === 200 && monitor(ran.json) && typeof ran.json?.outcome?.status === 'string', `status ${ran.status} ${ran.text.slice(0, 160)}`);
+  const runs = (await call(`/api/watches/${id}`)).json?.runs ?? [];
+  check('runs decode after a check', runs.length > 0 && runs.every(run) && runs.every((x) => x.capture_id == null || isString(x.capture_id)), JSON.stringify(runs[0]));
+  const del = await call(`/api/watches/${id}`, { method: 'DELETE', body: {} });
+  check('monitor delete', del.status >= 200 && del.status < 300, `status ${del.status}`);
 }
 
 // Capture (needs a browser; skipped when the binding is unavailable locally).

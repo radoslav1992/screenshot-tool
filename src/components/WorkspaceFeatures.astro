@@ -1,10 +1,20 @@
 ---
-import { PLANS, PLAN_ORDER, batchLimit, watchLimit } from '../lib/plans';
+import { PLANS, PLAN_ORDER, RULE_ONLY_FREQUENCY, WATCH_FREQUENCIES, batchLimit, watchLimit } from '../lib/plans';
 import { captureJobsAvailable } from '../lib/capture-jobs';
+import { fastChecksReady } from '../lib/fast-checks';
 
-// Background batches arrive with migration 0013; until then a batch is the
-// synchronous 25-screenshot queue, and the copy says so.
-const background = await captureJobsAvailable();
+// Background batches arrive with migration 0013, and smart checks with 0016;
+// until then a batch is the synchronous 25-screenshot queue and every monitor
+// check is a screenshot, and the copy says so.
+const [background, smart] = await Promise.all([captureJobsAvailable(), fastChecksReady()]);
+
+/** A plan's monitor schedules, shortest first, as the table shows them. */
+const SCHEDULE_WORDS: Record<string, string> = { [RULE_ONLY_FREQUENCY]: '15 min (rules)', hourly: 'hourly', daily: 'daily', weekly: 'weekly' };
+const schedules = (id: (typeof PLAN_ORDER)[number]) => {
+  const words = WATCH_FREQUENCIES[id].map((frequency) => SCHEDULE_WORDS[frequency]!);
+  const text = words.join(', ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 const notes = [
   {
@@ -13,7 +23,9 @@ const notes = [
   },
   {
     title: 'Monitor slots are not extra quota',
-    text: 'One daily monitor needs about 30 screenshots per 30 days; one hourly monitor needs about 720. For example, 25 hourly monitors would need about 18,000 screenshots, exceeding Pro’s 2,000 allowance. The app forecasts usage before you save a schedule.',
+    text: smart
+      ? 'A visual monitor uses a screenshot on every check: about 30 per 30 days daily, about 720 hourly, so 25 hourly visual monitors would need about 18,000, exceeding Pro’s 2,000. A text, price, element or SEO monitor reads the page and uses a screenshot only when something changes, plus a weekly full check. The app forecasts usage before you save a schedule.'
+      : 'One daily monitor needs about 30 screenshots per 30 days; one hourly monitor needs about 720. For example, 25 hourly monitors would need about 18,000 screenshots, exceeding Pro’s 2,000 allowance. The app forecasts usage before you save a schedule.',
   },
   {
     title: 'Reports and sharing',
@@ -85,6 +97,12 @@ const notes = [
           <th scope="row">Monitor slots</th>
           {PLAN_ORDER.map((id) => (
             <td>{watchLimit(id) || '—'}</td>
+          ))}
+        </tr>
+        <tr>
+          <th scope="row">Monitor schedules</th>
+          {PLAN_ORDER.map((id) => (
+            <td>{schedules(id)}</td>
           ))}
         </tr>
         <tr>

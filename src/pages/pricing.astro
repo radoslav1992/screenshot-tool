@@ -8,6 +8,7 @@ import AiPageHead from '../components/AiPageHead.astro';
 import { PLANS, PLAN_ORDER } from '../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, planPurchasable } from '../lib/billing';
 import { billingErrorMessage } from '../lib/billing-errors';
+import { fastChecksReady } from '../lib/fast-checks';
 
 const user = Astro.locals.user;
 const plans = PLAN_ORDER.map((id) => PLANS[id]);
@@ -28,13 +29,15 @@ const subscribed = hasActiveSubscription(billing);
 // customer looking at the default monthly prices would switch plan and quietly
 // change their billing period at the same time.
 const startYearly = subscribed && billing?.plan_interval === 'yearly';
+// Monitors read their page first only once migration 0016 exists; until then every check is a screenshot.
+const smart = await fastChecksReady().catch(() => false);
 ---
 
-<Base title="Pricing" description="Start free with 20 screenshots a month. Upgrade when you need more.">
+<Base title="Pricing" description="Start free with 20 screenshots and three weekly website monitors a month. Upgrade when you need more.">
   <AiPage user={user}>
     <AiPageHead label="PRICING" meta={`${plans.length} PLANS / START FREE`} aside="Monthly or yearly billing">
       <Fragment slot="title">Simple <span>pricing</span></Fragment>
-      <p>Start with a client project. Upgrade for clean PDF exports, monitoring, API access or collaboration.</p>
+      <p>Start with a client project. Upgrade for clean PDF exports, more frequent monitoring, API access or collaboration.</p>
       <div class="switch" role="group" aria-label="Billing period">
         <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
         <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly · save about 20%</button>
@@ -147,11 +150,23 @@ const startYearly = subscribed && billing?.plan_interval === 'yearly';
               <p>Paid checkout is not available yet. You can start with Free and keep using your workspace.</p>
             )
           }
-          <p>
-            Manual captures and monitor checks share the monthly screenshot allowance. A daily monitor uses about 30
-            screenshots per month; an hourly monitor uses about 720. Pro includes 2,000 screenshots: enough for 25 daily
-            monitors, but not all 25 hourly. Monitor limits describe saved pages, not unlimited checks.
-          </p>
+          {
+            smart ? (
+              <p>
+                Manual captures and monitor checks share the monthly screenshot allowance. A visual monitor uses a
+                screenshot on every check: about 30 a month daily, about 720 hourly, so Pro’s 2,000 covers 25 daily visual
+                monitors but not all 25 hourly. A text, price, element or SEO monitor reads the page and uses a screenshot
+                only when something changes, plus a weekly full check, which is what lets Pro and Business check those
+                every 15 minutes. Monitor limits describe saved pages, not unlimited checks.
+              </p>
+            ) : (
+              <p>
+                Manual captures and monitor checks share the monthly screenshot allowance. A daily monitor uses about 30
+                screenshots per month; an hourly monitor uses about 720. Pro includes 2,000 screenshots: enough for 25
+                daily monitors, but not all 25 hourly. Monitor limits describe saved pages, not unlimited checks.
+              </p>
+            )
+          }
         </div>
       </div>
     </section>

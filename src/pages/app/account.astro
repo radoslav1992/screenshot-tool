@@ -9,9 +9,16 @@ import { billingErrorMessage } from '../../lib/billing-errors';
 import { takeFlash } from '../../lib/flash';
 import { PASSWORD_MIN_LENGTH, countSessions } from '../../lib/auth';
 import { canSendEmail } from '../../lib/mailer';
+import { REFERRAL_BONUS, REFERRAL_CAP, referralSummary, referralUrl, rewardReferral } from '../../lib/growth';
 
 const user = Astro.locals.user!;
+// Catches a referral that became payable some other way (a password reset that
+// confirmed the address, say), so the bonus below is already counted.
+await rewardReferral(user.id, Astro.url.origin);
 const usage = await getUsage(user);
+// The invite section exists once migration 0017 does.
+const referral = await referralSummary(user.id).catch(() => null);
+const inviteLink = referral ? referralUrl(Astro.url.origin, referral.code) : '';
 const plan = getPlan(user.plan);
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
@@ -207,6 +214,14 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
           </span>
         </div>
         <div class="meter"><div class="meter__fill" style={`width: ${pct}%`}></div></div>
+        {
+          usage.bonus > 0 && (
+            <div class="row-between xs" style="color: var(--dim); margin-top: 8px">
+              <span>Bonus screenshots, used after these</span>
+              <span style="color: var(--paper); font-weight: 600">+{usage.bonus.toLocaleString()}</span>
+            </div>
+          )
+        }
       </div>
 
       <div class="stat-row" style="margin-top: 16px">
@@ -239,6 +254,42 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
           ))
       }
     </section>
+
+    {
+      referral && (
+        <section class="card card--pad stack gap-12 invite" id="invite" aria-labelledby="invite-title">
+          <div class="row-between">
+            <h2 id="invite-title" class="invite__title">Invite a friend</h2>
+            <span class="invite__label">[ REFERRALS ]</span>
+          </div>
+          <p class="xs muted">
+            When someone signs up through your link, confirms their email and takes a first capture, you each get{' '}
+            {REFERRAL_BONUS} bonus screenshots — for up to {REFERRAL_CAP} friends. Bonus screenshots are used after your
+            monthly allowance and never expire.
+          </p>
+          <div class="invite__link">
+            <input class="input" id="invite-link" value={inviteLink} readonly aria-label="Your referral link" />
+            <button type="button" class="btn btn--outline" data-copy data-copy-value={inviteLink}>
+              Copy link
+            </button>
+          </div>
+          <dl class="invite__stats">
+            <div>
+              <dt>Invited</dt>
+              <dd>{referral.invited.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Rewarded</dt>
+              <dd>{referral.rewarded.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Bonus balance</dt>
+              <dd>{referral.bonus.toLocaleString()}</dd>
+            </div>
+          </dl>
+        </section>
+      )
+    }
 
     </div>
 
@@ -423,8 +474,60 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
   </div>
 </AppShell>
 
+<style>
+  .invite {
+    scroll-margin-top: 16px;
+  }
+  .invite__title {
+    font: 700 14px var(--display);
+  }
+  .invite__label {
+    font: 10px/1.5 var(--mono);
+    color: var(--muted);
+  }
+  .invite__link {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .invite__link .input {
+    flex: 1 1 200px;
+    min-width: 0;
+    min-height: 44px;
+    font: 12px var(--mono);
+  }
+  .invite__link .btn {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .invite__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--line-2);
+    margin: 0;
+  }
+  .invite__stats > div {
+    padding: 10px 12px;
+    border-right: 1px solid var(--line-2);
+    min-width: 0;
+  }
+  .invite__stats > div:last-child {
+    border-right: 0;
+  }
+  .invite__stats dt {
+    font: 9px/1.4 var(--mono);
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .invite__stats dd {
+    margin: 4px 0 0;
+    font: 700 16px var(--display);
+  }
+</style>
+
 <script>
   import { wirePasswordToggles } from '../../scripts/auth';
+
 
   wirePasswordToggles();
 

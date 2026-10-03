@@ -46,9 +46,10 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
           <strong>{plan.name} plan</strong>
           <a href="/app/upgrade">View plans ↗</a>
         </div>
-        <progress value={usage.quota - usage.remaining} max={usage.quota} aria-label="Monthly screenshots used" />
+        <progress value={Math.min(usage.used, usage.quota)} max={usage.quota} aria-label="Monthly screenshots used" />
         <p>
-          {usage.remaining.toLocaleString()} of {usage.quota.toLocaleString()} screenshots left
+          {Math.max(0, usage.quota - usage.used).toLocaleString()} of {usage.quota.toLocaleString()} screenshots left
+          {usage.bonus > 0 && <> · +{usage.bonus.toLocaleString()} bonus</>}
         </p>
       </div>
     </div>

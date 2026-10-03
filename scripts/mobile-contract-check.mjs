@@ -102,6 +102,18 @@ check(
     (p.retentionDays === undefined || Number.isInteger(p.retentionDays)),
   JSON.stringify(p),
 );
+// Additive and optional (migration 0017): the app must decode a profile with or without them.
+check(
+  'profile referral fields are optional and typed (usage.bonus, referral_url)',
+  p && (p.usage?.bonus === undefined || Number.isInteger(p.usage.bonus)) &&
+    (p.referral_url === undefined || (isString(p.referral_url) && /\/join\/[a-z0-9]+$/.test(p.referral_url))),
+  JSON.stringify({ bonus: p?.usage?.bonus, referral_url: p?.referral_url }),
+);
+check(
+  'usage.remaining is what can still be taken, bonus included; quota stays the monthly allowance',
+  p && p.usage?.remaining >= (p.usage?.bonus ?? 0) && p.usage?.remaining <= p.usage?.quota + (p.usage?.bonus ?? 0),
+  JSON.stringify(p?.usage),
+);
 
 // Lists.
 r = await call('/api/watches');

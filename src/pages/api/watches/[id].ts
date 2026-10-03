@@ -14,6 +14,7 @@ import {
   setWatchThreshold,
   toWatchDTO,
 } from '../../../lib/watches';
+import { withHighlightUrls } from '../../../lib/change-highlights';
 
 export const prerender = false;
 
@@ -28,13 +29,14 @@ async function owned(id: string | undefined, userId: string) {
   return watch;
 }
 
-export const GET: APIRoute = async ({ params, locals }) => {
+export const GET: APIRoute = async ({ params, locals, url }) => {
   const user = locals.user;
   if (!user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
 
   try {
     const watch = await owned(params.id, user.id);
-    return json({ ...toWatchDTO(watch), runs: await listRuns(watch.id) });
+    // Each run also carries `regions` and `highlight_url`, both additive.
+    return json({ ...toWatchDTO(watch), runs: await withHighlightUrls(await listRuns(watch.id), user.id, url.origin) });
   } catch (error) {
     return toHttpError(error, 'watches.get', 'Could not load that watch.').toResponse();
   }

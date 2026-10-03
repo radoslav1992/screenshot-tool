@@ -1,4 +1,5 @@
 /** Shared forecast and run metadata. No captured URLs or provider responses are stored here. */
+import type { ChangeRegion } from './visual-diff-fn';
 export interface Schedule {
   id: string;
   frequency: string;
@@ -69,9 +70,24 @@ export const deliveryLabel: Record<DeliveryState, string> = {
   not_needed: 'No alert needed',
   unknown: 'Not confirmed',
 };
+/**
+ * What a visual comparison found, kept with the run. Absent on older runs and
+ * on rules that compare text.
+ */
+export interface RunChanges {
+  /** Changed areas as fractions of the "after" image (see visual-diff-fn). */
+  regions: ChangeRegion[];
+  /** A highlighted copy of the "after" image was stored next to it. */
+  highlight: boolean;
+}
 const PREFIX = 'esc-run-v1:';
-export function encodeRunDetail(message: string | null, delivery: Delivery): string {
-  return PREFIX + JSON.stringify({ message, delivery });
+export function encodeRunDetail(message: string | null, delivery: Delivery, changes: Partial<RunChanges> = {}): string {
+  // Only what is there: most runs carry none of it, and the column stays small.
+  const extra = {
+    ...(changes.regions?.length ? { regions: changes.regions } : {}),
+    ...(changes.highlight ? { highlight: true } : {}),
+  };
+  return PREFIX + JSON.stringify({ message, delivery, ...extra });
 }
 export function decodeRunDetail(detail: string | null): { detail: string | null; delivery: Delivery } {
   const fallback = { detail, delivery: { email: 'unknown', webhook: 'unknown' } as Delivery };
@@ -88,6 +104,30 @@ export function decodeRunDetail(detail: string | null): { detail: string | null;
   } catch {
     return fallback;
   }
+}
+/** What a run's comparison found (see RunChanges); all empty for older runs and text rules. */
+export function decodeRunChanges(detail: string | null): RunChanges {
+  const none: RunChanges = { regions: [], highlight: false };
+  if (!detail?.startsWith(PREFIX)) return none;
+  try {
+    const data = JSON.parse(detail.slice(PREFIX.length));
+    if (!data || typeof data !== 'object') return none;
+    return {
+      regions: parseRegions(data.regions),
+      highlight: data.highlight === true,
+    };
+  } catch {
+    return none;
+  }
+}
+/** Boxes that are not fractions inside the image are dropped rather than drawn; at most MAX_REGIONS (8). */
+function parseRegions(value: unknown): ChangeRegion[] {
+  if (!Array.isArray(value)) return [];
+  const fraction = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1;
+  return value
+    .filter((r) => r && fraction(r.x) && fraction(r.y) && fraction(r.w) && fraction(r.h) && r.w > 0 && r.h > 0)
+    .slice(0, 8)
+    .map((r) => ({ x: r.x, y: r.y, w: Math.min(r.w, 1 - r.x), h: Math.min(r.h, 1 - r.y) }));
 }
 export function runLabel(run: {
   status: string;

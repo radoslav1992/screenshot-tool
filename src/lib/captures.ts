@@ -7,6 +7,7 @@ import { prefixedId, randomToken } from './ids';
 import { getPlan } from './plans';
 import { render, type RenderedFile } from './renderer';
 import { safeParseFacts, type PageFacts } from './page-facts';
+import { highlightFile } from './change-highlights';
 
 /** Where a capture was asked for. Watch runs are nobody's click, so they count separately. */
 export type CaptureSource = 'app' | 'api' | 'watch';
@@ -573,7 +574,8 @@ export async function deleteCapture(row: CaptureRow): Promise<void> {
         'It is replaced after the next check, or delete the monitor first.',
     );
   }
-  const files = safeParseFiles(row.files);
+  // A monitor check may have a highlighted copy beside its files (see change-highlights).
+  const files = [...safeParseFiles(row.files), ...(row.source === 'watch' ? [highlightFile(row)] : [])];
   await Promise.all(files.map((file) => env.SHOTS.delete(file.key).catch(() => undefined)));
   await env.DB.prepare(`DELETE FROM captures WHERE id = ?`).bind(row.id).run();
 }

@@ -3,7 +3,7 @@ import { getMonitorRule, workflowsReady } from './monitor-rule-store';
 import { evaluateRule, type MonitorRule } from './monitor-rules';
 import { watchSettingsReady, watchNoise, noiseStrings } from './watch-settings';
 import { parseIgnoreRegions } from './ignore-regions';
-import { decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
+import { decodeRunChanges, decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
 import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
 import { toSessionUser, type UserRow } from './auth';
@@ -25,6 +25,7 @@ import { diffText } from './text-diff';
 import { summariseChange } from './summarise';
 import { webhookBody, webhookFlavour } from './chat-webhook';
 import { formatDate } from './dates';
+import { highlightUrl, storeHighlight, type ChangeRegion } from './change-highlights';
 
 export interface WatchRow {
   id: string;
@@ -182,13 +183,16 @@ export async function getWatch(id: string): Promise<WatchRow | null> {
   return env.DB.prepare(`SELECT * FROM watches WHERE id = ?`).bind(id).first<WatchRow>();
 }
 
-export async function listRuns(watchId: string, limit = 30): Promise<Array<WatchRunRow & { delivery: Delivery }>> {
+export async function listRuns(
+  watchId: string,
+  limit = 30,
+): Promise<Array<WatchRunRow & ReturnType<typeof decodeRunDetail> & ReturnType<typeof decodeRunChanges>>> {
   const { results } = await env.DB.prepare(
     `SELECT * FROM watch_runs WHERE watch_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
   )
     .bind(watchId, limit)
     .all<WatchRunRow>();
-  return (results ?? []).map((run) => ({ ...run, ...decodeRunDetail(run.detail) }));
+  return (results ?? []).map((run) => ({ ...run, ...decodeRunDetail(run.detail), ...decodeRunChanges(run.detail) }));
 }
 
 export async function countWatches(userId: string): Promise<number> {
@@ -604,6 +608,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   let changed = false;
   let changePct: number | null = null;
   let detail: string | null = null;
+  let visual: DiffResult | null = null;
 
   if (!baseline) {
     detail = 'first check — saved as the baseline';
@@ -624,7 +629,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     try {
       const region = parseIgnoreRegions(rule.region)[0];
       const scaled = region ? { x: region.x * watch.scale, y: region.y * watch.scale, width: region.width * watch.scale, height: region.height * watch.scale } : undefined;
-      diff = await compareImages(before, after, scaled);
+      diff = await compareImages(before, after, scaled, { highlight: watch.threshold });
     } catch (error) {
       // Preserve the last good baseline so the next successful check can still detect the change.
       const message = error instanceof Error ? error.message : '';
@@ -641,7 +646,11 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     // percentage threshold weighs a resize by the area it added or removed.
     changed = watch.threshold === 0 ? diff.changedPixels > 0 || diff.resized : diff.changedPct >= watch.threshold;
     detail = visualDetail(diff, watch.threshold, changed);
+    visual = diff;
   }
+
+  const highlighted = visual?.highlight ? await storeHighlight(capture, visual.highlight) : false;
+  const changes = { regions: visual?.regions ?? [], highlight: highlighted };
 
   const runId = prefixedId('wrn', 10);
   const alerting = changed && Boolean(baseline);
@@ -683,7 +692,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
         status: 'done',
         changed: changed ? 1 : 0,
         change_pct: changePct,
-        detail: encodeRunDetail(detail, delivery),
+        detail: encodeRunDetail(detail, delivery, changes),
       },
       runId,
     ),
@@ -717,13 +726,14 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
       { kind: rule.kind, detail },
       async () => {
         await env.DB.prepare('UPDATE watch_runs SET detail = ? WHERE id = ? AND user_id = ?')
-          .bind(encodeRunDetail(detail, delivery), runId, watch.user_id)
+          .bind(encodeRunDetail(detail, delivery, changes), runId, watch.user_id)
           .run();
       },
       // Claimed exactly as a retry is, and only once there is something to
       // send: a crash before this is retried next hour, one after it is
       // ambiguous and never sent twice.
       retries ? () => claimRetry(runId) : undefined,
+      { regions: changes.regions, highlightUrl: highlighted ? highlightUrl(capture, origin) : null },
     );
     if (sent && retries) await finishRetry(runId, delivery, 1);
   }
@@ -961,6 +971,12 @@ async function tellOwner(user: SessionUser, subject: string, text: string): Prom
 /* Alerts                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/** Where the picture changed, for an alert to point at. Empty for text rules and older runs. */
+interface AlertChanges {
+  regions: ChangeRegion[];
+  highlightUrl: string | null;
+}
+
 async function notify(
   watch: WatchRow,
   user: SessionUser,
@@ -972,6 +988,7 @@ async function notify(
   rule: { kind: string; detail: string | null },
   saveDelivery: () => Promise<void>,
   claim?: () => Promise<boolean>,
+  changes: AlertChanges = { regions: [], highlightUrl: null },
 ): Promise<boolean> {
   const name = watchName(watch);
   const link = `${origin}/app/watches/${watch.id}`;
@@ -1002,9 +1019,11 @@ async function notify(
               headline +
               body +
               (changePct > 0 ? `${changePct}% of the picture changed.\n\n` : '') +
+              (changes.regions.length ? `Changed areas: ${changes.regions.length}\n\n` : '') +
               `Before: ${firstFileUrl(before, origin) ?? '—'}\n` +
-              `After:  ${firstFileUrl(after, origin) ?? '—'}\n\n` +
-              `History and settings: ${link}\n\n` +
+              `After:  ${firstFileUrl(after, origin) ?? '—'}\n` +
+              (changes.highlightUrl ? `Changes highlighted: ${changes.highlightUrl}\n` : '') +
+              `\nHistory and settings: ${link}\n\n` +
               `Stop these emails by pausing or deleting the monitor on that page.`,
           }),
         )
@@ -1029,6 +1048,8 @@ async function notify(
       afterUrl: firstFileUrl(after, origin),
       watchUrl: link,
       rule,
+      highlightUrl: changes.highlightUrl,
+      regions: changes.regions,
     });
 
     const body =
@@ -1153,10 +1174,11 @@ export async function retryAlerts(origin: string) {
         await env.DB.prepare("UPDATE alert_retries SET status='done' WHERE run_id=?").bind(job.run_id).run(); continue;
       }
       const decoded = decodeRunDetail(run.detail);
+      const changes = decodeRunChanges(run.detail);
       const rule = await getMonitorRule(watch.id);
       await notify(watch,toSessionUser(owner),before,after,run.change_pct || 0,origin,decoded.delivery,{ kind: rule.kind, detail: decoded.detail },async()=>{
-        await env.DB.prepare('UPDATE watch_runs SET detail=? WHERE id=?').bind(encodeRunDetail(decoded.detail,decoded.delivery),run.id).run();
-      });
+        await env.DB.prepare('UPDATE watch_runs SET detail=? WHERE id=?').bind(encodeRunDetail(decoded.detail,decoded.delivery,changes),run.id).run();
+      },undefined,{ regions: changes.regions, highlightUrl: changes.highlight ? highlightUrl(after, origin) : null });
       await finishRetry(run.id,decoded.delivery,job.attempts+1);
     } catch (error) { console.error('[alerts] retry interrupted',error); }
   }

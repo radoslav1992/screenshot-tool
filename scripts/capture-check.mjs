@@ -860,6 +860,20 @@ await section('a short series gets its unused frames back', async () => {
   );
 });
 
+await section('every stored file records the capture engine that took it', async () => {
+  const { CAPTURE_ENGINE, captureEngine } = await load('capture-engine');
+  const options = parse({ url: 'https://example.com', sizes: 'mobile' });
+  const row = await captures.createCaptureRow(user('series', 50), options, 'app');
+  cc.render = async (_options, onFile) => {
+    await onFile(file('desktop.png'));
+    return { files: [file('mobile.png')], engine: 'binding', durationMs: 5 };
+  };
+  const done = await captures.runCapture(row, options);
+  assert.deepEqual(captures.safeParseFiles(done.files).map((f) => f.engine), [CAPTURE_ENGINE, CAPTURE_ENGINE]);
+  assert.equal(captureEngine(db.prepare('SELECT files FROM captures WHERE id = ?').get(row.id)), CAPTURE_ENGINE);
+  assert.equal('engine' in captures.toDTO(done, 'https://app.test').files[0], false, 'the API shape is unchanged');
+});
+
 await section('a failed capture is refunded, keeps its error type, and leaves no files', async () => {
   setUsed('failer', 0);
   objects.clear();

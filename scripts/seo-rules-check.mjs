@@ -448,6 +448,7 @@ const watches = await load('lib/watches.ts', {
   summarise: 'export async function summariseChange(){return {sentence:"",detail:"",source:"plain"}}',
   push: 'export async function pushQueueStatement(runId){globalThis.__seoFixture.state.pushes.push(runId);return null} export async function drainPush(){}',
 });
+const engineModule = await load('lib/capture-engine.ts');
 const { decodeRunDetail } = await load('lib/monitor-health.ts');
 
 const realFetch = globalThis.fetch;
@@ -522,6 +523,21 @@ try {
     assert.equal((await watches.getWatch(watch.id)).baseline_capture_id, run.capture_id);
   });
 
+  await section('a baseline is refreshed only for an engine change that reaches it', async () => {
+    const { shouldRefreshBaseline, captureEngine, ENGINE_CHANGES, CAPTURE_ENGINE } = engineModule;
+    const file = (engine) => JSON.stringify([{ key: 'k', name: 'capture.png', ...(engine ? { engine } : {}) }]);
+    assert.equal(captureEngine({ files: file() }), 1, 'a file from before the marker is engine 1');
+    assert.equal(captureEngine({ files: 'not json' }), 1);
+    assert.equal(shouldRefreshBaseline({ files: file(), device: 'mobile' }), false, 'no change recorded, nothing refreshed');
+    ENGINE_CHANGES.push({ version: CAPTURE_ENGINE + 1, what: 'fixture', reaches: (capture) => capture.device === 'mobile' });
+    try {
+      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE), device: 'mobile' }), true);
+      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE), device: 'desktop' }), false, 'a change reaches only what it says');
+      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE + 1), device: 'mobile' }), false);
+    } finally {
+      ENGINE_CHANGES.pop();
+    }
+  });
 } finally {
   globalThis.fetch = realFetch;
   db.close();

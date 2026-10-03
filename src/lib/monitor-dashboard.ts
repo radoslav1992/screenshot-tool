@@ -9,7 +9,7 @@ export async function monitorDashboard(userId: string, now = new Date()) {
       `SELECT COUNT(*) AS total,
       SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS succeeded,
       SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS failed,
-      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status IN ('pending', 'queued', 'running') THEN 1 ELSE 0 END) AS pending,
       AVG(CASE WHEN status = 'done' THEN duration_ms END) AS average_ms
       FROM captures WHERE user_id = ? AND created_at >= ?`,
     )

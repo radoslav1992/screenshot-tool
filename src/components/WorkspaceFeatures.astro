@@ -1,5 +1,10 @@
 ---
-import { PLANS, PLAN_ORDER, watchLimit } from '../lib/plans';
+import { PLANS, PLAN_ORDER, batchLimit, watchLimit } from '../lib/plans';
+import { captureJobsAvailable } from '../lib/capture-jobs';
+
+// Background batches arrive with migration 0013; until then a batch is the
+// synchronous 25-screenshot queue, and the copy says so.
+const background = await captureJobsAvailable();
 
 const notes = [
   {
@@ -62,6 +67,14 @@ const notes = [
             <td>Included</td>
           ))}
         </tr>
+        {background && (
+          <tr>
+            <th scope="row">Screenshots per background batch</th>
+            {PLAN_ORDER.map((id) => (
+              <td>{batchLimit(id).toLocaleString()}</td>
+            ))}
+          </tr>
+        )}
         <tr>
           <th scope="row">Branded PDF reports</th>
           {PLAN_ORDER.map((id) => (
@@ -102,9 +115,13 @@ const notes = [
   </div>
   <div class="feature-foot">
     <p>
-      Workspace limits: 100 projects/account, 30 saved settings and 100 reports/project. Batch queues support 25
-      screenshots; desktop/mobile launch checks support 12 URLs. Weekly digests are opt-in and sent to each recipient’s
-      verified account email.
+      Workspace limits: 100 projects/account, 30 saved settings and 100 reports/project.
+      {
+        background
+          ? 'Background batches run on our servers and take up to the plan’s hourly capture limit in one go; desktop/mobile launch checks count two screenshots per URL.'
+          : 'Batch queues support 25 screenshots; desktop/mobile launch checks support 12 URLs.'
+      }
+      Weekly digests are opt-in and sent to each recipient’s verified account email.
     </p>
     <a class="rr-btn-classic ai-btn-outline" href="/sample-report">
       See an illustrative client report <span aria-hidden="true">↗</span>

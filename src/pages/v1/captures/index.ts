@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { apiErrorResponse, guardApiRequest, preflight } from '../../../lib/api-guard';
-import { listCaptures, toDTO } from '../../../lib/captures';
+import { listCaptures, toPublicDTO } from '../../../lib/captures';
 import { captureCursor, listLimit } from '../../../lib/capture-list';
 import { json } from '../../../lib/http';
 
@@ -11,6 +11,8 @@ export const OPTIONS: APIRoute = () => preflight();
 /**
  * GET /v1/captures?mode=&limit=&cursor= — most recent first. `next_cursor` is
  * null on the last page; a bare timestamp is still accepted as a cursor.
+ * Background captures still queued or running appear only with
+ * `include_pending=1`.
  */
 export const GET: APIRoute = async ({ request, url }) => {
   let headers: Record<string, string> = {};
@@ -25,6 +27,7 @@ export const GET: APIRoute = async ({ request, url }) => {
       limit,
       cursor: url.searchParams.get('cursor') ?? undefined,
       lookahead: true,
+      includePending: url.searchParams.get('include_pending') === '1',
     });
 
     const origin = new URL(request.url).origin;
@@ -35,7 +38,7 @@ export const GET: APIRoute = async ({ request, url }) => {
     return json(
       {
         object: 'list',
-        data: page.map((row) => toDTO(row, origin)),
+        data: page.map((row) => toPublicDTO(row, origin)),
         next_cursor: rows.length > limit && last ? captureCursor(last) : null,
       },
       { headers },

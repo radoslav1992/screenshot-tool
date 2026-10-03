@@ -98,6 +98,18 @@ export const MIGRATIONS: MigrationManifest[] = [
     indexes: ['apple_subscriptions_due'],
   },
   { name: '0012_watch_runs_user_index.sql', optional: true, indexes: ['idx_watch_runs_user'] },
+  {
+    name: '0013_capture_jobs.sql',
+    optional: true,
+    tables: ['capture_batches', 'capture_jobs'],
+    indexes: [
+      'idx_capture_batches_user',
+      'idx_capture_batches_completed',
+      'idx_capture_jobs_status',
+      'idx_capture_jobs_user',
+      'idx_capture_jobs_batch',
+    ],
+  },
   { name: '0014_pinned_baseline.sql', optional: true, columns: ['watches.baseline_pinned_at'] },
   {
     name: '0015_report_signoff_branding.sql',

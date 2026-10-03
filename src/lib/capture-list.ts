@@ -11,7 +11,18 @@ export interface CaptureListOptions {
   offset?: number;
   /** Fetch one row past the page, to learn whether another page follows. */
   lookahead?: boolean;
+  /** Include background captures that are still queued or running. */
+  includePending?: boolean;
 }
+
+/**
+ * Statuses a capture has only while its background job waits or runs. Lists
+ * leave them out unless asked: the iOS app shows any capture that is not done
+ * as a failure, and a batch of hundreds queued would fill its library with
+ * warnings. A synchronous render's `pending` is not one of them — it lasts
+ * only as long as the request that is waiting for it.
+ */
+export const BACKGROUND_STATUSES = ['queued', 'running'] as const;
 /** The page size a list request gets: 1–100, 30 when unsaid. */
 export function listLimit(limit: number | undefined): number {
   return Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit!), 1), 100) : 30;
@@ -32,6 +43,9 @@ export function captureListQuery(userId: string, options: CaptureListOptions = {
   const offset = Number.isFinite(options.offset) ? Math.min(Math.max(Math.trunc(options.offset!), 0), 10000) : 0;
   const clauses = ['captures.user_id = ?'];
   const binds: Array<string | number> = [userId];
+  if (!options.includePending) {
+    clauses.push(`captures.status NOT IN (${BACKGROUND_STATUSES.map((status) => `'${status}'`).join(', ')})`);
+  }
   if (options.collection === 'regular') {
     clauses.push("captures.source <> 'watch'", `NOT (${monitorMembership})`);
   } else if (options.collection === 'monitors') {

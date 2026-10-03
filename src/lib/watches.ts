@@ -1639,7 +1639,8 @@ export async function runDueWatches(origin: string, now = new Date(), options: S
     const lane = async () => {
       for (let listed = queue[next++]; listed; listed = queue[next++]) {
         if (Date.now() - started >= budget) {
-          result.backlog += queue.length - next + 1;
+          // This lane's watch, and every one no lane has taken yet.
+          result.backlog += 1 + Math.max(0, queue.length - next);
           next = queue.length;
           return;
         }

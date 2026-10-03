@@ -293,6 +293,8 @@ try {
     assert.equal(r.values.found, false, 'decoded once, as a browser does: &amp;lt; is "&lt;" on screen');
     r = await read({ kind: 'appeared', phrase: 'freeshipping' }, '<ul><li>Free</li><li>shipping</li></ul>');
     assert.equal(r.values.found, false, 'block elements break words apart');
+    r = await read({ kind: 'text' }, '<p title="a > b" data-x=\'c > d\'>Hello <a href="/x?a=1&amp;b=2">there</a></p><p>a < b</p>');
+    assert.equal(r.values.text, 'Hello there a < b', 'a > inside a quoted attribute does not end its tag, and a bare < is text');
     r = await read({ kind: 'appeared', phrase: 'Cookie' }, '<div class="banner">Cookie notice</div><p>Body</p>', { hide: ['.banner'] });
     assert.equal(r.values.found, false, "the monitor's hidden elements are left out, as the browser removes them");
     r = await read({ kind: 'appeared', phrase: 'Body' }, '<p class="banner">Cookie notice<p>Body</p></body>', { hide: ['.banner'] });
@@ -320,6 +322,8 @@ try {
     assert.equal(r.values.numbers, '19,99|25', 'the first match outside templates, numbers as price rules compare them');
     r = await read({ kind: 'element', selector: '#stock' }, '<div id="stock"> In  stock: <b>4</b> &amp; more</div>');
     assert.equal(r.values.text, 'In stock: 4 & more');
+    r = await read({ kind: 'price', selector: '.price' }, `<span class="price">€ 9</span>${'<span class="price">€ 1</span>'.repeat(5000)}<p>`);
+    assert.deepEqual([r.ok, r.values.numbers], [true, '9'], 'reading stops once the first match has ended');
     r = await read({ kind: 'element', selector: 'ul > li:nth-child(2)' }, '<ul><li>a</li><li>b</li></ul>');
     assert.equal(r.values.text, 'b', 'child combinators and :nth-child are supported');
     r = await read({ kind: 'element', selector: 'input[name=q]' }, '<input name="q" value="x"><p>after</p>');

@@ -193,19 +193,24 @@ export function priceNumbers(text: string): string {
  * between them and two paragraphs never run together into one word. Inline
  * elements (`<b>`, `<span>`) join, as they do on screen.
  */
-const BLOCKS = new Set([
+const BLOCKS = [
   'address', 'article', 'aside', 'blockquote', 'br', 'caption', 'dd', 'details', 'dialog', 'div', 'dl', 'dt',
   'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr',
   'li', 'main', 'nav', 'ol', 'option', 'p', 'pre', 'section', 'summary', 'table', 'tbody', 'td', 'tfoot', 'th',
   'thead', 'tr', 'ul',
-]);
+];
+
+/** A tag, its attributes quoted or not: `>` inside a quoted value does not end it. */
+const TAG_BODY = `(?:[^>"']|"[^"]*"|'[^']*')*>`;
+const BLOCK_TAG = new RegExp(`<\\/?(?:${BLOCKS.join('|')})(?=[\\s/>])${TAG_BODY}`, 'gi');
+const ANY_TAG = new RegExp(`<\\/?[a-z][a-z0-9-]*${TAG_BODY}|<![^>]*>`, 'gi');
 
 /**
  * Never visible text. Each of these ends where the tokenizer finds its end
  * tag (or, for a template, where the required one is), so a missing end tag
  * cannot hide the rest of the page.
  */
-const UNSEEN = new Set(['script', 'style', 'template', 'noscript', 'title']);
+const UNSEEN = 'script, style, template, noscript, title';
 
 /** Elements whose end tag may be left out, so HTMLRewriter cannot say where they end. */
 const OPTIONAL_END = new Set([
@@ -214,6 +219,13 @@ const OPTIONAL_END = new Set([
 ]);
 
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
+
+/** The text left in markup once HTMLRewriter has removed what is never seen: tags gone, blocks apart. */
+function flatten(html: string): string {
+  return normaliseText(
+    decodeEntities(html.replace(/<!--[\s\S]*?(?:-->|$)/g, ' ').replace(BLOCK_TAG, ' ').replace(ANY_TAG, '')),
+  );
+}
 
 /* -------------------------------------------------------------------------- */
 /* Reading                                                                     */
@@ -244,53 +256,81 @@ function resolve(href: string, base: string): string {
   }
 }
 
-/**
- * Reads what `rule` watches from one response. Unavailable whenever the
- * answer would not be about the page, or could not be read from its HTML.
+/*
+ * Every handler HTMLRewriter calls crosses into JavaScript, and on a large
+ * page a handler on every element or every text chunk costs far more than the
+ * parse itself. So each rule asks for as little as it can: text rules let
+ * HTMLRewriter remove what is never seen and flatten what is left; element and
+ * SEO rules handle only the elements they read. And since an element takes
+ * one end-tag handler — a second onEndTag replaces the first — no two of the
+ * handlers below ever register one on the same element.
  */
-export async function extractFast(rule: MonitorRule, page: RawPage, options: ExtractOptions = {}): Promise<FastRead> {
-  const problem = responseProblem(rule, page);
-  if (problem) return problem;
-  if (rule.kind === 'visual') return unavailable('unreadable', 'A visual monitor compares screenshots');
 
-  const Parser = options.Rewriter ?? HTMLRewriter;
-  const element = rule.kind === 'price' || rule.kind === 'element';
-  const reading = rule.kind === 'text' || rule.kind === 'appeared' || rule.kind === 'disappeared';
-  const seo = rule.kind === 'seo';
-  // A page cut short has an unread end: its text, its phrases and its h1s are not all here.
-  if (page.truncated && !element) return unavailable('too_large', 'The page is larger than the 3 MB a fast check reads');
-
-  /*
-   * An element takes one end-tag handler: a second onEndTag replaces the
-   * first. So the owner's selectors only mark the element they match, and one
-   * handler for every element, added last so it runs after them, keeps all the
-   * state and registers the one handler its end needs.
-   */
-  let rewriter = new Parser();
-  const marks = { hide: false, watch: false };
-  for (const selector of reading || seo ? options.hide ?? [] : []) {
+/** The visible text: what is never seen removed by HTMLRewriter, the rest flattened. */
+async function visibleText(Parser: Rewriter, html: string, hide: string[]): Promise<string | FastUnavailable> {
+  let rewriter = new Parser().on(UNSEEN, { element: (node) => void node.remove() });
+  for (const selector of hide) {
     try {
-      rewriter = rewriter.on(selector, { element: () => void (marks.hide = true) });
+      rewriter = rewriter.on(selector, {
+        element(node) {
+          // Where the end cannot be found, removing would swallow the rest of the page; the browser comparison decides instead.
+          if (!OPTIONAL_END.has(node.tagName.toLowerCase())) node.remove();
+        },
+      });
     } catch {
       return unavailable('hide_unsupported', `The hidden-element selector “${selector}” needs a full browser`);
     }
   }
-  if (element) {
-    try {
-      rewriter = rewriter.on(rule.selector, { element: () => void (marks.watch = true) });
-    } catch {
-      return unavailable('selector_unsupported', `The selector “${rule.selector}” needs a full browser`);
-    }
-  }
+  return flatten(await rewriter.transform(page(html)).text());
+}
 
-  // Depth inside elements whose text a visitor never sees, and inside templates, whose elements are not in the page.
-  let unseen = 0;
+/** The first element a selector matches outside templates, as querySelector finds it, and its text. */
+async function elementText(
+  Parser: Rewriter,
+  html: string,
+  selector: string,
+): Promise<{ found: boolean; closed: boolean; text: string } | FastUnavailable> {
   let template = 0;
-  const visible: string[] = [];
-  const space = () => visible.push(' ');
-  // The watched element: the first match, as querySelector finds it.
   const watched = { found: false, open: false, closed: false, text: [] as string[] };
-  // The SEO signals, read where page-facts-fn reads them in the browser.
+  // Once the first match has ended, the rest of the page has nothing to add: parsing stops there.
+  const stop = new Error('read');
+  let rewriter = new Parser().on('template', {
+    element(node) {
+      if (onEnd(node, () => template--)) template++;
+    },
+  });
+  try {
+    rewriter = rewriter.on(selector, {
+      element(node) {
+        // A template's own end tag is the template handler's.
+        if (watched.found || template || node.tagName.toLowerCase() === 'template') return;
+        watched.found = true;
+        const ended = onEnd(node, () => {
+          watched.open = false;
+          watched.closed = true;
+          throw stop;
+        });
+        if (ended) watched.open = true;
+        else watched.closed = true;
+      },
+      text(chunk) {
+        if (watched.open) watched.text.push(chunk.text);
+      },
+    });
+  } catch {
+    return unavailable('selector_unsupported', `The selector “${selector}” needs a full browser`);
+  }
+  try {
+    await rewriter.transform(page(html)).arrayBuffer();
+  } catch (error) {
+    if (!watched.closed) throw error;
+  }
+  // The first 2,000 characters, as the browser reads the element's textContent.
+  return { ...watched, text: normaliseText(decodeEntities(watched.text.join('')).slice(0, 2000)) };
+}
+
+/** The tags an SEO rule reads, where page-facts-fn reads them in the browser. */
+async function seoTags(Parser: Rewriter, html: string, hide: string[]) {
   const tags = {
     title: null as string[] | null,
     inTitle: false,
@@ -304,132 +344,147 @@ export async function extractFast(rule: MonitorRule, page: RawPage, options: Ext
     h1Count: 0,
     inH1: false,
   };
+  // Inside a template, elements are not in the page; inside a hidden element, an h1 is not shown.
+  let template = 0;
+  let unseen = 0;
   const attr = (node: Element, name: string) => decodeEntities(node.getAttribute(name) ?? '').trim();
-
-  rewriter = rewriter.on('*', {
+  let rewriter = new Parser().on('template', {
     element(node) {
-      const tag = node.tagName.toLowerCase();
-      const hidden = marks.hide && !OPTIONAL_END.has(tag);
-      const watching = marks.watch && !watched.found && !template;
-      marks.hide = marks.watch = false;
-      // What happens when this element ends, run on its end tag or, for a void element, straight away.
-      const closers: Array<() => void> = [];
-      const until = (close: () => void) => closers.push(close);
-
-      if (tag === 'template') {
-        template++;
-        until(() => template--);
-      }
-      // Where the end cannot be found, hiding would swallow the rest of the page; the browser comparison decides instead.
-      if ((reading || seo) && (UNSEEN.has(tag) || hidden)) {
-        unseen++;
-        until(() => unseen--);
-      }
-      if (reading && BLOCKS.has(tag)) {
-        space();
-        until(space);
-      }
-      if (watching) {
-        watched.found = watched.open = true;
-        until(() => {
-          watched.open = false;
-          watched.closed = true;
-        });
-      }
-      if (seo && !template) {
-        if (tag === 'title' && !tags.title && node.namespaceURI === HTML_NS) {
-          // The document's title is the first HTML one; an SVG's <title> names a drawing.
-          tags.title = [];
-          tags.inTitle = true;
-          until(() => (tags.inTitle = false));
-        } else if (tag === 'meta') {
-          const name = (node.getAttribute('name') ?? '').toLowerCase();
-          const property = node.getAttribute('property') ?? '';
-          if (name === 'description' && tags.description === null) tags.description = attr(node, 'content');
-          if ((name === 'robots' || name === 'googlebot') && attr(node, 'content')) tags.robots.push(attr(node, 'content'));
-          if (property.startsWith('og:') && property.length > 3 && attr(node, 'content') && !(property.slice(3) in tags.og)) {
-            tags.og[property.slice(3)] = attr(node, 'content');
-          }
-        } else if (tag === 'link') {
-          const rel = (node.getAttribute('rel') ?? '').toLowerCase();
-          if (rel === 'canonical' && tags.canonical === null) tags.canonical = attr(node, 'href');
-          if (rel.split(/\s+/).includes('alternate') && node.hasAttribute('hreflang') && tags.hreflang.length < 50) {
-            const lang = attr(node, 'hreflang').toLowerCase();
-            const href = attr(node, 'href');
-            if (lang && href) tags.hreflang.push({ lang, href });
-          }
-        } else if (tag === 'base' && tags.base === null && node.hasAttribute('href')) {
-          tags.base = attr(node, 'href');
-        } else if (tag === 'h1' && !unseen) {
-          tags.h1Count++;
-          if (tags.h1Count === 1) {
-            tags.inH1 = true;
-            until(() => (tags.inH1 = false));
-          }
-        }
-      }
-
-      if (closers.length && !onEnd(node, () => closers.forEach((close) => close()))) closers.forEach((close) => close());
+      if (onEnd(node, () => template--)) template++;
     },
   });
-
-  rewriter = rewriter.onDocument({
-    text(chunk) {
-      const text = chunk.text;
-      if (!text) return;
-      if (reading && !unseen) visible.push(text);
-      if (watched.open) watched.text.push(text);
-      if (tags.inTitle) tags.title!.push(text);
-      if (tags.inH1 && !unseen) tags.h1.push(text);
-    },
-  });
-
-  try {
-    await rewriter.transform(new Response(page.html, { headers: { 'content-type': 'text/html; charset=utf-8' } })).arrayBuffer();
-  } catch {
-    return unavailable('unreadable', 'The page’s HTML could not be read');
+  for (const selector of hide) {
+    try {
+      rewriter = rewriter.on(selector, {
+        element(node) {
+          const tag = node.tagName.toLowerCase();
+          // Templates and titles keep their own end-tag handlers; an implied end cannot be found.
+          if (template || tag === 'template' || tag === 'title' || OPTIONAL_END.has(tag)) return;
+          if (onEnd(node, () => unseen--)) unseen++;
+        },
+      });
+    } catch {
+      return unavailable('hide_unsupported', `The hidden-element selector “${selector}” needs a full browser`);
+    }
   }
+  rewriter = rewriter
+    .on('title', {
+      element(node) {
+        // The document's title is the first HTML one; an SVG's <title> names a drawing.
+        if (tags.title || template || node.namespaceURI !== HTML_NS) return;
+        tags.title = [];
+        tags.inTitle = onEnd(node, () => (tags.inTitle = false));
+      },
+      text(chunk) {
+        if (tags.inTitle) tags.title!.push(chunk.text);
+      },
+    })
+    .on('meta', {
+      element(node) {
+        if (template) return;
+        const name = (node.getAttribute('name') ?? '').toLowerCase();
+        const property = node.getAttribute('property') ?? '';
+        const content = attr(node, 'content');
+        if (name === 'description' && tags.description === null) tags.description = content;
+        if ((name === 'robots' || name === 'googlebot') && content) tags.robots.push(content);
+        if (property.startsWith('og:') && property.length > 3 && content && !(property.slice(3) in tags.og)) {
+          tags.og[property.slice(3)] = content;
+        }
+      },
+    })
+    .on('link', {
+      element(node) {
+        if (template) return;
+        const rel = (node.getAttribute('rel') ?? '').toLowerCase();
+        if (rel === 'canonical' && tags.canonical === null) tags.canonical = attr(node, 'href');
+        if (rel.split(/\s+/).includes('alternate') && node.hasAttribute('hreflang') && tags.hreflang.length < 50) {
+          const lang = attr(node, 'hreflang').toLowerCase();
+          const href = attr(node, 'href');
+          if (lang && href) tags.hreflang.push({ lang, href });
+        }
+      },
+    })
+    .on('base[href]', {
+      element(node) {
+        if (tags.base === null && !template) tags.base = attr(node, 'href');
+      },
+    })
+    .on('h1', {
+      element(node) {
+        // A hidden h1 was marked by the hide handlers above, which run first.
+        if (template || unseen) return;
+        tags.h1Count++;
+        if (tags.h1Count === 1) tags.inH1 = onEnd(node, () => (tags.inH1 = false));
+      },
+      text(chunk) {
+        if (tags.inH1 && !unseen) tags.h1.push(chunk.text);
+      },
+    });
+  await rewriter.transform(page(html)).arrayBuffer();
+  return tags;
+}
 
-  const watchedSignals = seo ? decodeSeoSignals(rule.selector) : [];
+/** The body as HTMLRewriter takes it. */
+function page(html: string): Response {
+  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
+
+/**
+ * Reads what `rule` watches from one response. Unavailable whenever the
+ * answer would not be about the page, or could not be read from its HTML.
+ */
+export async function extractFast(rule: MonitorRule, page: RawPage, options: ExtractOptions = {}): Promise<FastRead> {
+  const problem = responseProblem(rule, page);
+  if (problem) return problem;
+  if (rule.kind === 'visual') return unavailable('unreadable', 'A visual monitor compares screenshots');
+  const Parser = options.Rewriter ?? HTMLRewriter;
+  const element = rule.kind === 'price' || rule.kind === 'element';
+  // A page cut short has an unread end: its text, its phrases and its h1s are not all here.
+  if (page.truncated && !element) return unavailable('too_large', 'The page is larger than the 3 MB a fast check reads');
+
   let values: FastValues;
   let textLength = 0;
   let html: FastReading['html'] = null;
-
-  if (element) {
-    if (!watched.found) {
-      return unavailable('selector_missing', `“${rule.selector}” is not in the page’s HTML until JavaScript adds it`);
+  try {
+    if (element) {
+      const watched = await elementText(Parser, page.html, rule.selector);
+      if ('ok' in watched) return watched;
+      if (!watched.found) {
+        return unavailable('selector_missing', `“${rule.selector}” is not in the page’s HTML until JavaScript adds it`);
+      }
+      if (page.truncated && !watched.closed) return unavailable('too_large', 'The page is larger than the 3 MB a fast check reads');
+      values = rule.kind === 'price' ? { numbers: priceNumbers(watched.text) } : { text: watched.text };
+    } else if (rule.kind === 'seo') {
+      const tags = await seoTags(Parser, page.html, options.hide ?? []);
+      if ('ok' in tags) return tags;
+      const base = resolve(tags.base ?? '', page.url) || page.url;
+      const canonical = resolve(tags.canonical ?? '', base);
+      const metaRobots = tags.robots.join(', ').slice(0, 500);
+      values = seoValues(
+        {
+          title: normaliseText(decodeEntities((tags.title ?? []).join(''))),
+          description: tags.description ?? '',
+          canonical,
+          robots: metaRobots,
+          robots_header: headerOf(page.headers, 'x-robots-tag').slice(0, 500),
+          h1: normaliseText(decodeEntities(tags.h1.join(''))).slice(0, 500),
+          h1_count: tags.h1Count,
+          hreflang: tags.hreflang.map((entry) => ({ lang: entry.lang, href: resolve(entry.href, base) })).filter((entry) => entry.href),
+          og: { title: tags.og.title ?? '', description: tags.og.description ?? '', image: tags.og.image ?? '' },
+          status: page.status,
+        },
+        decodeSeoSignals(rule.selector),
+      );
+      html = { canonical, noindex: robotsState(metaRobots).noindex };
+    } else {
+      const text = await visibleText(Parser, page.html, options.hide ?? []);
+      if (typeof text !== 'string') return text;
+      textLength = text.length;
+      values =
+        rule.kind === 'text' ? { text } : { found: text.toLowerCase().includes(normaliseText(rule.phrase).toLowerCase()) };
     }
-    if (page.truncated && !watched.closed) return unavailable('too_large', 'The page is larger than the 3 MB a fast check reads');
-    // The first 2,000 characters, as the browser reads the element's textContent.
-    const text = normaliseText(decodeEntities(watched.text.join('')).slice(0, 2000));
-    values = rule.kind === 'price' ? { numbers: priceNumbers(text) } : { text };
-  } else if (reading) {
-    const text = normaliseText(decodeEntities(visible.join('')));
-    textLength = text.length;
-    values =
-      rule.kind === 'text'
-        ? { text }
-        : { found: text.toLowerCase().includes(normaliseText(rule.phrase).toLowerCase()) };
-  } else {
-    const base = resolve(tags.base ?? '', page.url) || page.url;
-    const canonical = resolve(tags.canonical ?? '', base);
-    const metaRobots = tags.robots.join(', ').slice(0, 500);
-    values = seoValues(
-      {
-        title: normaliseText(decodeEntities((tags.title ?? []).join(''))),
-        description: tags.description ?? '',
-        canonical,
-        robots: metaRobots,
-        robots_header: headerOf(page.headers, 'x-robots-tag').slice(0, 500),
-        h1: normaliseText(decodeEntities(tags.h1.join(''))).slice(0, 500),
-        h1_count: tags.h1Count,
-        hreflang: tags.hreflang.map((entry) => ({ lang: entry.lang, href: resolve(entry.href, base) })).filter((entry) => entry.href),
-        og: { title: tags.og.title ?? '', description: tags.og.description ?? '', image: tags.og.image ?? '' },
-        status: page.status,
-      },
-      watchedSignals,
-    );
-    html = { canonical, noindex: robotsState(metaRobots).noindex };
+  } catch {
+    return unavailable('unreadable', 'The page’s HTML could not be read');
   }
 
   return { ok: true, signature: await signatureOf(rule, values), values, textLength, html };

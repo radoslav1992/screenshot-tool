@@ -3,8 +3,12 @@ import { env } from 'cloudflare:workers';
 import AppShell from '../../../layouts/AppShell.astro';
 import ProjectForms from '../../../components/ProjectForms.astro';
 import ReviewReport from '../../../components/ReviewReport.astro';
+import BrandingForm from '../../../components/BrandingForm.astro';
 import { collaborationReady, projectAccess } from '../../../lib/collaboration';
 import { reportCaptures, type Report } from '../../../lib/projects';
+import { brandingReady, brandingRow, projectBranding } from '../../../lib/branding';
+import { canHideAttribution } from '../../../lib/branding-rules';
+import { SIGNOFF_LABELS, currentSignoff, projectSignoffStates, signoffsReady } from '../../../lib/signoff';
 import { canSendEmail } from '../../../lib/mailer';
 import '../../../styles/projects.css';
 const mailReady = canSendEmail();
@@ -24,6 +28,18 @@ const reports = (
 ).results;
 const selected = reports.find((r) => r.id === Astro.url.searchParams.get('report'));
 const captures = selected ? await reportCaptures(selected, project.user_id) : [];
+// Sign-off and branding read as absent until their migration is applied.
+const [signoffs, brandingOn] = await Promise.all([signoffsReady(), brandingReady()]);
+const editsBranding = role === 'editor' && brandingOn;
+const [signoffStates, signoff, branding, brandingSaved, owner] = await Promise.all([
+  signoffs ? projectSignoffStates(project.id) : null,
+  signoffs && selected ? currentSignoff(selected.id) : undefined,
+  selected ? projectBranding(project) : null,
+  editsBranding ? brandingRow(project.id) : null,
+  editsBranding
+    ? env.DB.prepare('SELECT plan FROM users WHERE id=?').bind(project.user_id).first<{ plan: string }>()
+    : null,
+]);
 const members =
   role === 'owner'
     ? (
@@ -69,11 +85,15 @@ Astro.response.headers.set('cache-control', 'private, no-store');
       <section class="project-panel">
         <h2>Shared with the team</h2>
         <div class="project-items">
-          {reports.map((r) => (
-            <a class="project-item" href={`?report=${r.id}`}>
-              {r.title} →
-            </a>
-          ))}
+          {reports.map((r) => {
+            const state = signoffStates ? (signoffStates.get(r.id) ?? 'awaiting') : null;
+            return (
+              <a class:list={['project-item', { 'project-item--report': state }]} href={`?report=${r.id}`}>
+                <span>{r.title} →</span>
+                {state && <span class:list={['signoff-tag', `signoff-tag--${state}`]}>[ {SIGNOFF_LABELS[state]} ]</span>}
+              </a>
+            );
+          })}
         </div>
         <p class="small muted">
           Project reports are visible to every member. Owner-only internal notes and account capture history remain
@@ -168,9 +188,17 @@ Astro.response.headers.set('cache-control', 'private, no-store');
         </section>
       )}
     </div>
+    {editsBranding && (
+      <BrandingForm
+        projectId={project.id}
+        brand={project.brand || project.name}
+        row={brandingSaved}
+        canHide={canHideAttribution(owner?.plan)}
+      />
+    )}
     {selected && (
       <>
-        <ReviewReport project={project} report={selected} captures={captures} />
+        <ReviewReport project={project} report={selected} captures={captures} branding={branding} signoff={signoff} />
         <section class="project-panel">
           <h2>Team discussion</h2>
           <p class="small muted">Visible to project members. Excluded from public review links and PDF exports.</p>

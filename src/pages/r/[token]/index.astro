@@ -1,7 +1,10 @@
 ---
 import Base from '../../../layouts/Base.astro';
 import ReviewReport from '../../../components/ReviewReport.astro';
+import ReportSignoff from '../../../components/ReportSignoff.astro';
 import { sharedReport, reportCaptures } from '../../../lib/projects';
+import { projectBranding } from '../../../lib/branding';
+import { currentSignoff, signoffsReady } from '../../../lib/signoff';
 import '../../../styles/projects.css';
 let data;
 try {
@@ -13,19 +16,53 @@ try {
   });
 }
 const { project, report, expiresAt } = data;
-const captures = await reportCaptures(report, project.user_id);
+/** Branding and sign-off are extras: if either cannot be read, the report still opens as it always has. */
+const optional = <T,>(work: Promise<T>, what: string) =>
+  work.catch((error) => {
+    console.error(`[shared-report] ${what} unavailable`, error);
+    return undefined;
+  });
+const [captures, branding, signoff] = await Promise.all([
+  reportCaptures(report, project.user_id),
+  optional(projectBranding(project), 'branding'),
+  optional(
+    signoffsReady().then((ready) => (ready ? currentSignoff(report.id) : undefined)),
+    'sign-off',
+  ),
+]);
+const whiteLabel = !!branding && !branding.attribution;
 Astro.response.headers.set('cache-control', 'private, no-store');
-Astro.response.headers.set('referrer-policy', 'no-referrer');
+// With the sign-off form, same-origin rather than no-referrer: under no-referrer a
+// form post sends `Origin: null`, which the route's origin check must refuse.
+// Nothing on the page loads from or links to another site either way.
+Astro.response.headers.set('referrer-policy', signoff ? 'same-origin' : 'no-referrer');
 Astro.response.headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
 ---
 
-<Base title="Shared website review" description="A private, time-limited website review.">
+<Base
+  title={whiteLabel ? (project.brand ? `${project.brand} · Website review` : 'Website review') : 'Shared website review'}
+  plainTitle={whiteLabel}
+  description="A private, time-limited website review."
+>
   <main class="wrap shared-report">
     <p class="shared-report__notice">
       <strong>Shared review</strong> · Anyone with this link can view until {expiresAt.slice(0, 16)} UTC, unless revoked
       earlier.
     </p>
-    <ReviewReport project={project} report={report} captures={captures} token={Astro.params.token} />
+    <ReviewReport
+      project={project}
+      report={report}
+      captures={captures}
+      token={Astro.params.token}
+      branding={branding}
+      signoff={signoff}
+    >
+      {
+        signoff && (
+          <ReportSignoff token={Astro.params.token!} signoff={signoff} status={Astro.url.searchParams.get('signoff')} />
+        )
+      }
+    </ReviewReport>
   </main>
 </Base>
 <style>

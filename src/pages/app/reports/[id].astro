@@ -4,7 +4,10 @@ import AppShell from '../../../layouts/AppShell.astro';
 import ProjectForms from '../../../components/ProjectForms.astro';
 import ReviewReport from '../../../components/ReviewReport.astro';
 import { projectsReady, ownReport, reportCaptures } from '../../../lib/projects';
+import { projectBranding } from '../../../lib/branding';
+import { SIGNOFF_LABELS, currentSignoff, signoffHistory, signoffsReady } from '../../../lib/signoff';
 import { getPlan } from '../../../lib/plans';
+import { canSendEmail } from '../../../lib/mailer';
 import { formatDateTime } from '../../../lib/dates';
 import '../../../styles/projects.css';
 if (!(await projectsReady())) return Astro.redirect('/app/projects');
@@ -15,7 +18,8 @@ try {
   return new Response('Report not found', { status: 404 });
 }
 const { project, report } = data;
-const [captures, link, comments] = await Promise.all([
+const signoffs = await signoffsReady();
+const [captures, link, comments, branding, signoff, history] = await Promise.all([
   reportCaptures(report, project.user_id),
   env.DB.prepare('SELECT expires_at,access_count,last_access_at FROM report_links WHERE report_id=?')
     .bind(report.id)
@@ -23,6 +27,9 @@ const [captures, link, comments] = await Promise.all([
   env.DB.prepare('SELECT body,created_at FROM report_comments WHERE report_id=? ORDER BY created_at')
     .bind(report.id)
     .all<{ body: string; created_at: string }>(),
+  projectBranding(project),
+  signoffs ? currentSignoff(report.id) : undefined,
+  signoffs ? signoffHistory(report.id) : [],
 ]);
 Astro.response.headers.set('cache-control', 'private, no-store');
 const fields = { project_id: project.id, report_id: report.id };
@@ -55,13 +62,13 @@ const views = link ?`${link.access_count.toLocaleString()} page view${link.acces
         PDF export: no screenshot quota used; up to 6 exports/hour. Images are scaled to fit the page.
       </span>
     </div>
-    <ReviewReport project={project} report={report} captures={captures} />
+    <ReviewReport project={project} report={report} captures={captures} branding={branding} signoff={signoff} />
     <div class="project-grid no-print">
       <section class="project-panel" aria-labelledby="link-heading">
         <h2 class="section-heading" id="link-heading"><span>[ 01 ]</span> Client review link</h2>
         <p class="small muted">
-          Anyone with the link can view this report and its images until expiration or revocation. Downloaded copies
-          cannot be recalled. Internal notes below stay private.
+          Anyone with the link can view this report and its images{signoff && ', and record a sign-off,'} until expiration
+          or revocation. Downloaded copies cannot be recalled. Internal notes below stay private.
         </p>
         <p class="link-state">
           {link ? (
@@ -149,6 +156,60 @@ const views = link ?`${link.access_count.toLocaleString()} page view${link.acces
           <p role="status"></p>
         </form>
       </section>
+      {signoff && (
+        <section class="project-panel" aria-labelledby="signoff-heading">
+          <h2 class="section-heading" id="signoff-heading"><span>[ 03 ]</span> Client sign-off</h2>
+          <p class="small muted">
+            Whoever has the review link can approve the report or request changes, with their name and a note. The
+            latest decision is the current one, and it stays with the report if you replace the link.
+            {canSendEmail() && ' You get an email for each decision, up to six an hour per report.'}
+          </p>
+          <p class="link-state">
+            <strong>[ {SIGNOFF_LABELS[signoff.state]} ]</strong>
+            {signoff.state !== 'awaiting' && (
+              <>
+                {' '}by {signoff.name} · <time datetime={signoff.at}>{formatDateTime(signoff.at)}</time>
+              </>
+            )}
+          </p>
+          {signoff.note && <p class="report-notes">{signoff.note}</p>}
+          {history.length > 0 && (
+            <details>
+              <summary>History · {history.length === 50 ? 'latest 50' : history.length}</summary>
+              <ol class="signoff-history">
+                {history.map((h) => (
+                  <li>
+                    <span>
+                      {h.decision === 'reset' ? '[ RESET ] Back to awaiting sign-off' : `[ ${SIGNOFF_LABELS[h.decision]} ] ${h.name}`}
+                    </span>
+                    {h.note && <p class="report-notes small">{h.note}</p>}
+                    <small class="muted">
+                      <time datetime={h.created_at}>{formatDateTime(h.created_at)}</time>
+                    </small>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
+          {signoff.state !== 'awaiting' && (
+            <form
+              data-project-form
+              data-endpoint={`/api/reports/${report.id}/signoff`}
+              data-pending="Resetting…"
+              data-confirm="Reset the sign-off to awaiting? The client sees the report as awaiting sign-off again; the history keeps this decision."
+            >
+              <input type="hidden" name="action" value="reset" />
+              <div class="btn-row">
+                <button class="btn btn--outline-ink" type="submit">
+                  Reset sign-off
+                </button>
+              </div>
+              <p role="status"></p>
+            </form>
+          )}
+          {!link && <p class="small muted">Create a review link to collect sign-off.</p>}
+        </section>
+      )}
       <section class="project-panel">
         <details>
           <summary>Edit report</summary>

@@ -2,7 +2,11 @@
 import { env } from 'cloudflare:workers';
 import AppShell from '../../../layouts/AppShell.astro';
 import ProjectForms from '../../../components/ProjectForms.astro';
+import BrandingForm from '../../../components/BrandingForm.astro';
 import { projectsReady, ownProject } from '../../../lib/projects';
+import { brandingReady, brandingRow } from '../../../lib/branding';
+import { canHideAttribution } from '../../../lib/branding-rules';
+import { SIGNOFF_LABELS, projectSignoffStates, signoffsReady } from '../../../lib/signoff';
 import { listCaptures, safeParseFiles, type CaptureRow } from '../../../lib/captures';
 import { displayUrl } from '../../../lib/capture-options';
 import { listWatches } from '../../../lib/watches';
@@ -16,7 +20,8 @@ try {
 } catch {
   return new Response('Project not found', { status: 404 });
 }
-const [attached, available, watches, monitors, presets, reports] = await Promise.all([
+const [branding, signoffs] = await Promise.all([brandingReady(), signoffsReady()]);
+const [attached, available, watches, monitors, presets, reports, signoffStates, brandingSaved] = await Promise.all([
   env.DB.prepare(
     'SELECT c.*,pc.review_status FROM captures c JOIN project_captures pc ON pc.capture_id=c.id WHERE pc.project_id=? AND c.user_id=? ORDER BY c.created_at DESC LIMIT 200',
   )
@@ -35,6 +40,8 @@ const [attached, available, watches, monitors, presets, reports] = await Promise
   env.DB.prepare('SELECT * FROM review_reports WHERE project_id=? ORDER BY created_at DESC')
     .bind(project.id)
     .all<{ id: string; title: string }>(),
+  signoffs ? projectSignoffStates(project.id) : null,
+  branding ? brandingRow(project.id) : null,
 ]);
 const eligible = attached.results.filter(
   (c) => c.status === 'done' && ['png', 'jpg'].includes(c.format) && c.mode !== 'series',
@@ -233,11 +240,15 @@ const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c
       <section class="project-panel" aria-labelledby="reports-heading">
         <h2 class="section-heading" id="reports-heading"><span>[ 04 ]</span> Review reports</h2>
         <div class="project-items">
-          {reports.results.map((r) => (
-            <a class="project-item" href={`/app/reports/${r.id}`}>
-              {r.title} →
-            </a>
-          ))}
+          {reports.results.map((r) => {
+            const state = signoffStates ? (signoffStates.get(r.id) ?? 'awaiting') : null;
+            return (
+              <a class:list={['project-item', { 'project-item--report': state }]} href={`/app/reports/${r.id}`}>
+                <span>{r.title} →</span>
+                {state && <span class:list={['signoff-tag', `signoff-tag--${state}`]}>[ {SIGNOFF_LABELS[state]} ]</span>}
+              </a>
+            );
+          })}
         </div>
         {!reports.results.length && <p class="small muted">Your first report starts with two captures.</p>}
       </section>
@@ -297,6 +308,16 @@ const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c
           ))}
         </div>
       </section>
+      {branding && (
+        <BrandingForm
+          projectId={project.id}
+          brand={project.brand || project.name}
+          row={brandingSaved}
+          canHide={canHideAttribution(user.plan)}
+          number="07"
+          owner
+        />
+      )}
       <section class="project-panel">
         <details>
           <summary>Project settings</summary>

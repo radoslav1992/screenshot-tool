@@ -15,7 +15,7 @@
  * To change the engine: raise CAPTURE_ENGINE and describe the change in
  * ENGINE_CHANGES, naming the captures it reaches. Nothing else needs touching.
  */
-export const CAPTURE_ENGINE = 1;
+export const CAPTURE_ENGINE = 2;
 
 /** The engine every capture taken before the marker existed counts as. */
 const UNMARKED = 1;
@@ -28,7 +28,13 @@ interface EngineChange {
   reaches: (capture: { device: string }) => boolean;
 }
 
-export const ENGINE_CHANGES: EngineChange[] = [];
+export const ENGINE_CHANGES: EngineChange[] = [
+  {
+    version: 2,
+    what: 'Mobile and tablet captures send a real Safari user agent, with touch.',
+    reaches: (capture) => capture.device === 'mobile' || capture.device === 'tablet',
+  },
+];
 
 /** The engine a stored capture was taken with. */
 export function captureEngine(capture: { files: string }): number {
@@ -44,8 +50,8 @@ export function captureEngine(capture: { files: string }): number {
 /**
  * Whether a monitor should save its new capture as the baseline instead of
  * comparing against this one: the baseline was taken by an older engine, and a
- * change made since then reaches it. One the change does not reach still
- * compares.
+ * change made since then reaches it. A desktop baseline from engine 1 still
+ * compares, because engine 2 changed nothing a desktop capture shows.
  *
  * The one place that decides it, so a baseline kept for another reason (a
  * pinned one, say) can be weighed against it in the same spot.

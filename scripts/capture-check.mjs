@@ -416,6 +416,7 @@ function fakePage({ redirectTo, subrequests = [], navigateTo, headers = {} } = {
     authenticated: null,
     on: (event, fn) => (handlers[event] ??= []).push(fn),
     setViewport: async (viewport) => page.viewports.push(viewport),
+    setUserAgent: async (userAgent) => (page.userAgent = userAgent),
     setRequestInterception: async (on) => (page.interception = on),
     setExtraHTTPHeaders: async (headers) => (page.extraHeaders = headers),
     authenticate: async (credentials) => (page.authenticated = credentials),
@@ -449,6 +450,8 @@ function fakePage({ redirectTo, subrequests = [], navigateTo, headers = {} } = {
       return request;
     },
     goto: async (url) => {
+      // What the server is told: the user agent in force when the document is requested.
+      page.userAgentAtLoad = page.userAgent ?? null;
       const first = page.request(url, { navigation: true });
       if (first.outcome !== 'continue') throw new Error('net::ERR_FAILED');
       if (redirectTo) {
@@ -613,6 +616,60 @@ try {
     await rejects(renderer.render(parse({ url: 'https://example.com/', block_ads: '0' })), statusOf(503, 'browser_unavailable'));
   });
 
+  await section('a phone or tablet capture loads as that device; desktop stays the browser it is', async () => {
+    setEnv({ BROWSER: {} });
+    const loaded = {};
+    for (const device of ['mobile', 'tablet', 'desktop', 'og-image']) {
+      const page = fakePage();
+      useBrowser(page);
+      await renderer.render(parse({ url: 'https://example.com/', device, block_ads: '0' }));
+      loaded[device] = { userAgent: page.userAgentAtLoad, viewport: page.viewports[0] };
+    }
+    assert.match(loaded.mobile.userAgent, /^Mozilla\/5\.0 \(iPhone; CPU iPhone OS \d+_\d+ like Mac OS X\) .*Version\/\d+\.\d+ Mobile\/\w+ Safari\/[\d.]+$/);
+    assert.match(loaded.tablet.userAgent, /^Mozilla\/5\.0 \(iPad; CPU OS \d+_\d+ like Mac OS X\) .*Version\/\d+\.\d+ Mobile\/\w+ Safari\/[\d.]+$/);
+    assert.doesNotMatch(loaded.mobile.userAgent + loaded.tablet.userAgent, /Headless/);
+    for (const device of ['mobile', 'tablet']) {
+      assert.deepEqual([loaded[device].viewport.isMobile, loaded[device].viewport.hasTouch], [true, true], device);
+    }
+    assert.deepEqual(
+      [loaded.mobile.viewport.width, loaded.mobile.viewport.height, loaded.mobile.viewport.deviceScaleFactor],
+      [390, 844, 3],
+      'the phone keeps its size',
+    );
+    assert.deepEqual(
+      [loaded.tablet.viewport.width, loaded.tablet.viewport.height, loaded.tablet.viewport.deviceScaleFactor],
+      [834, 1194, 2],
+      'the tablet keeps its size',
+    );
+    // Desktop is unchanged: the browser's own user agent, no touch, desktop viewport rules.
+    assert.equal(loaded.desktop.userAgent, null, 'desktop never overrides the user agent');
+    assert.deepEqual([loaded.desktop.viewport.isMobile, loaded.desktop.viewport.hasTouch], [false, false]);
+    assert.deepEqual([loaded.desktop.viewport.width, loaded.desktop.viewport.height], [1440, 900]);
+    assert.equal(loaded['og-image'].userAgent, null, 'a frame without its own user agent keeps the browser’s');
+    assert.deepEqual(options.browserIdentity('desktop'), { isMobile: false, hasTouch: false });
+    assert.deepEqual(options.browserIdentity('custom'), { isMobile: false, hasTouch: false });
+    assert.equal(options.browserIdentity('mobile').userAgent, options.DEVICES.mobile.userAgent);
+  });
+
+  await section('extra sizes keep the one page load, with each viewport’s own touch', async () => {
+    const page = fakePage();
+    useBrowser(page);
+    await renderer.render(parse({ url: 'https://example.com/', device: 'mobile', sizes: 'desktop' }), async () => {});
+    assert.match(page.userAgentAtLoad, /iPhone/, 'the page is loaded as the chosen device');
+    const desktop = page.viewports.find((viewport) => viewport.width === 1440);
+    assert.deepEqual([desktop.isMobile, desktop.hasTouch], [false, false]);
+  });
+
+  await section('a capture that cannot take on its device identity is not taken', async () => {
+    const page = fakePage();
+    page.setUserAgent = async () => {
+      throw new Error('Protocol error (Network.setUserAgentOverride): Target closed');
+    };
+    useBrowser(page);
+    await rejects(renderer.render(parse({ url: 'https://example.com/', device: 'mobile' })), statusOf(502, 'render_failed'));
+    assert.equal(page.requests.length, 0, 'nothing was requested as the wrong device');
+  });
+
   await section('SEO facts read the document’s headers, and only when a rule asks', async () => {
     const page = fakePage({ headers: { 'x-robots-tag': 'noindex', 'content-type': 'text/html' } });
     const asked = [];
@@ -639,6 +696,28 @@ try {
     assert.equal(result.facts.seo.robots_header, 'noindex');
     assert.equal(result.facts.seo.status, 200);
     assert.equal(result.facts.seo.og.image, '');
+  });
+
+  await section('REST sends the same device identity', async () => {
+    setEnv({ CF_ACCOUNT_ID: 'acct', CF_API_TOKEN: 'token' });
+    const bodies = [];
+    const counting = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    };
+    try {
+      await renderer.render(parse({ url: 'https://example.com/', device: 'mobile' }));
+      await renderer.render(parse({ url: 'https://example.com/', device: 'tablet', format: 'pdf' }));
+      await renderer.render(parse({ url: 'https://example.com/' }));
+    } finally {
+      globalThis.fetch = counting;
+    }
+    assert.equal(bodies[0].userAgent, options.DEVICES.mobile.userAgent);
+    assert.deepEqual([bodies[0].viewport.isMobile, bodies[0].viewport.hasTouch], [true, true]);
+    assert.equal(bodies[1].userAgent, options.DEVICES.tablet.userAgent, 'PDFs too');
+    assert.equal('userAgent' in bodies[2], false, 'desktop keeps the REST browser’s own');
+    assert.deepEqual([bodies[2].viewport.isMobile, bodies[2].viewport.hasTouch], [false, false]);
   });
 
   await section('a REST-only deployment refuses what it cannot do', async () => {

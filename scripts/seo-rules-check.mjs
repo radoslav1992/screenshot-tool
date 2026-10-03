@@ -1,13 +1,14 @@
 /**
- * SEO monitor rules end to end.
+ * SEO monitor rules end to end, and the two times a check records quietly
+ * instead of comparing.
  *
  * Three parts. The comparison (seo-signals.ts) is string-in/value-out and is
  * checked directly: normalisation, the order a detail reads in, and the signal
  * list a rule keeps in `selector`. The extraction runs inside the captured
  * page, so it is driven in local Chromium against a page served with real
  * response headers. And the check flow (watches.ts) runs against SQLite with
- * captures, mail, push and webhooks stubbed: a baseline taken before the SEO
- * rule records the signals rather than alerting, and the next check compares.
+ * captures, mail, push and webhooks stubbed, for a baseline taken before the
+ * SEO rule and one taken by an older capture engine — neither may alert.
  *
  *   node scripts/seo-rules-check.mjs
  */
@@ -410,6 +411,7 @@ fixture.env.DB = {
 };
 const state = Object.assign(fixture.state, {
   device: 'desktop',
+  engine: undefined,
   facts: null,
   changedPct: 0,
   changedPixels: 0,
@@ -419,11 +421,12 @@ const state = Object.assign(fixture.state, {
   pushes: [],
 });
 let captureCount = 0;
-/** A stored capture as runCapture leaves it. */
+/** A stored capture as runCapture leaves it; `engine` undefined is one from before the marker. */
 const storeCapture = (over = {}) => {
-  const { device, facts } = { device: state.device, facts: state.facts, ...over };
+  // Spread rather than defaults: `engine: undefined` has to mean unmarked, not "as before".
+  const { device, engine, facts } = { device: state.device, engine: state.engine, facts: state.facts, ...over };
   const id = `cap-${++captureCount}`;
-  const files = JSON.stringify([{ key: `k/${id}`, name: 'capture.png', bytes: 1, width: 390, height: 844 }]);
+  const files = JSON.stringify([{ key: `k/${id}`, name: 'capture.png', bytes: 1, width: 390, height: 844, ...(engine ? { engine } : {}) }]);
   db.prepare(
     `INSERT INTO captures (id,user_id,url,host,device,width,height,mode,format,status,share_token,files,created_at,facts)
      VALUES (?,'owner','https://shop.test/','shop.test',?,390,844,'fullpage','png','done','t',?,?,?)`,
@@ -488,7 +491,7 @@ const quiet = () => ({ emails: state.emails.length, webhooks: state.webhooks.len
 
 try {
   await section('an SEO monitor records first, then alerts on what changed', async () => {
-    Object.assign(state, { device: 'desktop', facts: { text: 'Shoes' } });
+    Object.assign(state, { device: 'desktop', engine: engineModule.CAPTURE_ENGINE, facts: { text: 'Shoes' } });
     const watch = await create('desktop', { kind: 'seo', phrase: '', selector: 'title,robots,status', region: '' });
     await check(watch.id);
     assert.equal(state.lastOptions.monitorSeo, true, 'the capture is asked for SEO signals');
@@ -523,20 +526,72 @@ try {
     assert.equal((await watches.getWatch(watch.id)).baseline_capture_id, run.capture_id);
   });
 
-  await section('a baseline is refreshed only for an engine change that reaches it', async () => {
-    const { shouldRefreshBaseline, captureEngine, ENGINE_CHANGES, CAPTURE_ENGINE } = engineModule;
+  await section('a baseline from an older capture engine is refreshed without an alert', async () => {
+    const watch = await create('mobile');
+    // Taken before the engine marker existed, with the HeadlessChrome identity.
+    const old = storeCapture({ device: 'mobile', engine: undefined, facts: { text: 'Shoes' } });
+    db.prepare('UPDATE watches SET baseline_capture_id = ? WHERE id = ?').run(old.id, watch.id);
+    Object.assign(state, { device: 'mobile', engine: engineModule.CAPTURE_ENGINE, changedPct: 60, changedPixels: 9000 });
+    const before = quiet();
+    let outcome = await check(watch.id);
+    assert.deepEqual([outcome.status, outcome.changed, outcome.detail], ['done', false, 'Baseline refreshed after a capture engine update']);
+    assert.equal(state.lastOptions.monitorSeo, false, 'a visual monitor asks for no SEO signals');
+    assert.deepEqual(quiet(), before, 'no email, webhook or push');
+    let run = lastRun(watch.id);
+    assert.equal(run.changed, 0);
+    assert.equal(run.baseline_capture_id, null, 'nothing was compared');
+    assert.equal(run.change_pct, null);
+    assert.equal(run.delivery.email, 'not_needed');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM alert_retries WHERE run_id = ?').get(run.id).n, 0);
+    const refreshed = await watches.getWatch(watch.id);
+    assert.equal(refreshed.baseline_capture_id, run.capture_id, 'the new capture is the baseline');
+    assert.equal(refreshed.last_error, null);
+    assert.equal(refreshed.consecutive_errors, 0);
+
+    // Once: the next check compares, and a real change alerts.
+    outcome = await check(watch.id);
+    assert.equal(outcome.changed, true);
+    assert.equal(state.emails.length, before.emails + 1);
+    run = lastRun(watch.id);
+    assert.equal(run.baseline_capture_id, refreshed.baseline_capture_id);
+  });
+
+  await section('an engine change refreshes only the baselines it reaches', async () => {
+    // Engine 2 changed the handheld identities; a desktop baseline from engine 1 still compares.
+    const desktop = await create('desktop');
+    const old = storeCapture({ device: 'desktop', engine: undefined });
+    db.prepare('UPDATE watches SET baseline_capture_id = ? WHERE id = ?').run(old.id, desktop.id);
+    Object.assign(state, { device: 'desktop', changedPct: 60, changedPixels: 9000 });
+    const outcome = await check(desktop.id);
+    assert.equal(outcome.changed, true, 'a desktop page that changed still alerts');
+    assert.equal(lastRun(desktop.id).baseline_capture_id, old.id);
+
+    const { shouldRefreshBaseline, ENGINE_CHANGES, CAPTURE_ENGINE } = engineModule;
     const file = (engine) => JSON.stringify([{ key: 'k', name: 'capture.png', ...(engine ? { engine } : {}) }]);
-    assert.equal(captureEngine({ files: file() }), 1, 'a file from before the marker is engine 1');
-    assert.equal(captureEngine({ files: 'not json' }), 1);
-    assert.equal(shouldRefreshBaseline({ files: file(), device: 'mobile' }), false, 'no change recorded, nothing refreshed');
-    ENGINE_CHANGES.push({ version: CAPTURE_ENGINE + 1, what: 'fixture', reaches: (capture) => capture.device === 'mobile' });
+    assert.equal(shouldRefreshBaseline({ files: file(), device: 'tablet' }), true);
+    assert.equal(shouldRefreshBaseline({ files: file(), device: 'mobile' }), true);
+    assert.equal(shouldRefreshBaseline({ files: file(), device: 'desktop' }), false);
+    assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE), device: 'mobile' }), false);
+    assert.equal(shouldRefreshBaseline({ files: 'not json', device: 'mobile' }), true, 'an unreadable manifest counts as unmarked');
+    // A later change only has to say what it reaches.
+    ENGINE_CHANGES.push({ version: CAPTURE_ENGINE + 1, what: 'fixture', reaches: () => true });
     try {
-      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE), device: 'mobile' }), true);
-      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE), device: 'desktop' }), false, 'a change reaches only what it says');
-      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE + 1), device: 'mobile' }), false);
+      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE), device: 'desktop' }), true);
+      assert.equal(shouldRefreshBaseline({ files: file(CAPTURE_ENGINE + 1), device: 'desktop' }), false);
     } finally {
       ENGINE_CHANGES.pop();
     }
+  });
+
+  await section('an SEO monitor on an old mobile baseline refreshes before it compares', async () => {
+    const watch = await create('mobile', { kind: 'seo', phrase: '', selector: '', region: '' });
+    const old = storeCapture({ device: 'mobile', engine: undefined, facts: { text: 'Shoes', seo: signals() } });
+    db.prepare('UPDATE watches SET baseline_capture_id = ? WHERE id = ?').run(old.id, watch.id);
+    Object.assign(state, { device: 'mobile', engine: engineModule.CAPTURE_ENGINE, facts: { text: 'Shoes', seo: signals({ title: 'Mobile title' }) } });
+    const before = quiet();
+    assert.equal((await check(watch.id)).detail, 'Baseline refreshed after a capture engine update', 'the engine, not the page, changed the title');
+    assert.deepEqual(quiet(), before);
+    assert.equal((await check(watch.id)).detail, 'No watched SEO signal changed.');
   });
 } finally {
   globalThis.fetch = realFetch;

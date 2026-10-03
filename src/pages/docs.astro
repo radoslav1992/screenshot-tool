@@ -68,6 +68,29 @@ const batchExample = `curl ${origin}/v1/batch \\
 
 # → { "requested": 18, "captures": [ … ], "failed": [] }`;
 
+const watchChangedExample = `{
+  "event": "watch.changed",
+  "watch": { "id": "wat_8Yx2m1q0", "label": "Pricing", "url": "https://example.com/pricing" },
+  "change_pct": 4.71,
+  "before": "${origin}/f/cap_3kQ9…/capture.png?t=…",
+  "after": "${origin}/f/cap_7Lm2…/capture.png?t=…",
+  "highlight_url": "${origin}/f/cap_7Lm2…/changes.jpg?t=…",
+  "regions": [{ "x": 0.08, "y": 0.12, "w": 0.4, "h": 0.06 }],
+  "detail_url": "${origin}/app/watches/wat_8Yx2m1q0"
+}`;
+
+const pinExample = `# Session API, as the app and the iOS app use it
+POST /api/watches/wat_8Yx2m1q0
+{ "action": "pin", "capture_id": "cap_3kQ9…" }   # omit capture_id to pin the current baseline
+
+# → the monitor, with
+#   "baseline_pinned": true,
+#   "baseline_pinned_at": "2026-10-02T16:00:03.412Z",
+#   "baseline_capture_id": "cap_3kQ9…"
+
+POST /api/watches/wat_8Yx2m1q0
+{ "action": "unpin" }`;
+
 const factsExample = `{
   "page": {
     "final_url": "https://stripe.com/pricing",
@@ -329,6 +352,23 @@ const { list: sections, byId: s } = docSections(toc);
           before and after file URLs and the percentage that moved. Watches are set up in the
           <a href="/app/watches">app</a>; they are not on the public API yet.
         </p>
+        <p>
+          A visual check also says <em>where</em> the page changed: up to eight boxes in
+          {' '}<span class="mono">regions</span>, as fractions (0–1) of the after image so they fit any size it is
+          shown at, and — for a check that alerts — <span class="mono">highlight_url</span>, a copy of the after image
+          with those areas outlined. Areas you ignore or hide never produce a box, and a page that grew or shrank
+          gets one for the area that came or went. Both arrive with the webhook and on every run in the monitor's
+          history; Slack, Teams, Google Chat and Discord messages link the highlighted image.
+        </p>
+        <CodeBlock tag="watch.changed" code={watchChangedExample} />
+        <p>
+          Each check is normally compared with the one before it. Pin a baseline instead and every check is compared
+          with that approved version until you unpin it; no check replaces it. A check alerts when the page first
+          differs from the pinned version, and again only when it changes from the version you were last alerted
+          about, so one change is one alert rather than one per check. Checks that still show the same difference
+          are recorded without a new alert.
+        </p>
+        <CodeBlock tag="POST /api/watches/:id" code={pinExample} />
       </DocSection>
 
       <DocSection {...s['endpoints']}>

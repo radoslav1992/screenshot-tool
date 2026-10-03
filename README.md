@@ -315,7 +315,8 @@ matter are the ones protecting the render pool and storage rather than the month
   Each run is an ordinary capture and spends one screenshot from the monthly quota, counted
   separately as `via_watch` so a customer can see what ran without them. The new capture is compared
   against the previous one and becomes the next baseline, so a watch reports "changed since last
-  check" rather than drift from some distant original. The retention sweep skips whatever a watch is
+  check" rather than drift from some distant original — unless the owner pins a baseline (see
+  "Changed areas and pinned baselines" below). The retention sweep skips whatever a watch is
   currently using as its baseline — otherwise a weekly watch on the 7-day Free window could never
   compare anything.
 
@@ -547,6 +548,42 @@ The AI summary integration remains optional and configuration-dependent; this re
 
 Validation: `npm run check`, `npm run workflows:check`, `npm run monitor:check`, `npm run library:check`, `npm run projects:check`, `npm run build`. Automated checks use SQLite and mocked external services; they do not send real alerts.
 
+
+### Changed areas and pinned baselines (0014)
+
+**Changed areas.** The page-side comparison (`lib/visual-diff-fn.ts`) marks changed pixels on a grid of
+tiles while it counts them, clusters nearby tiles into boxes, merges boxes that touch and caps them at
+eight. Boxes are fractions (0–1) of the after image. They come from the same per-pixel test as the
+percentage, so ignore regions and hidden selectors — painted identically into both captures — never
+produce one; the area a taller page added is a box, and a page that got shorter gets a band along its new
+bottom edge. When a check meets its threshold the same page also draws a highlighted copy of the after
+image (brand orange boxes with a thin dark edge, at most 1000 px wide and 3 megapixels, JPEG) and the
+Worker stores it at `captures/<user>/<capture>/changes.jpg`.
+
+- No migration: the boxes ride in the run's `esc-run-v1:` metadata (`decodeRunChanges`), and the
+  highlight is served by the capture's token URL, `/f/<capture>/changes.jpg?t=…`.
+- It is not in the capture's `files`, so `images` — what the iOS app downloads and shares — is unchanged.
+  `deleteCapture` and the retention sweep delete it with its capture; account deletion takes the prefix.
+- `GET /api/watches/:id` adds `regions` and `highlight_url` to every run. Alert emails say
+  "Changed areas: N" and link the highlight; the JSON webhook adds `highlight_url` and `regions`; Slack,
+  Teams, Google Chat and Discord messages link it. The monitor page, the library timeline and review
+  reports created from monitor runs outline the boxes over the after image, with a "Show changes" toggle.
+
+**Pinned baselines.** "Keep as baseline" on a monitor (or `POST /api/watches/:id` with
+`{"action":"pin"}`, optionally `capture_id` of one of its earlier checks) makes every later check compare
+against that capture until `{"action":"unpin"}`; no check replaces it. To keep one change from alerting
+on every check after it, a pinned check alerts when the page first differs from the pinned version, and
+again only when it also differs from the version last alerted about (a second comparison in the same
+browser page, or the rule's own facts for text rules). Checks that still show the same difference are
+recorded with `changed = 0`, their regions, and "No new change"; matching the pin again resets it.
+Monitors gain `baseline_pinned`, `baseline_pinned_at` and `baseline_capture_id`. A pinned capture is still
+the watch's baseline, so retention keeps it and deleting it answers `409 baseline_in_use`.
+
+Pinning needs migration `0014_pinned_baseline.sql`, one nullable column on `watches`. Until it is
+applied the column is probed and pinning stays hidden (`pin`/`unpin` answer `503 setup_required`), and
+checks run exactly as before. Apply it with `npm run db:migrate`, or paste `db/0014-upgrade.sql` into
+the D1 console. `npm run highlights:check` covers the clustering in Chromium and the check flow with and
+without the column.
 
 ### Accounts: password reset and confirmation emails
 

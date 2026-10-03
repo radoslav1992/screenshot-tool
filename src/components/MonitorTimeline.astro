@@ -36,10 +36,12 @@ const link = (n:number) => `/app/library?collection=monitors&watch=${encodeURICo
  return <article class="card card--pad stack gap-12">
  <div><strong>{runLabel({...run,repeat:changes.repeat})}</strong> · <time datetime={run.created_at}>{formatDateTime(run.created_at)}</time></div>
  <p class="small muted">{decoded.detail || (run.change_pct!==null?`${run.change_pct}% visually different`:'')}</p>
- <div class="comparison-pair">
+ {/* A fast check, a skip or a failure before the capture took no screenshot: there is no pair to show. */}
+ {run.capture_id && <div class="comparison-pair">
  <div><span class="eyebrow">Before{changes.pinned?' · pinned baseline':''}</span>{before?<a href={before} target="_blank" rel="noopener"><img src={before} loading="lazy" alt="Screenshot before this check" /></a>:<p>Baseline unavailable or expired.</p>}</div>
  <div><span class="eyebrow">After</span>{after?<a href={after} target="_blank" rel="noopener"><ChangeFrame src={after} alt="Screenshot after this check" regions={after?changes.regions:[]} maxHeight="240px" /></a>:<p>Screenshot unavailable or expired.</p>}</div>
- </div>
+ </div>}
+ {!run.capture_id && <p class="xs muted-2">No screenshot was taken for this check.</p>}
  {after && changes.regions.length>0 && <p class="small">{changedAreas(changes.regions)}{highlighted && <> · <a href={highlighted} target="_blank" rel="noopener">Open highlighted image</a></>}</p>}
  {run.changed===1 && <p class="small">Email: {deliveryLabel[decoded.delivery.email]} · Webhook: {deliveryLabel[decoded.delivery.webhook]}</p>}
  {before && after && run.status==='done' && <label><input type="checkbox" name="run" value={run.id} /> Include this comparison in report</label>}

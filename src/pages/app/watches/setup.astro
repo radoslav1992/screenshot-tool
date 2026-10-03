@@ -5,15 +5,20 @@ import AppShell from '../../../layouts/AppShell.astro';
 import MonitorBudget from '../../../components/MonitorBudget.astro';
 import { canSendEmail } from '../../../lib/mailer';
 import { getUsage } from '../../../lib/captures';
-import { listWatches } from '../../../lib/watches';
-import { FREQUENCIES, allowedFrequencies } from '../../../lib/plans';
+import { budgetSchedules, listWatches } from '../../../lib/watches';
+import { FREQUENCIES, RULE_ONLY_FREQUENCY, allowedFrequencies } from '../../../lib/plans';
 import { watchSettingsReady } from '../../../lib/watch-settings';
+import { fastChecksReady } from '../../../lib/fast-checks';
 import '../../../styles/projects.css';
 const emailReady = canSendEmail();
 const user = Astro.locals.user!;
-const ready = await watchSettingsReady();
+const [ready, smart] = await Promise.all([watchSettingsReady(), fastChecksReady()]);
 const [usage, watches] = await Promise.all([getUsage(user), listWatches(user.id)]);
-const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).includes(f.id));
+const schedules = await budgetSchedules(watches);
+// Every 15 minutes needs smart checks, and a rule-based monitor: the form enables it with the rule.
+const frequencies = FREQUENCIES.filter(
+  (f) => allowedFrequencies(user.plan).includes(f.id) && (f.id !== RULE_ONLY_FREQUENCY || smart),
+);
 ---
 
 <AppShell title="Set up a monitor" tab="watches">
@@ -125,13 +130,19 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
             Frequency
             <select class="input" name="frequency" id="frequency">
               {frequencies.map((f) => (
-                <option value={f.id} selected={f.id === 'daily'}>
-                  {f.label}
+                <option value={f.id} selected={f.id === 'daily'} data-rule-only={f.id === RULE_ONLY_FREQUENCY ? '' : undefined} disabled={f.id === RULE_ONLY_FREQUENCY}>
+                  {f.id === RULE_ONLY_FREQUENCY ? `${f.label} · text, price, element and SEO rules` : f.label}
                 </option>
               ))}
             </select>
           </label>
-          <MonitorBudget schedules={watches} budget={usage} allowed={frequencies.map((f) => f.id)} />
+          <MonitorBudget schedules={schedules} budget={usage} allowed={frequencies.map((f) => f.id)} smart={smart} />
+          {smart && (
+            <p class="small muted">
+              Text, price, element and SEO rules read the page first and take a screenshot only when something changed.
+              Visual changes take one on every check.
+            </p>
+          )}
           <label>
             Email alerts
             <select class="input" name="notify_email">
@@ -234,6 +245,20 @@ const frequencies = FREQUENCIES.filter((f) => allowedFrequencies(user.plan).incl
     };
     ruleKind?.addEventListener('change', syncRegionTool);
     syncRegionTool();
+    /** Every 15 minutes is for rules that read the page first; a visual monitor would screenshot every check. */
+    const frequency = form.querySelector('[name="frequency"]') as unknown as HTMLSelectElement;
+    const syncFrequency = () => {
+      const visual = !ruleKind || ruleKind.value === 'visual';
+      for (const option of Array.from(frequency.options).filter((entry) => entry.dataset.ruleOnly !== undefined)) {
+        option.disabled = visual;
+        if (visual && option.selected) {
+          frequency.value = 'hourly';
+          frequency.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+    };
+    ruleKind?.addEventListener('change', syncFrequency);
+    syncFrequency();
 
     const point = (event: PointerEvent) => {
       const rect = img.getBoundingClientRect();

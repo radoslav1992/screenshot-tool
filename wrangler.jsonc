@@ -8,9 +8,11 @@
   "compatibility_date": "2026-04-15",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Hourly monitor checks and bounded retention cleanup.
+  // Hourly monitor checks and bounded retention cleanup; every minute, the
+  // background capture queue (src/lib/capture-jobs.ts). At hh:00 both fire, as
+  // separate invocations — src/worker.ts tells them apart by `event.cron`.
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": ["0 * * * *", "* * * * *"]
   },
 
   "observability": {

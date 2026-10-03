@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { projectsReady } from './projects';
 import { collaborationReady } from './collaboration';
 import { watchSettingsReady } from './watch-settings';
+import { captureJobsReady } from './capture-jobs';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -89,6 +90,13 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
         ),
       ]
     : [];
+  // Jobs before batches: a job points at its batch.
+  const jobCleanup = (await captureJobsReady())
+    ? [
+        env.DB.prepare('DELETE FROM capture_jobs WHERE user_id=?').bind(userId),
+        env.DB.prepare('DELETE FROM capture_batches WHERE user_id=?').bind(userId),
+      ]
+    : [];
   const noiseCleanup = (await watchSettingsReady())
     ? [
         env.DB.prepare('DELETE FROM watch_settings WHERE watch_id IN(SELECT id FROM watches WHERE user_id=?)').bind(
@@ -100,6 +108,7 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
     ...collaborationCleanup,
     ...noiseCleanup,
     ...projectCleanup,
+    ...jobCleanup,
     env.DB.prepare('DELETE FROM watch_runs WHERE user_id=?').bind(userId),
     env.DB.prepare('DELETE FROM watches WHERE user_id=?').bind(userId),
     env.DB.prepare(`DELETE FROM captures WHERE user_id = ?`).bind(userId),

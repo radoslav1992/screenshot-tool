@@ -7,10 +7,12 @@ import { toHttpError } from '../../../lib/errors';
 import { redirectWithFlash } from '../../../lib/flash';
 import { safeNext } from '../../../lib/safe-next';
 import { confirmationEmailsEnabled, issueVerificationToken, sendVerificationEmail } from '../../../lib/verification';
+import { ATTRIBUTION_COOKIE, clearedAttributionCookie } from '../../../lib/attribution';
+import { recordSignup } from '../../../lib/growth';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ request, locals }) => {
+export const POST: APIRoute = async ({ request, locals, cookies }) => {
   const wantsJson = (request.headers.get('accept') ?? '').includes('application/json');
   const origin = new URL(request.url).origin;
   let next = '/app';
@@ -53,16 +55,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
       );
     }
 
+    // Where the account came from (lib/growth.ts), once migration 0017 exists.
+    // Like the email, never a reason for the signup itself to fail.
+    const attribution = cookies.get(ATTRIBUTION_COOKIE)?.value;
+    const recorded = await recordSignup(user, request, attribution).catch((error) => {
+      console.error('[signup] signup source not recorded', error);
+      return false;
+    });
+
     const { token, expiresAt } = await createSession(user.id, request.headers.get('user-agent') ?? '');
     const cookie = sessionCookie(token, expiresAt, isSecureRequest(request));
 
-    if (wantsJson) {
-      return json({ user: { id: user.id, email: user.email, name: user.name }, redirect: next }, {
-        status: 201,
-        headers: { 'set-cookie': cookie },
-      });
+    const response = wantsJson
+      ? json({ user: { id: user.id, email: user.email, name: user.name }, redirect: next }, {
+          status: 201,
+          headers: { 'set-cookie': cookie },
+        })
+      : new Response(null, { status: 303, headers: { location: next, 'set-cookie': cookie } });
+    // Saved with the account, so it is done with; another signup in this browser starts afresh.
+    if (recorded && attribution !== undefined) {
+      response.headers.append('set-cookie', clearedAttributionCookie(isSecureRequest(request)));
     }
-    return new Response(null, { status: 303, headers: { location: next, 'set-cookie': cookie } });
+    return response;
   } catch (error) {
     const httpError = toHttpError(error, 'signup', 'Could not create the account.');
     if (wantsJson) return httpError.toResponse();

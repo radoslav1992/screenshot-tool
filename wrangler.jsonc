@@ -98,6 +98,8 @@
   //                           tools under /tools (default 300; "0" turns the
   //                           browser tools off). A plain number, not a secret,
   //                           but set in the dashboard so a deploy keeps it.
+  //   OWNER_EMAILS          - comma-separated account emails that may open the
+  //                           growth dashboard at /app/growth; unset, nobody can open it.
   //
   // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
   // do not render and /api/billing/* answers 503.

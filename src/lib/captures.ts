@@ -9,6 +9,7 @@ import { render, type RenderedFile } from './renderer';
 import { safeParseFacts, type PageFacts } from './page-facts';
 import { CAPTURE_ENGINE } from './capture-engine';
 import { highlightFile } from './change-highlights';
+import { growthAvailable, rewardReferral } from './growth';
 
 /** Where a capture was asked for. Watch runs are nobody's click, so they count separately. */
 export type CaptureSource = 'app' | 'api' | 'watch';
@@ -186,12 +187,17 @@ export function captureErrorStatus(row: Pick<CaptureRow, 'error' | 'failure'>): 
 /* -------------------------------------------------------------------------- */
 
 export interface UsageSnapshot {
+  /** Screenshots taken from this month's allowance. Ones paid from the bonus are not in it. */
   used: number;
   viaApp: number;
   viaApi: number;
   viaWatch: number;
+  /** The plan's monthly allowance. */
   quota: number;
+  /** Screenshots that can still be taken: what is left of the allowance, plus the bonus. */
   remaining: number;
+  /** Bonus screenshots (lib/growth.ts): spent after the allowance, never expiring. 0 before migration 0017. */
+  bonus: number;
   period: string;
   daysLeft: number;
   renewsOn: string;
@@ -199,14 +205,19 @@ export interface UsageSnapshot {
 
 export async function getUsage(user: SessionUser): Promise<UsageSnapshot> {
   const period = currentPeriod();
+  const bonusReady = await growthAvailable();
   const row = await env.DB.prepare(
-    `SELECT used, via_app, via_api, via_watch FROM usage_counters WHERE user_id = ? AND period = ?`,
+    bonusReady
+      ? `SELECT u.used, u.via_app, u.via_api, u.via_watch, (SELECT screenshots FROM bonus_balances WHERE user_id = ?1) AS bonus
+         FROM (SELECT 1) LEFT JOIN usage_counters u ON u.user_id = ?1 AND u.period = ?2`
+      : `SELECT used, via_app, via_api, via_watch FROM usage_counters WHERE user_id = ?1 AND period = ?2`,
   )
     .bind(user.id, period)
-    .first<{ used: number; via_app: number; via_api: number; via_watch: number }>();
+    .first<{ used: number | null; via_app: number | null; via_api: number | null; via_watch: number | null; bonus?: number | null }>();
 
   const quota = user.plan === 'free' ? (user.freeQuota ?? getPlan('free').quota) : getPlan(user.plan).quota;
   const used = row?.used ?? 0;
+  const bonus = Math.max(0, row?.bonus ?? 0);
   const now = new Date();
   const renews = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const daysLeft = Math.max(0, Math.ceil((renews.getTime() - now.getTime()) / 86_400_000));
@@ -217,7 +228,8 @@ export async function getUsage(user: SessionUser): Promise<UsageSnapshot> {
     viaApi: row?.via_api ?? 0,
     viaWatch: row?.via_watch ?? 0,
     quota,
-    remaining: Math.max(0, quota - used),
+    remaining: Math.max(0, quota - used) + bonus,
+    bonus,
     period,
     daysLeft,
     renewsOn: renews.toISOString().slice(0, 10),
@@ -249,6 +261,9 @@ async function consumeQuota(userId: string, period: string, count: number, sourc
  * the same screenshots left and all spend them. This is one conditional UPDATE:
  * of two requests racing for the last screenshot, the second finds its WHERE no
  * longer true and changes nothing — which is how it knows it lost.
+ *
+ * What the allowance cannot cover comes out of the bonus balance, once
+ * migration 0017 exists (reserveWithBonus).
  */
 export async function reserveQuota(
   userId: string,
@@ -269,22 +284,104 @@ export async function reserveQuota(
        WHERE user_id = ?1 AND period = ?2 AND used + ?3 <= ?7`,
     ).bind(userId, period, count, ...sourceCounts(count, source), quota),
   ]);
-  return (update?.meta?.changes ?? 0) > 0;
+  if ((update?.meta?.changes ?? 0) > 0) return true;
+  return (await growthAvailable()) && reserveWithBonus(userId, period, count, quota, source);
 }
 
-/** Gives back screenshots that were reserved and not taken. */
+/** What is left of the allowance (?4), read from the counter as it stands. */
+const ALLOWANCE_LEFT = `MAX(0, ?4 - (SELECT c.used FROM usage_counters c WHERE c.user_id = ?1 AND c.period = ?2))`;
+/** The part of `count` (?3) the allowance cannot cover, which the bonus must. */
+const FROM_BONUS = `(?3 - MIN(?3, ${ALLOWANCE_LEFT}))`;
+
+/**
+ * Takes what is left of the allowance and the rest from the bonus, or nothing.
+ *
+ * Three rows change — the month's bonus draw, the balance and the counter —
+ * and each change depends on the others not having happened yet. So the first
+ * UPDATE decides, against the rows as they stand, and leaves this
+ * reservation's token on the month's draw; the other two act only where that
+ * token is. A batch is one transaction that nothing interleaves with, so the
+ * token is still this reservation's when they read it, and a reservation that
+ * loses changes none of the three.
+ */
+async function reserveWithBonus(
+  userId: string,
+  period: string,
+  count: number,
+  quota: number,
+  source: CaptureSource,
+): Promise<boolean> {
+  const token = randomToken(8);
+  const mine = `EXISTS (SELECT 1 FROM bonus_usage b WHERE b.user_id = ?1 AND b.period = ?2 AND b.token = ?5)`;
+  const args = [userId, period, count, quota, token, new Date().toISOString(), ...sourceCounts(count, source)];
+  const [, , claim] = await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO usage_counters (user_id, period) VALUES (?, ?)`).bind(userId, period),
+    // Only an account with a bonus gets a row to draw against.
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO bonus_usage (user_id, period)
+       SELECT ?1, ?2 FROM bonus_balances WHERE user_id = ?1 AND screenshots > 0`,
+    ).bind(userId, period),
+    env.DB.prepare(
+      `UPDATE bonus_usage SET used = used + ${FROM_BONUS}, token = ?5
+       WHERE user_id = ?1 AND period = ?2
+         AND ${FROM_BONUS} <= COALESCE((SELECT screenshots FROM bonus_balances WHERE user_id = ?1), 0)`,
+    ).bind(...args.slice(0, 5)),
+    env.DB.prepare(
+      `UPDATE bonus_balances SET screenshots = screenshots - ${FROM_BONUS}, updated_at = ?6
+       WHERE user_id = ?1 AND ${mine}`,
+    ).bind(...args.slice(0, 6)),
+    // Last, because both statements above read the counter as it was.
+    env.DB.prepare(
+      `UPDATE usage_counters SET
+         used = used + MIN(?3, MAX(0, ?4 - used)),
+         via_app = via_app + ?7,
+         via_api = via_api + ?8,
+         via_watch = via_watch + ?9
+       WHERE user_id = ?1 AND period = ?2 AND ${mine}`,
+    ).bind(...args),
+  ]);
+  return (claim?.meta?.changes ?? 0) > 0;
+}
+
+/**
+ * Gives back screenshots that were reserved and not taken.
+ *
+ * Bonus screenshots are spent last, so they are given back first: up to what
+ * the month drew from the bonus goes back to the balance, and only the rest to
+ * the allowance. When two reservations overlap that can return to the bonus
+ * one the allowance paid for — never the other way round, so a refund never
+ * costs anyone a screenshot that would have outlived the month.
+ */
 export async function refundQuota(userId: string, period: string, count: number, source: CaptureSource): Promise<void> {
   if (count <= 0) return;
-  await env.DB.prepare(
-    `UPDATE usage_counters SET
-       used = MAX(0, used - ?3),
-       via_app = MAX(0, via_app - ?4),
-       via_api = MAX(0, via_api - ?5),
-       via_watch = MAX(0, via_watch - ?6)
-     WHERE user_id = ?1 AND period = ?2`,
-  )
-    .bind(userId, period, count, ...sourceCounts(count, source))
-    .run();
+  const counters = (allowance: string) =>
+    env.DB.prepare(
+      `UPDATE usage_counters SET
+         used = MAX(0, used - ${allowance}),
+         via_app = MAX(0, via_app - ?4),
+         via_api = MAX(0, via_api - ?5),
+         via_watch = MAX(0, via_watch - ?6)
+       WHERE user_id = ?1 AND period = ?2`,
+    ).bind(userId, period, count, ...sourceCounts(count, source));
+  if (!(await growthAvailable())) {
+    await counters('?3').run();
+    return;
+  }
+  const drawn = `COALESCE((SELECT b.used FROM bonus_usage b WHERE b.user_id = ?1 AND b.period = ?2), 0)`;
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO bonus_balances (user_id, screenshots, updated_at)
+       SELECT ?1, MIN(?3, b.used), ?4 FROM bonus_usage b WHERE b.user_id = ?1 AND b.period = ?2 AND b.used > 0
+       ON CONFLICT(user_id) DO UPDATE SET screenshots = screenshots + excluded.screenshots, updated_at = excluded.updated_at`,
+    ).bind(userId, period, count, new Date().toISOString()),
+    counters(`MAX(0, ?3 - ${drawn})`),
+    // Last, because both statements above read the draw as it was.
+    env.DB.prepare(`UPDATE bonus_usage SET used = MAX(0, used - ?3) WHERE user_id = ?1 AND period = ?2 AND used > 0`).bind(
+      userId,
+      period,
+      count,
+    ),
+  ]);
 }
 
 function rowPeriod(row: Pick<CaptureRow, 'created_at'>): string {
@@ -597,6 +694,8 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
 
     // The rendering happened either way, so it is paid for either way.
     await settleQuota(row, files.length);
+    // A referred account's first capture may be what makes its referral count (lib/growth.ts).
+    if (update.meta?.changes !== 0) await rewardReferral(row.user_id);
 
     if (update.meta?.changes === 0) {
       // Deleted while it rendered — with its account, or by its owner. Nothing

@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware';
 import { SESSION_COOKIE, resolveSession } from './lib/auth';
+import { ATTRIBUTION_COOKIE, firstTouchCookie } from './lib/attribution';
 import { safeNext } from './lib/safe-next';
 
 /** Routes that require a signed-in user (prefix match). */
@@ -43,7 +44,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return withSecurityHeaders(context.redirect(landing, 302), context.url);
   }
 
-  return withSecurityHeaders(await next(), context.url);
+  const response = withSecurityHeaders(await next(), context.url);
+  // Where a signed-out visitor first came from, for signup (lib/attribution.ts).
+  // Appended after the page has set its own headers, so it adds a cookie and
+  // changes nothing else about the response.
+  const touch =
+    context.locals.user || response.status >= 400
+      ? null
+      : firstTouchCookie(context.request, context.url, context.cookies.get(ATTRIBUTION_COOKIE)?.value);
+  if (touch) response.headers.append('set-cookie', touch);
+  return response;
 });
 
 /**

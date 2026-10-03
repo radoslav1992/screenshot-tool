@@ -5,6 +5,7 @@ import { watchSettingsReady } from './watch-settings';
 import { accountBrandingCleanup } from './branding';
 import { signoffsReady } from './signoff';
 import { captureJobsReady } from './capture-jobs';
+import { growthCleanup } from './growth';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -115,7 +116,10 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
         ),
       ]
     : [];
+  // Signup source, referral code, bonus and referrals (lib/growth.ts).
+  const growthRows = await growthCleanup(userId);
   await env.DB.batch([
+    ...growthRows,
     ...collaborationCleanup,
     ...signoffCleanup,
     ...brandingCleanup,

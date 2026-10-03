@@ -96,6 +96,13 @@ declare namespace Cloudflare {
      */
     BILLING_ALERT_EMAIL?: string;
 
+    /**
+     * Who may open the growth dashboard (/app/growth): a comma-separated list of
+     * account emails, compared without regard to case. Optional; unset, the page
+     * is a 404 for everyone. Set it as a secret for the same reason as above.
+     */
+    OWNER_EMAILS?: string;
+
     /** Recurring price ids (price_…) per plan and interval. */
     STRIPE_PRICE_PLUS_MONTHLY?: string;
     STRIPE_PRICE_PLUS_YEARLY?: string;

@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { SESSION_COOKIE, endSessions } from '../../../lib/auth';
 import { HttpError, assertSameOrigin, json } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { redirectWithFlash } from '../../../lib/flash';
 
 export const prerender = false;
 
@@ -27,9 +28,6 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
   } catch (error) {
     const failure = toHttpError(error, 'auth.sign-out-others', 'Could not sign out your other devices.');
     if (wantsJson) return failure.toResponse();
-    return new Response(null, {
-      status: 303,
-      headers: { location: `/app/account?password_error=${encodeURIComponent(failure.message)}` },
-    });
+    return redirectWithFlash(request, '/app/account', failure.message);
   }
 };

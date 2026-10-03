@@ -5,6 +5,7 @@ import { hashPassword } from '../../lib/auth';
 import { automaticTaxEnabled, billingEnabled, priceIdFor, webhookConfigured } from '../../lib/billing';
 import { PAID_PLANS } from '../../lib/plans';
 import { mailTransport, sender, type MailTransport } from '../../lib/mailer';
+import { CORE_TABLES, migrationStatus, type MigrationStatus } from '../../lib/schema-manifest';
 
 export const prerender = false;
 
@@ -13,40 +14,49 @@ interface CheckResult {
   detail?: string;
 }
 
-const TABLES = [
-  'users',
-  'sessions',
-  'api_keys',
-  'captures',
-  'usage_counters',
-  'email_verifications',
-  'billing_events',
-  'watches',
-  'watch_runs',
-];
-
-async function checkDatabase(): Promise<CheckResult & { tables?: string[]; missing?: string[] }> {
-  if (!env.DB) return { ok: false, detail: 'No DB binding on this deployment.' };
+/**
+ * The core tables are what every route has needed from the start, so missing
+ * any of them is the same answer as before: the schema was never applied.
+ * After that, each later migration is checked by what it creates, because a
+ * deploy goes out before its migration is applied and the code then fails on
+ * a column that is not there yet.
+ */
+async function checkDatabase(): Promise<
+  CheckResult & { tables?: string[]; missing?: string[]; migrations: MigrationStatus[] }
+> {
+  if (!env.DB) return { ok: false, detail: 'No DB binding on this deployment.', migrations: [] };
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${TABLES.map(() => '?').join(',')})`,
-    )
-      .bind(...TABLES)
-      .all<{ name: string }>();
+    const migrations = await migrationStatus(env.DB);
+    const pending = migrations.filter((entry) => !entry.applied);
+    const absent = new Set(pending.flatMap((entry) => entry.missing));
+    const present = CORE_TABLES.filter((table) => !absent.has(table));
+    const missing = CORE_TABLES.filter((table) => absent.has(table));
 
-    const present = (results ?? []).map((row) => row.name);
-    const missing = TABLES.filter((table) => !present.includes(table));
-    return missing.length
-      ? {
-          ok: false,
-          detail:
-            'Schema not applied or out of date. Run `npm run db:migrate`, or paste db/apply-manually.sql (fresh database) or the matching db/000N-upgrade.sql into the D1 console.',
-          tables: present,
-          missing,
-        }
-      : { ok: true, tables: present };
+    if (missing.length) {
+      return {
+        ok: false,
+        detail:
+          'Schema not applied or out of date. Run `npm run db:migrate`, or paste db/apply-manually.sql (fresh database) or the matching db/000N-upgrade.sql into the D1 console.',
+        tables: present,
+        missing,
+        migrations,
+      };
+    }
+    if (pending.length) {
+      // Optional ones only switch a feature on, so on their own they are a
+      // note rather than a failed check: each deploy goes out before its
+      // migration is pasted, and that is not an outage.
+      const required = pending.some((entry) => !entry.optional);
+      return {
+        ok: !required,
+        detail: `${required ? 'Missing' : 'Not applied yet (optional; the features that need them stay hidden)'}: ${pending.map((entry) => `${entry.name} (${entry.missing.join(', ')})`).join('; ')}. Run \`npm run db:migrate\`, or paste ${pending.map((entry) => entry.upgrade).join(', then ')} into the D1 console.`,
+        tables: present,
+        migrations,
+      };
+    }
+    return { ok: true, tables: present, migrations };
   } catch (error) {
-    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+    return { ok: false, detail: error instanceof Error ? error.message : String(error), migrations: [] };
   }
 }
 
@@ -193,8 +203,8 @@ function checkBilling(): CheckResult & {
 
 /**
  * GET /api/health — reports whether each Cloudflare binding is wired up and
- * whether the D1 schema has been applied. Returns only booleans and setup
- * hints: no data, no credentials.
+ * whether the D1 schema has been applied, migration by migration. Returns only
+ * booleans, schema object names and setup hints: no data, no credentials.
  */
 export const GET: APIRoute = async () => {
   const [database, storage, kv, cryptoCheck] = await Promise.all([
@@ -208,8 +218,14 @@ export const GET: APIRoute = async () => {
   const mailer = checkMailer();
   const ok = database.ok && storage.ok && kv.ok && cryptoCheck.ok && renderer.ok;
 
+  const { migrations, ...databaseCheck } = database;
+
   return json(
-    { ok, checks: { database, storage, kv, crypto: cryptoCheck, renderer, billing, mailer } },
+    {
+      ok,
+      checks: { database: databaseCheck, storage, kv, crypto: cryptoCheck, renderer, billing, mailer },
+      migrations,
+    },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
   );
 };

@@ -2,7 +2,7 @@ import type { SessionUser } from './auth';
 import { createCaptureRow, getUsage, runCapture, toDTO, type CaptureDTO } from './captures';
 import { assertPublicCaptureUrl, parseCaptureOptions, plannedShots, type CaptureOptions } from './capture-options';
 import { HttpError, badRequest } from './http';
-import { getPlan } from './plans';
+import { MAX_BACKGROUND_BATCH, getPlan } from './plans';
 import { parseSitemap } from './sitemap';
 
 /**
@@ -98,7 +98,9 @@ async function fetchSitemap(raw: string): Promise<string> {
 }
 
 /**
- * Resolves a sitemap URL to a bounded list of page URLs.
+ * Resolves a sitemap URL to a bounded list of page URLs: at most `limit`, which
+ * a synchronous batch passes as MAX_BATCH and a background one as its plan's
+ * batch size.
  *
  * The sitemap address itself goes through the same validation a capture does,
  * so this cannot be used to make the Worker fetch a private address — and every
@@ -106,7 +108,7 @@ async function fetchSitemap(raw: string): Promise<string> {
  */
 export async function urlsFromSitemap(sitemapUrl: string, limit: number): Promise<string[]> {
   const first = parseSitemap(await fetchSitemap(sitemapUrl));
-  if (first.pages.length) return [...new Set(first.pages)].slice(0, Math.min(MAX_BATCH, limit));
+  if (first.pages.length) return [...new Set(first.pages)].slice(0, Math.min(MAX_BACKGROUND_BATCH, limit));
 
   const pages: string[] = [];
   for (const index of first.indexes.slice(0, 5)) {
@@ -117,7 +119,7 @@ export async function urlsFromSitemap(sitemapUrl: string, limit: number): Promis
       // One unreadable child sitemap should not lose the others.
     }
   }
-  return [...new Set(pages)].slice(0, Math.min(MAX_BATCH, limit));
+  return [...new Set(pages)].slice(0, Math.min(MAX_BACKGROUND_BATCH, limit));
 }
 
 export async function runBatch(

@@ -5,6 +5,7 @@ import { env } from 'cloudflare:workers';
 import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
 import { runDueWatches, retryAlerts } from './lib/watches';
 import { runProjectDigests } from './lib/digests';
+import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
 
 /**
  * Worker entrypoint.
@@ -14,60 +15,99 @@ import { runProjectDigests } from './lib/digests';
  * `main` here instead of at the adapter.
  */
 
+/** The minute trigger in wrangler.jsonc: background capture jobs, and nothing else. */
+const JOBS_CRON = '* * * * *';
 
 export default {
   fetch: astro.fetch,
 
-  /** Watches and bounded retention batches share the hourly trigger. */
+  /**
+   * Two triggers. On the hour both fire, as separate invocations with their own
+   * time limits: the minute one works the capture queue, and anything else —
+   * the hourly `0 * * * *`, or a manual run with no cron at all — is the sweep
+   * it always was.
+   */
   async scheduled(event: ScheduledController, _env: Env, ctx: ExecutionContext): Promise<void> {
-    const now = new Date(event.scheduledTime);
-
-    ctx.waitUntil(
-      failStrandedCaptures(now.getTime())
-        .then((failed) => {
-          if (failed) console.log(`[capture] marked ${failed} stranded capture(s) failed`);
-        })
-        .catch((error) => console.error('[capture] stranded sweep failed', error)),
-    );
-
-    ctx.waitUntil(
-      runDueWatches(siteOrigin(), now)
-        .then((result) => {
-          if (!result.due) return;
-          // backlog: due but left for a later tick; late_max: the most overdue start, in minutes.
-          console.log(
-            `[watch] due=${result.due} ran=${result.ran} changed=${result.changed} ` +
-              `errors=${result.errors} skipped=${result.skipped} backlog=${result.backlog} ` +
-              `late_max=${Math.round(result.maxLateMs / 60_000)}m`,
-          );
-        })
-        .catch((error) => {
-          console.error('[watch] sweep failed', error);
-        }),
-    );
-
-    ctx.waitUntil(refreshAppleSubscriptions().catch(() => console.error('[apple] refresh failed')));
-
-    ctx.waitUntil(drainPush().catch(() => console.error('[push] retry sweep failed')));
-
-    ctx.waitUntil(retryAlerts(siteOrigin()).catch(error => console.error('[alerts] retry sweep failed', error)));
-
-    ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
-
-    ctx.waitUntil(
-      sweepExpiredCaptures(now.getTime())
-        .then((result) => {
-          console.log(
-            `[retention] scanned=${result.scanned} deleted=${result.deleted} files=${result.filesDeleted} ` +
-              `bytes=${result.bytesFreed} tokens=${result.tokensPurged} failed=${result.failed} truncated=${result.truncated}`,
-          );
-        })
-        .catch((error) => {
-          console.error('[retention] sweep failed', error);
-        }),
-    );
+    if (event.cron === JOBS_CRON) {
+      ctx.waitUntil(runJobs(new Date(event.scheduledTime)));
+      return;
+    }
+    hourly(event, ctx);
   },
 } satisfies ExportedHandler<Env>;
+
+async function runJobs(now: Date): Promise<void> {
+  try {
+    const result = await runCaptureJobs(siteOrigin(), now);
+    if (!result.due && !result.recovered && !result.expired) return;
+    // backlog: still waiting when this tick stopped taking work; late_max: the most overdue start.
+    console.log(
+      `[jobs] due=${result.due} claimed=${result.claimed} done=${result.done} failed=${result.failed} ` +
+        `retried=${result.retried} cancelled=${result.cancelled} recovered=${result.recovered} ` +
+        `expired=${result.expired} backlog=${result.backlog} late_max=${Math.round(result.maxLateMs / 1000)}s`,
+    );
+  } catch (error) {
+    console.error('[jobs] tick failed', error);
+  }
+}
+
+/** Watches and bounded retention batches share the hourly trigger. */
+function hourly(event: ScheduledController, ctx: ExecutionContext): void {
+  const now = new Date(event.scheduledTime);
+
+  ctx.waitUntil(
+    failStrandedCaptures(now.getTime())
+      .then((failed) => {
+        if (failed) console.log(`[capture] marked ${failed} stranded capture(s) failed`);
+      })
+      .catch((error) => console.error('[capture] stranded sweep failed', error)),
+  );
+
+  ctx.waitUntil(
+    runDueWatches(siteOrigin(), now)
+      .then((result) => {
+        if (!result.due) return;
+        // backlog: due but left for a later tick; late_max: the most overdue start, in minutes.
+        console.log(
+          `[watch] due=${result.due} ran=${result.ran} changed=${result.changed} ` +
+            `errors=${result.errors} skipped=${result.skipped} backlog=${result.backlog} ` +
+            `late_max=${Math.round(result.maxLateMs / 60_000)}m`,
+        );
+      })
+      .catch((error) => {
+        console.error('[watch] sweep failed', error);
+      }),
+  );
+
+  ctx.waitUntil(refreshAppleSubscriptions().catch(() => console.error('[apple] refresh failed')));
+
+  ctx.waitUntil(drainPush().catch(() => console.error('[push] retry sweep failed')));
+
+  ctx.waitUntil(retryAlerts(siteOrigin()).catch(error => console.error('[alerts] retry sweep failed', error)));
+
+  ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
+
+  ctx.waitUntil(
+    sweepExpiredCaptures(now.getTime())
+      .then((result) => {
+        console.log(
+          `[retention] scanned=${result.scanned} deleted=${result.deleted} files=${result.filesDeleted} ` +
+            `bytes=${result.bytesFreed} tokens=${result.tokensPurged} failed=${result.failed} truncated=${result.truncated}`,
+        );
+      })
+      .catch((error) => {
+        console.error('[retention] sweep failed', error);
+      }),
+  );
+
+  ctx.waitUntil(
+    pruneCaptureJobs(now.getTime())
+      .then((result) => {
+        if (result.jobs || result.batches) console.log(`[jobs] pruned jobs=${result.jobs} batches=${result.batches}`);
+      })
+      .catch((error) => console.error('[jobs] prune failed', error)),
+  );
+}
 
 /**
  * A cron invocation has no request to take an origin from, and alert emails

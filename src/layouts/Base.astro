@@ -9,6 +9,8 @@ interface Props {
   description?: string;
   themeColor?: string;
   bodyClass?: string;
+  /** Use the title as given, without " · Easy Screen Capture" (white-labelled review links). */
+  plainTitle?: boolean;
 }
 
 const {
@@ -16,12 +18,13 @@ const {
   description = "Paste a URL, pick a device, and get pixel-perfect captures in seconds — in the app or through the API.",
   themeColor = "#F5F5F5",
   bodyClass = "",
+  plainTitle = false,
 } = Astro.props;
 
 const isWorkspace = Astro.url.pathname.startsWith("/app");
 const isAuth = ["/login", "/signup"].includes(Astro.url.pathname);
 const fullTitle =
-  title === "Easy Screen Capture" ? title : `${title} · Easy Screen Capture`;
+  plainTitle || title === "Easy Screen Capture" ? title : `${title} · Easy Screen Capture`;
 ---
 
 <!doctype html>

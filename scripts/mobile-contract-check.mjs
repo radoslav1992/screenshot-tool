@@ -158,6 +158,27 @@ if (r.status >= 200 && r.status < 300 && r.json?.status === 'error' && noBrowser
   check('capture failure is a JSON problem', isProblem(r.json) && notRedirect(r), `status ${r.status} ${r.text.slice(0, 120)}`);
 }
 
+// Background captures (the web app's `async=1`) must never reach the lists the app reads: it shows
+// anything not done as a failure. Without the queue's tables the capture just runs inline.
+r = await call('/api/captures', { method: 'POST', body: { url: 'https://example.com/queued', async: '1' } });
+if (r.status === 202) {
+  check('an async capture answers 202 with a queued Capture', capture(r.json) && r.json.status === 'queued', JSON.stringify(r.json).slice(0, 200));
+  const listed = await call('/api/captures?collection=regular&limit=30&offset=0');
+  check(
+    'the library leaves queued and running captures out',
+    listed.status === 200 && !listed.json?.data?.some((c) => c.id === r.json.id) &&
+      listed.json.data.every((c) => c.status !== 'queued' && c.status !== 'running'),
+    `status ${listed.status}`,
+  );
+  if (r.json?.id) await call(`/api/captures/${r.json.id}`, { method: 'DELETE' });
+} else if (r.status >= 200 && r.status < 300) {
+  console.log('skip  background capture (no queue here; it ran inline)');
+  check('an async capture without the queue still decodes as a Capture', capture(r.json), JSON.stringify(r.json).slice(0, 200));
+  if (r.json?.id) await call(`/api/captures/${r.json.id}`, { method: 'DELETE' });
+} else {
+  check('async capture failure is a JSON problem', isProblem(r.json) && notRedirect(r), `status ${r.status} ${r.text.slice(0, 120)}`);
+}
+
 // Verification resend: an acknowledgement or a problem, never a redirect.
 r = await call('/api/auth/resend-verification', { method: 'POST', body: {} });
 check('resend verification answers JSON', notRedirect(r) && r.json !== null, `status ${r.status} ${r.text.slice(0, 120)}`);

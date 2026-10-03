@@ -87,6 +87,7 @@ Open Billing, card & invoices and verify invoices, payment settings and cancella
 - Payment succeeded but account stayed Free: inspect failed webhook deliveries and Worker logs; fix the cause, then resend the event.
 - Plan switch opens the portal home: ensure live portal plan switching is enabled with the six prices.
 - Automatic tax error: finish Tax setup or leave STRIPE_AUTOMATIC_TAX off until configured.
+- "Product tax code is required for Managed Payments": give each plan product a tax code in Product catalog, or run STRIPE_TAX_CODE=txcd_10103001 npm run stripe:setup (SaaS, business use; txcd_10103000 is SaaS, personal use). Check Stripe's Managed Payments eligibility list first. npm run stripe:check reports any plan product without one.
 - Build succeeded but page stayed old: inspect the active deployment on the custom-domain Worker.
 
 ## References

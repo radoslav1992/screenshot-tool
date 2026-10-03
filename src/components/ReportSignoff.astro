@@ -1,0 +1,89 @@
+---
+/**
+ * The sign-off section of a shared report: the current decision for everyone
+ * with the link, then a plain form that posts and redirects back, so it works
+ * without JavaScript. The script only makes the note required when the client
+ * asks for changes, which the server checks either way.
+ */
+import { formatDateTime } from '../lib/dates';
+import {
+  SIGNOFF_LABELS,
+  SIGNOFF_NAME_MAX,
+  SIGNOFF_NOTE_MAX,
+  signoffStatus,
+  type SignoffView,
+} from '../lib/signoff';
+interface Props {
+  token: string;
+  signoff: SignoffView;
+  /** The `?signoff=` code the route redirected with; only known codes show anything. */
+  status?: string | null;
+}
+const { token, signoff, status } = Astro.props;
+const message = signoffStatus(status);
+const decided = signoff.state !== 'awaiting';
+---
+
+<section class="ai-report-signoff" id="signoff" aria-labelledby="signoff-heading">
+  <span>[ SIGN-OFF ]</span>
+  <div>
+    <h2 id="signoff-heading">Sign-off</h2>
+    <p class:list={['ai-signoff-state', `ai-signoff-state--${signoff.state}`]}>
+      <strong>[ {SIGNOFF_LABELS[signoff.state]} ]</strong>
+      {
+        decided && (
+          <span>
+            by {signoff.name} · <time datetime={signoff.at}>{formatDateTime(signoff.at)}</time>
+          </span>
+        )
+      }
+    </p>
+    {signoff.note && <p class="report-notes ai-signoff-note">{signoff.note}</p>}
+    {
+      message && (
+        <p class:list={['notice', message.ok ? 'notice--ok' : 'notice--error']} role={message.ok ? 'status' : 'alert'}>
+          {message.text}
+        </p>
+      )
+    }
+    <form class="ai-signoff-form no-print" method="post" action={`/r/${token}/signoff`} data-signoff-form>
+      <fieldset>
+        <legend>{decided ? 'Record a new decision' : 'Your decision'}</legend>
+        <label class="ai-signoff-choice">
+          <input type="radio" name="decision" value="approved" required />
+          Approve
+        </label>
+        <label class="ai-signoff-choice">
+          <input type="radio" name="decision" value="changes" />
+          Request changes
+        </label>
+      </fieldset>
+      <label>
+        Your name
+        <input class="input" name="name" required maxlength={SIGNOFF_NAME_MAX} autocomplete="name" />
+      </label>
+      <label>
+        <span>
+          <strong>Note</strong> · optional to approve, required to request changes
+        </span>
+        <textarea class="input" name="note" maxlength={SIGNOFF_NOTE_MAX} rows="4"></textarea>
+      </label>
+      <button class="rr-btn-classic" type="submit">
+        Submit decision <span aria-hidden="true">→</span>
+      </button>
+      <p class="ai-signoff-fine">
+        Your name, decision and note are shown to everyone with this link and to the report owner.
+        {decided && ' A new decision replaces the current one; the owner keeps the history.'}
+      </p>
+    </form>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>('form[data-signoff-form]').forEach((form) => {
+    const note = form.querySelector<HTMLTextAreaElement>('textarea[name="note"]')!;
+    form.addEventListener('change', () => {
+      note.required = form.querySelector<HTMLInputElement>('input[name="decision"]:checked')?.value === 'changes';
+    });
+  });
+</script>

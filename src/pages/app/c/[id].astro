@@ -51,9 +51,18 @@ const shareUrl = files[0] ? `${origin}${fileHref(files[0].name)}` : '';
     }
 
     {
-      capture.status === 'pending' && (
+      (capture.status === 'pending' || capture.status === 'running') && (
         <div class="notice notice--info" id="pending-notice" role="status">
           <span class="spinner" /> Rendering — this page refreshes when it is ready.
+        </div>
+      )
+    }
+
+    {
+      capture.status === 'queued' && (
+        <div class="notice notice--info" id="pending-notice" role="status">
+          <span class="spinner" /> Queued — it is captured in the background, usually within a few minutes. This page
+          refreshes when it is ready.
         </div>
       )
     }

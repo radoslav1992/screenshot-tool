@@ -46,7 +46,8 @@ There is no build-time UI framework and no runtime npm dependency beyond Astro a
 - **series** — viewport-sized frames from top to bottom; each frame counts against quota.
 
 Devices: `desktop` 1440×900 @2x, `tablet` 834×1194 @2x, `mobile` 390×844 @3x, or any custom
-`width`×`height` (paid plans). Output frames land on an exact pixel size without cropping:
+`width`×`height` (paid plans). Tablet and mobile load as Safari on an iPad and an iPhone (user agent,
+touch and mobile viewport together); desktop keeps the rendering browser's own Chrome user agent. Output frames land on an exact pixel size without cropping:
 `instagram-post` 1080×1350, `instagram-square` 1080×1080, `instagram-story` 1080×1920, `og-image`
 1200×630, `x-post` 1600×900 — named presets, so they are available on every plan. Formats: `png`,
 `jpg`, `pdf` (`pdf` not valid with `series`).
@@ -72,8 +73,9 @@ CI=1 npm run dev
 ```
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
-retention, push, Apple, commerce, capture engine, auth and billing) against SQLite and local Chromium; no
-real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
+SEO rules, retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1
+schema files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
 shape the app decodes.
@@ -104,18 +106,42 @@ npx wrangler kv namespace create RATE
    ```
 
    No wrangler CLI access? Paste `db/apply-manually.sql` into the D1 console (Cloudflare dashboard →
-   Storage & Databases → D1 → *screenify-data* → Console) and run it. It contains the same schema
-   plus the `d1_migrations` bookkeeping rows, so a later `npm run db:migrate` reports *No migrations
-   to apply* rather than trying to create the tables twice. It is idempotent — safe to re-run.
+   Storage & Databases → D1 → *screenify-data* → Console) and run it. It is for a **fresh, empty
+   database**: the schema every migration through `0012` adds up to, plus the `d1_migrations`
+   bookkeeping rows, so a later `npm run db:migrate` reports *No migrations to apply* rather than
+   trying to create the tables twice. It is idempotent — safe to re-run.
 
-   **Upgrading a database that already has an older schema?** Run the matching `db/000N-upgrade.sql`
-   files in order (`0002-upgrade.sql` through `0005-upgrade.sql`) — `apply-manually.sql` creates tables
-   but cannot add columns to existing ones.
+   **Upgrading a database that already has an older schema?** Not with `apply-manually.sql`: it
+   creates missing tables but cannot add columns to existing ones, and it would still record every
+   migration as applied. Paste the upgrade file for each migration the database is missing, in order:
+
+   | File | Migration |
+   | --- | --- |
+   | `db/0002-upgrade.sql` | email verification and retention |
+   | `db/0003-upgrade.sql` | Stripe billing |
+   | `db/0004-upgrade.sql` | watches |
+   | `db/0005-upgrade.sql` | page facts |
+   | `db/0006-upgrade.sql` | projects and review reports |
+   | `db/0007-upgrade.sql` | collaboration and digests |
+   | `db/0008-upgrade.sql` | monitor noise settings |
+   | `db/0009-upgrade.sql` | monitor rules and alert retries |
+   | `db/0010-upgrade.sql` | mobile push |
+   | `db/0011-upgrade.sql` | Apple subscriptions and the free quota |
+   | `db/0012-upgrade.sql` | watch-run index |
+
+   `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
+   Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
+   afterwards.
 
    The D1 console flattens pasted SQL onto one line, which makes `--` comments swallow everything
-   after them. The `db/000N-upgrade.sql` files are therefore comment-free and safe to paste as-is.
+   after them. `apply-manually.sql` and the upgrade files are therefore comment-free and safe to
+   paste as-is; `npm test` checks that, and that each one builds exactly what its migrations do.
    `ALTER TABLE … ADD COLUMN` is not idempotent in SQLite: if a re-run reports *duplicate column
-   name*, that column is already there — drop that line and run the rest.
+   name*, that column is already there — drop that line and run the rest. The exceptions are 0002
+   and 0011, which also update existing rows (0002 marks existing accounts as confirmed, 0011 gives
+   existing free accounts the grandfathered 200-capture quota): if their first `ALTER` reports a
+   duplicate column, that upgrade has already run, and running its `UPDATE` again would hand the
+   same to every account created since.
 
 2. Set `PUBLIC_SITE_URL` in `wrangler.jsonc` to your deployed origin, then:
 
@@ -125,18 +151,24 @@ npx wrangler kv namespace create RATE
 
 ### Checking a deployment
 
-`GET /api/health` reports whether each binding is wired up and whether the D1 schema exists. It
-returns booleans and setup hints only — no data, no credentials.
+`GET /api/health` reports whether each binding is wired up and which D1 migrations the database
+has. It returns booleans, schema object names and setup hints only — no data, no credentials.
 
 ```bash
 curl https://your-domain/api/health
 # {"ok":true,"checks":{"database":{"ok":true,…},"storage":{"ok":true},"kv":{"ok":true},
-#  "renderer":{"ok":true,"engine":"binding"}}}
+#  "renderer":{"ok":true,"engine":"binding"}},
+#  "migrations":[{"name":"0001_init.sql","applied":true},…]}
 ```
 
 A deployment whose schema was never applied answers `503` with `missing: ["users", …]`, and signup
-fails with `schema_missing` rather than a generic error. Server-side causes are logged with a
-context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
+fails with `schema_missing` rather than a generic error. Because production deploys before anyone
+applies the migration that came with it, every later migration is checked too, by the tables,
+columns and indexes it creates (listed in `src/lib/schema-manifest.ts`). One that is missing, or
+only partly applied, also answers `503`, with an entry such as
+`{"name":"0011_apple_lite.sql","applied":false,"missing":["apple_accounts","users.free_quota",…],"upgrade":"db/0011-upgrade.sql"}`
+and a `database.detail` naming the upgrade files to paste, in order. Server-side causes are logged
+with a context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
 
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and
 `CF_API_TOKEN` (a token with *Browser Rendering: Edit*) as secrets to use the REST fallback — it
@@ -171,6 +203,10 @@ curl https://your-domain/v1/capture \
 | `POST /v1/capture`          | Create a capture (`async=1` returns 202 + polls)  |
 | `POST /v1/compare`          | Capture two pages and measure the difference      |
 | `POST /v1/batch`            | Capture a list of URLs, or a whole sitemap        |
+| `POST /v1/batches`          | Queue up to 500 pages to capture in the background |
+| `GET /v1/batches`           | Recent background batches                         |
+| `GET /v1/batches/:id`       | A batch's progress, items and finished captures   |
+| `POST /v1/batches/:id`      | `action=cancel`: stop what has not started        |
 | `GET /v1/captures`          | List captures, newest first                       |
 | `GET /v1/captures/:id`      | Fetch one capture                                 |
 | `DELETE /v1/captures/:id`   | Delete a capture and its files                    |
@@ -273,7 +309,8 @@ matter are the ones protecting the render pool and storage rather than the month
   pages, sequentially — the session pool is the scarce resource and a parallel batch would starve everyone
   else's captures. Sitemap indexes are followed one level, no further; that way lies a crawler. The sitemap URL
   itself goes through the capture validator, and each URL it yields is validated again. The whole batch is
-  charged against the hourly burst limit at once, otherwise a batch is the way around it.
+  charged against the hourly burst limit at once, otherwise a batch is the way around it. Anything larger goes
+  to a background batch (below).
 
 - **Slack and Discord alerts.** A watch webhook pointed at `hooks.slack.com` or Discord gets a message shaped
   for that app instead of raw JSON — one sentence and two links. Everything else, Zapier and n8n included,
@@ -315,7 +352,8 @@ matter are the ones protecting the render pool and storage rather than the month
   Each run is an ordinary capture and spends one screenshot from the monthly quota, counted
   separately as `via_watch` so a customer can see what ran without them. The new capture is compared
   against the previous one and becomes the next baseline, so a watch reports "changed since last
-  check" rather than drift from some distant original. The retention sweep skips whatever a watch is
+  check" rather than drift from some distant original — unless the owner pins a baseline (see
+  "Changed areas and pinned baselines" below). The retention sweep skips whatever a watch is
   currently using as its baseline — otherwise a weekly watch on the 7-day Free window could never
   compare anything.
 
@@ -376,6 +414,18 @@ answers `503`, and the app behaves exactly as it did before billing existed.
    reports what exists rather than making duplicates. It prints the price ids formatted for the
    next step. Run it once per mode: Stripe's test and live worlds share nothing.
 
+   Give every plan product a **tax code**: Stripe Managed Payments rejects checkout for a product
+   without one (*Product tax code is required for Managed Payments*). With `STRIPE_TAX_CODE` set,
+   setup puts it on new products and updates existing ones whose code is missing or different:
+
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_… STRIPE_TAX_CODE=txcd_10103001 npm run stripe:setup
+   ```
+
+   `txcd_10103001` is SaaS for business use, `txcd_10103000` SaaS for personal use; check Stripe's
+   Managed Payments eligibility list before choosing. `npm run stripe:check` fails for any plan
+   product that still has none.
+
 2. Add a webhook endpoint pointing at `https://<your-domain>/api/billing/webhook`, subscribed to
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`
    and `customer.subscription.deleted`. Copy its signing secret.
@@ -394,6 +444,30 @@ answers `503`, and the app behaves exactly as it did before billing existed.
 
    A plan with no price id configured is still listed on `/pricing` but is not purchasable, so you
    can launch one tier at a time. `GET /api/health` reports which ones are live under `billing`.
+
+### When Stripe says no
+
+A failed checkout or portal visit sends the customer back to `/pricing` or `/app/account` with a
+short code (`?billing_error=checkout_unavailable`), and the page shows a fixed message for it from
+`src/lib/billing-errors.ts`. Unknown codes get one generic message; nothing from the URL is ever
+shown, so a crafted link cannot put words on the real pricing page. JSON callers keep
+`{error:{type,message}}`.
+
+When Stripe *rejects* the request (a 4xx — nearly always a dashboard setting, such as a product
+with no tax code), the customer is told checkout isn't available and the site owner has been told,
+and Stripe's own message goes to the log and by email to the operator: what Stripe said, the
+request path, and the likely fix when the cause is a known one. At most one email per Stripe error
+code per hour (throttled in the `RATE` KV, which fails open). The address is `BILLING_ALERT_EMAIL`,
+falling back to the contact address in `src/lib/company.ts`; it needs a working mailer (see
+*Sending mail*). Set it as a secret, since a deploy replaces plain-text variables with those in
+`wrangler.jsonc`:
+
+```bash
+npx wrangler secret put BILLING_ALERT_EMAIL
+```
+
+`GET /api/billing/diagnose`, for the signed-in account owner, still shows Stripe's own wording for
+a plan change that fails.
 
 ### Tax
 
@@ -548,6 +622,79 @@ The AI summary integration remains optional and configuration-dependent; this re
 Validation: `npm run check`, `npm run workflows:check`, `npm run monitor:check`, `npm run library:check`, `npm run projects:check`, `npm run build`. Automated checks use SQLite and mocked external services; they do not send real alerts.
 
 
+### SEO rules and real device identities (no migration)
+
+- **SEO signals rule.** A monitor can alert when what search engines read changes: the title, meta
+  description, canonical URL (resolved to absolute), robots `noindex`/`nofollow` from the robots and
+  googlebot meta tags and the `X-Robots-Tag` header, the first visible `h1` and the count of them, hreflang
+  alternates as a set, the Open Graph title/description/image, and the main document's HTTP status. All of
+  them by default, or the ones ticked on the rule; the choice is a comma list in `monitor_rules.selector`
+  (empty means all, including signals added later), so no column was added. The signals are read in the page
+  only for SEO monitors and stored on the capture as `facts.seo`, next to the existing page facts.
+- **What an alert says.** One line per change, joined by `; `: `HTTP status: 200 → 404; Robots: index →
+  noindex; Title: "Old" → "New"`. A new noindex or a 4xx/5xx status comes first. Whitespace is collapsed; a
+  canonical that differs only by a trailing slash, host case, a fragment or a protocol-relative form is the
+  same URL; the X-Robots-Tag only counts when both captures saw the response. The webhook gets
+  `rule: { kind: "seo", detail }`. Facts are redacted as before when `redact_pii` applies.
+- **The first check records.** A baseline from before the rule has no `facts.seo`, so that check stores them
+  and its history reads "SEO signals recorded; the next check compares them." — no alert. A baseline approved in
+  monitor setup already records them. Bulk import can create SEO monitors (all signals).
+- **Phones and tablets as Safari.** `mobile` sends an iPhone Safari user agent and `tablet` an iPad Safari
+  one (the iPad's "mobile website" form: a default iPad sends the Mac string, which a server cannot tell from
+  a desktop), with `isMobile` and `hasTouch` set together; the REST fallback sends the same `userAgent`.
+  Safari was chosen because overriding the user agent drops Chrome's client hints, which Safari never sends.
+  Desktop keeps the browser's own `HeadlessChrome` string: replacing it would drop those hints too and make
+  the identity less consistent, and Browser Rendering's own headers identify every request regardless. With
+  `sizes`, the page loads once as `device`.
+- **Capture engine marker.** Every stored file records `engine` (`CAPTURE_ENGINE` in
+  `src/lib/capture-engine.ts`, now 2) in the capture's `files` JSON; the API's file list is unchanged. A
+  monitor whose baseline is from an older engine that a later change reaches (engine 2 reaches tablet and
+  mobile) saves the new capture as its baseline without comparing: the run has `changed: 0`, no
+  `baseline_capture_id`, the detail "Baseline refreshed after a capture engine update", and no email, push or
+  webhook. Desktop monitors keep comparing. A future engine change adds an entry to `ENGINE_CHANGES`.
+
+`npm run seo:check` covers the comparison, signal selection, extraction in local Chromium, first-check
+recording and the engine refresh; `npm run capture:check` covers the device identities.
+
+### Changed areas and pinned baselines (0014)
+
+**Changed areas.** The page-side comparison (`lib/visual-diff-fn.ts`) marks changed pixels on a grid of
+tiles while it counts them, clusters nearby tiles into boxes, merges boxes that touch and caps them at
+eight. Boxes are fractions (0–1) of the after image. They come from the same per-pixel test as the
+percentage, so ignore regions and hidden selectors — painted identically into both captures — never
+produce one; the area a taller page added is a box, and a page that got shorter gets a band along its new
+bottom edge. When a check meets its threshold the same page also draws a highlighted copy of the after
+image (brand orange boxes with a thin dark edge, at most 1000 px wide and 3 megapixels, JPEG) and the
+Worker stores it at `captures/<user>/<capture>/changes.jpg`.
+
+- No migration: the boxes ride in the run's `esc-run-v1:` metadata (`decodeRunChanges`), and the
+  highlight is served by the capture's token URL, `/f/<capture>/changes.jpg?t=…`.
+- It is not in the capture's `files`, so `images` — what the iOS app downloads and shares — is unchanged.
+  `deleteCapture` and the retention sweep delete it with its capture; account deletion takes the prefix.
+- `GET /api/watches/:id` adds `regions` and `highlight_url` to every run. Alert emails say
+  "Changed areas: N" and link the highlight; the JSON webhook adds `highlight_url` and `regions`; Slack,
+  Teams, Google Chat and Discord messages link it. The monitor page, the library timeline and review
+  reports created from monitor runs outline the boxes over the after image, with a "Show changes" toggle.
+
+**Pinned baselines.** "Keep as baseline" on a monitor (or `POST /api/watches/:id` with
+`{"action":"pin"}`, optionally `capture_id` of one of its earlier checks) makes every later check compare
+against that capture until `{"action":"unpin"}`; no check replaces it. To keep one change from alerting
+on every check after it, a pinned check alerts when the page first differs from the pinned version, and
+again only when it also differs from the version last alerted about (a second comparison in the same
+browser page, or the rule's own facts for text rules). Checks that still show the same difference are
+recorded with `changed = 0`, their regions, and "No new change"; matching the pin again resets it.
+Monitors gain `baseline_pinned`, `baseline_pinned_at` and `baseline_capture_id`. A pinned capture is still
+the watch's baseline, so retention keeps it and deleting it answers `409 baseline_in_use`.
+A capture engine change that reaches a pinned capture (see the engine marker above) refreshes the baseline
+at the next check and releases the pin, saying so in the run, rather than keep a version nobody approved
+pinned; a capture the engine has moved past cannot be pinned (`409 baseline_outdated`).
+
+Pinning needs migration `0014_pinned_baseline.sql`, one nullable column on `watches`. Until it is
+applied the column is probed and pinning stays hidden (`pin`/`unpin` answer `503 setup_required`), and
+checks run exactly as before. Apply it with `npm run db:migrate`, or paste `db/0014-upgrade.sql` into
+the D1 console. `npm run highlights:check` covers the clustering in Chromium and the check flow with and
+without the column.
+
 ### Accounts: password reset and confirmation emails
 
 `/forgot-password` emails a single-use, one-hour reset link (tokens live hashed in the `RATE` KV, so no
@@ -559,6 +706,44 @@ are rate limited per IP and per email (`429 rate_limited`).
 
 Migration `0012_watch_runs_user_index.sql` only adds an index for the monitor dashboard; apply it with
 `npm run db:migrate` whenever convenient — no code depends on it.
+
+### Background captures and large batches (0013)
+
+`POST /api/batches` (and `/v1/batches` with a key) queues a URL list or a sitemap and answers `202` at once;
+`async=1` or `Prefer: respond-async` on `POST /api/captures` and `/v1/capture` does the same for one capture.
+The `/app/batch` page uses it: preview, start, then a progress view that polls `GET /api/batches/:id` and a
+list of recent batches. Cancel takes back whatever has not started.
+
+- **No queue service.** Jobs are rows in `capture_jobs`. A second cron, `* * * * *`, works them; the hourly
+  `0 * * * *` keeps the monitor sweep and retention exactly as before. At hh:00 both fire as separate
+  invocations, and `src/worker.ts` tells them apart by `event.cron`. A claim is one `UPDATE … RETURNING` with
+  a five-minute lease: a tick that dies leaves its jobs to lapse and be taken again, at most twice, then
+  they fail and are refunded. A full browser pool is retried once, a minute later.
+- **Bounded.** Two jobs render at once across every overlapping tick — one during the first ten minutes of
+  the hour, while the monitor sweep has its three browsers out. A tick takes new work for 45 s and finishes
+  what it started. The account with the fewest jobs running goes next, so one large batch does not hold
+  everyone else's. Each busy tick logs `[jobs] due= claimed= done= failed= … backlog= late_max=`.
+- **Quota.** A batch is parsed in full, then its whole cost is reserved at once — `sizes` count per file,
+  a series its whole frame cap — and charged against the hourly capture limit at once, as `/api/batch` is.
+  So the batch size per plan is the hourly limit, capped at 500: Free 10, Lite 30, Plus 60, Pro 120, Business
+  500 (`batchLimit` in `lib/plans.ts`). Failed and cancelled captures are refunded; a short series gets the
+  rest back. Credentials (`headers`, `cookies`, `basic_auth`) are refused — a queued capture is stored, and
+  credentials never are. `/v1/capture` with credentials and `async=1` keeps the old in-request background
+  render.
+- **The iOS app never sees them.** A queued capture row says `queued`, then `running`; the default lists
+  (`GET /api/captures`, `/v1/captures`, the library) leave both out unless `include_pending=1`, and the app
+  never sends `async`, so `POST /api/captures` stays synchronous for it.
+- **The public API keeps saying `pending`.** `/v1` has always documented an async capture as `pending` until
+  `done` or `error`, so `/v1/capture`, `/v1/captures/:id` and `/v1/captures` report queued and running
+  captures as `status: "pending"` with the finer state in `queue_status` (`toPublicDTO`).
+- **Retention.** Finished jobs and batches are pruned after 30 days by the hourly tick; their captures follow
+  the plan's own retention. Optional email on completion uses the existing mailer, once per batch.
+
+**Before the migration** nothing changes: `/app/batch` is the synchronous 25-page queue, `async` captures run
+inline (`/v1/capture` keeps its old background render), and `/api/batches` answers `503 setup_required`. Apply
+it with `npm run db:migrate`, or paste `db/0013-upgrade.sql` into the D1 console; it is picked up within a
+minute, without a redeploy. `npm run jobs:check` covers claims, leases, retries, quota, cancel, plan limits,
+the list filter, the cron dispatch and the fallback.
 
 ### iOS push notifications
 

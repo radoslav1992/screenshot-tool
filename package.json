@@ -10,7 +10,7 @@
     "preview": "astro preview",
     "deploy": "astro build && wrangler deploy",
     "check": "astro check",
-    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s monitor:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check && npm run -s capture:check && npm run -s auth:check",
+    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s seo:check && npm run -s monitor:check && npm run -s highlights:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check && npm run -s capture:check && npm run -s auth:check && npm run -s billing-errors:check && npm run -s schema:check && npm run -s signoff:check && npm run -s branding:check && npm run -s jobs:check",
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
     "stripe:setup": "node scripts/stripe-setup.mjs",
@@ -23,7 +23,9 @@
     "projects:check": "node scripts/projects-check.mjs",
     "library:check": "node --experimental-strip-types scripts/library-check.mjs",
     "workflows:check": "node --experimental-strip-types scripts/monitor-workflows-check.mjs",
+    "seo:check": "node scripts/seo-rules-check.mjs",
     "monitor:check": "node --experimental-strip-types scripts/monitor-check.mjs && node --experimental-strip-types scripts/monitor-integration-check.mjs",
+    "highlights:check": "node --experimental-strip-types scripts/monitor-highlights-check.mjs",
     "files:check": "node --experimental-strip-types scripts/file-access-check.mjs",
     "consent:check": "node scripts/consent-check.mjs",
     "fullpage:check": "node scripts/fullpage-check.mjs",
@@ -33,7 +35,12 @@
     "apple:check": "node scripts/apple-billing-check.mjs",
     "retention:check": "node scripts/retention-check.mjs",
     "capture:check": "node scripts/capture-check.mjs",
-    "auth:check": "node scripts/auth-billing-check.mjs"
+    "auth:check": "node scripts/auth-billing-check.mjs",
+    "billing-errors:check": "node scripts/billing-errors-check.mjs",
+    "schema:check": "node scripts/schema-files-check.mjs",
+    "signoff:check": "node scripts/report-signoff-check.mjs",
+    "branding:check": "node scripts/report-branding-check.mjs",
+    "jobs:check": "node scripts/capture-jobs-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.3",

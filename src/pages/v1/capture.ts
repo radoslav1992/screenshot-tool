@@ -1,8 +1,10 @@
 import type { APIRoute } from 'astro';
 import { apiErrorResponse, guardApiRequest, preflight, touchApiKey } from '../../lib/api-guard';
 import { parseCaptureOptions } from '../../lib/capture-options';
-import { captureErrorStatus, createCaptureRow, runCapture, toDTO } from '../../lib/captures';
+import { captureErrorStatus, createCaptureRow, runCapture, toPublicDTO } from '../../lib/captures';
+import { asksForAsync, captureJobsReady, enqueueCapture } from '../../lib/capture-jobs';
 import { HttpError, json, readBody } from '../../lib/http';
+import { hasRequestAuth } from '../../lib/request-auth';
 
 export const prerender = false;
 
@@ -23,17 +25,32 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     const body = await readBody(request);
     const options = parseCaptureOptions(body);
-    const row = await createCaptureRow(guard.auth.user, options, 'api');
     const origin = new URL(request.url).origin;
 
-    const runInBackground = body.async === '1' || body.async === 'true';
+    const runInBackground = asksForAsync(request, body);
     const context = locals.cfContext;
 
     context?.waitUntil(touchApiKey(guard.auth.keyId));
 
+    /*
+     * Queued, so a slow page is not cut off with the request: work left to run
+     * after the response gets about 30 seconds, and a full-page capture can take
+     * longer. Credentials are never stored, so a capture carrying them keeps to
+     * the old way — rendered after the response, while the runtime allows.
+     */
+    if (runInBackground && !hasRequestAuth(options.auth) && (await captureJobsReady())) {
+      const queued = await enqueueCapture(guard.auth.user, options, body, 'api');
+      return json(toPublicDTO(queued, origin), {
+        status: 202,
+        headers: { ...headers, 'preference-applied': 'respond-async', location: `/v1/captures/${queued.id}` },
+      });
+    }
+
+    const row = await createCaptureRow(guard.auth.user, options, 'api');
+
     if (runInBackground && context) {
       context.waitUntil(runCapture(row, options));
-      return json(toDTO(row, origin), { status: 202, headers });
+      return json(toPublicDTO(row, origin), { status: 202, headers });
     }
 
     const finished = await runCapture(row, options);
@@ -41,9 +58,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
       // Still the capture as the body, now with `error_type`; the status says
       // which kind of failure it was — 400 for a page that would not load, 504
       // for one that took too long — instead of 502 for all of them.
-      return json(toDTO(finished, origin), { status: captureErrorStatus(finished), headers });
+      return json(toPublicDTO(finished, origin), { status: captureErrorStatus(finished), headers });
     }
-    return json(toDTO(finished, origin), { status: 201, headers });
+    return json(toPublicDTO(finished, origin), { status: 201, headers });
   } catch (error) {
     return apiErrorResponse(error, headers);
   }

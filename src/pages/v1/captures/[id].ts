@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { apiErrorResponse, guardApiRequest, preflight } from '../../../lib/api-guard';
-import { deleteCapture, getCapture, toDTO } from '../../../lib/captures';
+import { deleteCapture, getCapture, toPublicDTO } from '../../../lib/captures';
 import { HttpError, json } from '../../../lib/http';
 
 export const prerender = false;
@@ -18,7 +18,7 @@ export const GET: APIRoute = async ({ request, params }) => {
     if (!row || row.user_id !== guard.auth.user.id) {
       throw new HttpError(404, 'not_found', 'No capture with that id.');
     }
-    return json(toDTO(row, new URL(request.url).origin), { headers });
+    return json(toPublicDTO(row, new URL(request.url).origin), { headers });
   } catch (error) {
     return apiErrorResponse(error, headers);
   }

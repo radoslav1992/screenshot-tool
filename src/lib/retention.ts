@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { safeParseFiles, type CaptureRow } from './captures';
+import { highlightFile } from './change-highlights';
 import { PLAN_ORDER, getPlan } from './plans';
 
 export interface SweepResult {
@@ -108,7 +109,9 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
         }
         const files = safeParseFiles(row.files);
         if (!files.length && row.bytes > 0) throw new Error('Missing capture file manifest');
-        if (files.length) await env.SHOTS.delete(files.map(file => file.key));
+        // A monitor check's highlighted copy is not in its manifest, but goes with it.
+        const keys = [...files.map(file => file.key), ...(row.source === 'watch' ? [highlightFile(row).key] : [])];
+        if (keys.length) await env.SHOTS.delete(keys);
         ids.push(row.id);
         result.filesDeleted += files.length;
         result.bytesFreed += row.bytes;

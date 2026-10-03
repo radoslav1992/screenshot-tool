@@ -7,6 +7,8 @@ import { prefixedId, randomToken } from './ids';
 import { getPlan } from './plans';
 import { render, type RenderedFile } from './renderer';
 import { safeParseFacts, type PageFacts } from './page-facts';
+import { CAPTURE_ENGINE } from './capture-engine';
+import { highlightFile } from './change-highlights';
 
 /** Where a capture was asked for. Watch runs are nobody's click, so they count separately. */
 export type CaptureSource = 'app' | 'api' | 'watch';
@@ -18,6 +20,8 @@ export interface CaptureFile {
   width: number;
   height: number;
   contentType: string;
+  /** The capture engine that rendered it (capture-engine.ts). Absent on files from before it was recorded. */
+  engine?: number;
 }
 
 export interface CaptureRow {
@@ -72,6 +76,20 @@ export interface CaptureDTO {
   created_at: string;
   completed_at: string | null;
   page?: PageFacts;
+}
+
+/**
+ * A capture as the public API (`/v1`) answers it.
+ *
+ * The API has always documented async captures as `status: "pending"` until
+ * they are `done` or `error`, and clients poll on exactly that. Queued
+ * background work keeps that promise: `queued` and `running` read as
+ * `pending`, with the finer state alongside in `queue_status`.
+ */
+export function toPublicDTO(row: CaptureRow, origin: string): CaptureDTO & { queue_status?: 'queued' | 'running' } {
+  const dto = toDTO(row, origin);
+  if (dto.status !== 'queued' && dto.status !== 'running') return dto;
+  return { ...dto, status: 'pending', queue_status: dto.status };
 }
 
 export function fileUrl(row: Pick<CaptureRow, 'id' | 'share_token'>, file: CaptureFile, origin: string): string {
@@ -329,6 +347,30 @@ export async function createCaptureRow(
   options: CaptureOptions,
   source: CaptureSource,
 ): Promise<CaptureRow> {
+  const row = await reserveCaptureRow(user, options, source);
+  try {
+    await captureInsert(row).run();
+  } catch (error) {
+    await refundQuota(user.id, rowPeriod(row), row.reserved ?? 0, source).catch(() => undefined);
+    throw error;
+  }
+
+  return row;
+}
+
+/**
+ * Every check createCaptureRow makes, and the screenshots it reserves, without
+ * writing the row: for a caller that writes it together with something else, as
+ * the background queue writes a capture in the same batch as its job. `status`
+ * is what the row will say — `queued` for one that waits its turn. A caller
+ * whose write fails gives `reserved` back.
+ */
+export async function reserveCaptureRow(
+  user: SessionUser,
+  options: CaptureOptions,
+  source: CaptureSource,
+  status: 'pending' | 'queued' = 'pending',
+): Promise<CaptureRow> {
   let usage = await getUsage(user);
   if (usage.remaining <= 0) throw quotaExceeded(user, usage, 1);
 
@@ -355,28 +397,7 @@ export async function createCaptureRow(
   // caller can ask for an unmarked capture it has not paid for.
   options.watermark = getPlan(user.plan).watermark;
 
-  const row: CaptureRow = {
-    id: prefixedId('cap', 12),
-    user_id: user.id,
-    url: options.url,
-    host: options.host,
-    device: options.device,
-    width: options.width,
-    height: options.height,
-    scale: options.scale,
-    mode: options.mode,
-    format: options.format,
-    status: 'pending',
-    error: null,
-    source,
-    share_token: randomToken(16),
-    files: '[]',
-    bytes: 0,
-    duration_ms: 0,
-    created_at: new Date().toISOString(),
-    completed_at: null,
-    facts: null,
-  };
+  const row = newCaptureRow(user.id, options, source, status);
 
   /*
    * The checks above read the counter; this takes from it. The screenshots are
@@ -398,34 +419,108 @@ export async function createCaptureRow(
     options.maxFrames = Math.min(options.maxFrames, usage.remaining);
   }
 
-  try {
-    await env.DB.prepare(
-      `INSERT INTO captures (id, user_id, url, host, device, width, height, scale, mode, format, status,
-                             source, share_token, files, bytes, duration_ms, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, '[]', 0, 0, ?)`,
-    )
-      .bind(
-        row.id,
-        row.user_id,
-        row.url,
-        row.host,
-        row.device,
-        row.width,
-        row.height,
-        row.scale,
-        row.mode,
-        row.format,
-        row.source,
-        row.share_token,
-        row.created_at,
-      )
-      .run();
-  } catch (error) {
-    await refundQuota(user.id, rowPeriod(row), row.reserved ?? 0, source).catch(() => undefined);
-    throw error;
-  }
-
   return row;
+}
+
+/** A capture as it starts out: nothing rendered, nothing reserved, nothing written. */
+export function newCaptureRow(
+  userId: string,
+  options: CaptureOptions,
+  source: CaptureSource,
+  status: 'pending' | 'queued' = 'pending',
+  createdAt = new Date().toISOString(),
+): CaptureRow {
+  return {
+    id: prefixedId('cap', 12),
+    user_id: userId,
+    url: options.url,
+    host: options.host,
+    device: options.device,
+    width: options.width,
+    height: options.height,
+    scale: options.scale,
+    mode: options.mode,
+    format: options.format,
+    status,
+    error: null,
+    source,
+    share_token: randomToken(16),
+    files: '[]',
+    bytes: 0,
+    duration_ms: 0,
+    created_at: createdAt,
+    completed_at: null,
+    facts: null,
+  };
+}
+
+const INSERT_COLUMNS = `id, user_id, url, host, device, width, height, scale, mode, format, status,
+                        source, share_token, files, bytes, duration_ms, created_at`;
+
+/** Writes a row from newCaptureRow. */
+export function captureInsert(row: CaptureRow): D1PreparedStatement {
+  return env.DB.prepare(
+    `INSERT INTO captures (${INSERT_COLUMNS})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 0, 0, ?)`,
+  ).bind(
+    row.id,
+    row.user_id,
+    row.url,
+    row.host,
+    row.device,
+    row.width,
+    row.height,
+    row.scale,
+    row.mode,
+    row.format,
+    row.status,
+    row.source,
+    row.share_token,
+    row.created_at,
+  );
+}
+
+/** Rows a single insert carries; see captureInserts. */
+const ROWS_PER_INSERT = 100;
+
+/**
+ * Writes many rows from newCaptureRow. Each statement takes up to 100 of them
+ * as one JSON parameter, so a batch of hundreds of pages is a handful of
+ * statements rather than one per capture, and none comes near D1's limit of
+ * 100 bound parameters.
+ */
+export function captureInserts(rows: CaptureRow[]): D1PreparedStatement[] {
+  const statements: D1PreparedStatement[] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+    const chunk = rows.slice(start, start + ROWS_PER_INSERT).map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      url: row.url,
+      host: row.host,
+      device: row.device,
+      width: row.width,
+      height: row.height,
+      scale: row.scale,
+      mode: row.mode,
+      format: row.format,
+      status: row.status,
+      source: row.source,
+      share_token: row.share_token,
+      created_at: row.created_at,
+    }));
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO captures (${INSERT_COLUMNS})
+         SELECT json_extract(value, '$.id'), json_extract(value, '$.user_id'), json_extract(value, '$.url'),
+                json_extract(value, '$.host'), json_extract(value, '$.device'), json_extract(value, '$.width'),
+                json_extract(value, '$.height'), json_extract(value, '$.scale'), json_extract(value, '$.mode'),
+                json_extract(value, '$.format'), json_extract(value, '$.status'), json_extract(value, '$.source'),
+                json_extract(value, '$.share_token'), '[]', 0, 0, json_extract(value, '$.created_at')
+         FROM json_each(?)`,
+      ).bind(JSON.stringify(chunk)),
+    );
+  }
+  return statements;
 }
 
 /** Takes back a row that will not be rendered after all, and the quota it reserved. */
@@ -470,6 +565,7 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
       width: file.width,
       height: file.height,
       contentType: file.contentType,
+      engine: CAPTURE_ENGINE,
     });
   };
 
@@ -562,18 +658,23 @@ export async function getCapture(id: string): Promise<CaptureRow | null> {
 export async function deleteCapture(row: CaptureRow): Promise<void> {
   // A monitor compares each check with its baseline. Deleting it would make the
   // next check a silent "first check" and miss whatever changed in between.
-  const monitor = await env.DB.prepare(`SELECT label, url FROM watches WHERE baseline_capture_id = ? LIMIT 1`)
+  // `*` because baseline_pinned_at arrives with a migration that may not be applied yet.
+  const monitor = await env.DB.prepare(`SELECT * FROM watches WHERE baseline_capture_id = ? LIMIT 1`)
     .bind(row.id)
-    .first<{ label: string; url: string }>();
+    .first<{ label: string; url: string; baseline_pinned_at?: string | null }>();
   if (monitor) {
+    const name = monitor.label || displayUrl(monitor.url);
     throw new HttpError(
       409,
       'baseline_in_use',
-      `This capture is the comparison baseline for the monitor “${monitor.label || displayUrl(monitor.url)}”. ` +
-        'It is replaced after the next check, or delete the monitor first.',
+      monitor.baseline_pinned_at
+        ? `This capture is the pinned baseline for the monitor “${name}”. Unpin it on the monitor first, or delete the monitor.`
+        : `This capture is the comparison baseline for the monitor “${name}”. ` +
+            'It is replaced after the next check, or delete the monitor first.',
     );
   }
-  const files = safeParseFiles(row.files);
+  // A monitor check may have a highlighted copy beside its files (see change-highlights).
+  const files = [...safeParseFiles(row.files), ...(row.source === 'watch' ? [highlightFile(row)] : [])];
   await Promise.all(files.map((file) => env.SHOTS.delete(file.key).catch(() => undefined)));
   await env.DB.prepare(`DELETE FROM captures WHERE id = ?`).bind(row.id).run();
 }

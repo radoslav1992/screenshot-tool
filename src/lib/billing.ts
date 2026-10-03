@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
+import { withBillingCode } from './billing-errors';
+import { COMPANY } from './company';
 import { HttpError } from './http';
 import { toHex, timingSafeEqual } from './ids';
 import { getPlan, PAID_PLANS, PLANS, type PlanId } from './plans';
@@ -165,29 +167,45 @@ async function stripe<T = any>(
 
     /*
      * A 4xx from Stripe is nearly always a setting that has not been made in the
-     * dashboard yet — an unconfigured portal, a price missing from it. Those
-     * read as "temporarily unavailable" to a customer and as nothing at all to
-     * the operator, who then needs log access to find out. Carrying Stripe's own
-     * message through means the person who hit it can see the cause. Stripe
-     * writes these for developers and they carry no credentials.
+     * dashboard yet — an unconfigured portal, a product without a tax code.
+     * Stripe writes those messages for developers, so the customer-facing
+     * message stays plain and Stripe's own words travel on the error instead:
+     * the checkout and portal routes email them to the operator, and
+     * /api/billing/diagnose shows them to the signed-in account owner.
      */
     const error = new HttpError(
       502,
       'billing_error',
       response.status >= 500
         ? 'Payments are temporarily unavailable. Try again in a moment.'
-        : `Stripe rejected the request: ${detail}`,
-    );
-    (error as StripeCallError).stripeStatus = response.status;
+        : `Payments are not available right now. Try again later, or email ${COMPANY.email} if it keeps happening.`,
+    ) as StripeCallError;
+    error.stripeStatus = response.status;
+    error.stripeCode = String(code);
+    error.stripeDetail = detail;
+    error.stripeRequest = `${method} ${path}`;
     throw error;
   }
 
   return payload as T;
 }
 
-/** An HttpError that came from Stripe, carrying the status it answered with. */
-interface StripeCallError extends HttpError {
+/** An HttpError that came from Stripe, carrying what Stripe answered. */
+export interface StripeCallError extends HttpError {
   stripeStatus?: number;
+  /** Stripe's error code, or its error type when there is no code. */
+  stripeCode?: string;
+  /** Stripe's message. Written for developers: logs, the operator and the diagnosis only. */
+  stripeDetail?: string;
+  /** The Stripe call that failed, e.g. `POST /checkout/sessions`. */
+  stripeRequest?: string;
+}
+
+/** Stripe's own account of a failure, for logs and the account owner's diagnosis — not for pages. */
+export function stripeErrorDetail(error: unknown): string {
+  const detail = (error as StripeCallError | null)?.stripeDetail;
+  if (detail) return `Stripe rejected the request: ${detail}`;
+  return error instanceof Error ? error.message : String(error);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -256,13 +274,12 @@ export async function createCheckoutSession(input: {
   origin: string;
 }): Promise<string> {
   const apple = await env.DB.prepare('SELECT apple_expires_at FROM users WHERE id=?').bind(input.user.id).first<{apple_expires_at: string | null}>();
-  if ((apple?.apple_expires_at ?? '') > new Date().toISOString()) throw new HttpError(409, 'already_subscribed', 'Manage your Apple subscription before starting a different subscription.');
+  if ((apple?.apple_expires_at ?? '') > new Date().toISOString()) throw withBillingCode(new HttpError(409, 'already_subscribed', 'Manage your Apple subscription before starting a different subscription.'), 'apple_subscription');
   const price = priceIdFor(input.plan, input.interval);
   if (!price) {
-    throw new HttpError(
-      503,
-      'billing_unavailable',
-      `The ${getPlan(input.plan).name} plan is not available for purchase yet.`,
+    throw withBillingCode(
+      new HttpError(503, 'billing_unavailable', `The ${getPlan(input.plan).name} plan is not available for purchase yet.`),
+      'plan_unavailable',
     );
   }
 
@@ -379,7 +396,7 @@ export async function expireOpenCheckouts(customer: string): Promise<number> {
     } catch (error) {
       console.error(
         `[billing] could not expire checkout session ${session.id}:`,
-        error instanceof Error ? error.message : error,
+        stripeErrorDetail(error),
       );
     }
   }
@@ -480,7 +497,7 @@ export async function createPortalSession(
        */
       console.error(
         `[billing] plan-change flow rejected for ${row.stripe_subscription_id}; opening the portal without it`,
-        error instanceof Error ? error.message : error,
+        stripeErrorDetail(error),
       );
     }
   }
@@ -536,7 +553,7 @@ async function planChangeFlow(
       return give('the subscription is already on that exact price');
     }
   } catch (error) {
-    return give(`the subscription could not be read: ${error instanceof Error ? error.message : error}`);
+    return give(`the subscription could not be read: ${stripeErrorDetail(error)}`);
   }
   if (!item) return give('the subscription has no items');
 
@@ -585,7 +602,7 @@ export async function diagnosePlanChange(
 
   const attempt = await planChangeFlow(row, target, origin).catch((error) => ({
     flow: null,
-    reason: error instanceof Error ? error.message : String(error),
+    reason: stripeErrorDetail(error),
   }));
 
   if (!attempt.flow) {
@@ -603,7 +620,8 @@ export async function diagnosePlanChange(
     report.result = 'the deep link works — upgrading should open the confirmation screen';
   } catch (error) {
     report.result = 'Stripe refused the plan-change flow, so the plain portal opens instead';
-    report.reason = error instanceof Error ? error.message : String(error);
+    // The account owner asked why; Stripe's own words are the answer.
+    report.reason = stripeErrorDetail(error);
     report.likelyFix =
       'Settings → Billing → Customer portal: enable "Customers can switch plans" and list Plus, Pro and Business (with the prices) underneath it. Test and live keep separate configurations.';
   }
@@ -874,7 +892,7 @@ async function applySubscription(subscription: StripeSubscription): Promise<Appl
     await stripe(`/subscriptions/${encodeURIComponent(subscription.id)}`, {
       body: { metadata: { plan: priced.plan } },
     }).catch((error) =>
-      console.error(`[billing] could not update plan metadata on ${subscription.id}:`, error instanceof Error ? error.message : error),
+      console.error(`[billing] could not update plan metadata on ${subscription.id}:`, stripeErrorDetail(error)),
     );
   }
 

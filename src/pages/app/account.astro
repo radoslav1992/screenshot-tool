@@ -5,6 +5,8 @@ import PasswordField from '../../components/PasswordField.astro';
 import { getUsage } from '../../lib/captures';
 import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription } from '../../lib/billing';
+import { billingErrorMessage } from '../../lib/billing-errors';
+import { takeFlash } from '../../lib/flash';
 import { PASSWORD_MIN_LENGTH, countSessions } from '../../lib/auth';
 import { canSendEmail } from '../../lib/mailer';
 
@@ -58,7 +60,8 @@ const otherSessions = Math.max(0, sessions - 1);
 
 const params = Astro.url.searchParams;
 const justUpgraded = params.get('checkout') === 'success';
-const billingError = params.get('billing_error');
+// A code, looked up in a fixed list: nothing from the URL is ever shown as text.
+const billingError = billingErrorMessage(params.get('billing_error'));
 const passwordNotice =
   params.get('password') === 'changed'
     ? 'Password changed. Every other device was signed out.'
@@ -66,7 +69,8 @@ const passwordNotice =
       ? 'Your password has been reset. Every other device signed in to this account was signed out.'
       : null;
 const signedOut = params.has('signed_out') ? Number.parseInt(params.get('signed_out') ?? '0', 10) || 0 : null;
-const passwordError = params.get('password_error');
+// Left by the password routes when a form post failed; never read from the URL.
+const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
 ---
 
 <AppShell title="Account" tab="account">

@@ -9,6 +9,9 @@ import { watchLimit, allowedFrequencies } from '../../../lib/plans';
 import { getUsage } from '../../../lib/captures';
 import { forecast } from '../../../lib/monitor-health';
 import { checkRateLimit } from '../../../lib/rate-limit';
+import { parseMonitorRule } from '../../../lib/monitor-rules';
+import { workflowsReady } from '../../../lib/monitor-rule-store';
+import { env } from 'cloudflare:workers';
 export const POST: APIRoute = async ({ locals, request }) => {
  try {
   const user = locals.user;
@@ -19,6 +22,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
   if (body.action === 'sitemap') return json({ urls: await readSitemap(body.sitemap || '') });
   const frequency = body.frequency || 'daily';
   if (!allowedFrequencies(user.plan).includes(frequency as never)) throw badRequest('Choose an included schedule.');
+  // One rule for every page: visual, or every SEO signal. Finer rules are set per monitor.
+  const kind = body.rule_kind || 'visual';
+  if (!['visual','seo'].includes(kind)) throw badRequest('Import monitors for visual changes or SEO signals.');
+  const rule = kind === 'seo' ? parseMonitorRule({ rule_kind: 'seo' }) : undefined;
+  if (rule && !env.BROWSER) throw new HttpError(503,'setup_required','Text, element and SEO rules require Browser Rendering.');
+  if (rule && !await workflowsReady()) throw new HttpError(503,'setup_required','Monitor rules are being prepared.');
   const urls = importUrls(body.urls || '');
   const existing = await listWatches(user.id);
   const candidates = urls.map(url=>previewOptions({url,device:body.device || 'desktop'})).filter(o=>!existing.some(w=>w.url===o.url && w.device===o.device));
@@ -28,7 +37,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
   if (projection.monthlyOver || projection.shortfall) throw badRequest('This schedule exceeds your screenshot allowance. Choose a slower schedule or fewer pages.');
   const created: string[] = []; const failed: string[] = [];
   for (const options of candidates) {
-   try { const watch = await createWatch(user,{options,label:options.host+new URL(options.url).pathname,frequency,threshold:1,notifyEmail:true,webhookUrl:null}); created.push(watch.id); }
+   try { const watch = await createWatch(user,{options,rule,label:options.host+new URL(options.url).pathname,frequency,threshold:1,notifyEmail:true,webhookUrl:null}); created.push(watch.id); }
    catch { failed.push(options.url); }
   }
   return json({created,failed,skipped:urls.length-candidates.length});

@@ -5,10 +5,12 @@ import Logo from "../components/Logo.astro";
 import PasswordField from "../components/PasswordField.astro";
 import { PLANS } from "../lib/plans";
 import { safeNext } from "../lib/safe-next";
+import { takeFlash } from "../lib/flash";
 
 const next = safeNext(Astro.url.searchParams.get("next"), Astro.url.origin);
 const url = Astro.url.searchParams.get("url") ?? "";
-const initialError = Astro.url.searchParams.get("error") ?? "";
+// Left by the API when a post without JavaScript failed; never read from the URL.
+const initialError = takeFlash(Astro.cookies, Astro.url.pathname);
 const target = url ? `/app?url=${encodeURIComponent(url)}` : next;
 const loginHref = next === "/app" ? "/login" : `/login?next=${encodeURIComponent(next)}`;
 ---

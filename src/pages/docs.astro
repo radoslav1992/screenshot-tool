@@ -7,7 +7,7 @@ import DocSection from '../components/DocSection.astro';
 import CodeBlock from '../components/CodeBlock.astro';
 import Icon from '../components/Icon.astro';
 import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
-import { API_RATE_LIMIT, PLANS } from '../lib/plans';
+import { API_RATE_LIMIT, MAX_BACKGROUND_BATCH, PLANS, batchLimit } from '../lib/plans';
 import { docSections } from '../lib/doc-sections';
 
 const user = Astro.locals.user;
@@ -20,13 +20,46 @@ const quickstart = `curl ${origin}/v1/capture \\
   -d mode="fullpage" \\
   -d format="png"`;
 
-const asyncExample = `# Return immediately with status "pending", then poll:
+const asyncExample = `# Answers 202 at once with status "pending"; poll until "done" or "error":
 curl ${origin}/v1/capture \\
   -H "Authorization: Bearer $ESC_API_KEY" \\
-  -d url="https://example.com" -d async=1
+  -d url="https://example.com" -d mode="fullpage" -d async=1
 
 curl ${origin}/v1/captures/cap_8Yx2 \\
   -H "Authorization: Bearer $ESC_API_KEY"`;
+
+const batchesExample = `curl ${origin}/v1/batches \\
+  -H "Authorization: Bearer $ESC_API_KEY" \\
+  -d sitemap="https://example.com/sitemap.xml" \\
+  -d devices="desktop,mobile" -d mode="fullpage" \\
+  -d label="Before the redesign" -d notify=1
+
+# → 202 { "id": "bat_3kq9…", "status": "queued", "total": 240,
+#         "queued": 240, "running": 0, "done": 0, "failed": 0, … }
+
+curl "${origin}/v1/batches/bat_3kq9…" \\
+  -H "Authorization: Bearer $ESC_API_KEY"
+
+# Stop what has not started; its screenshots are refunded:
+curl ${origin}/v1/batches/bat_3kq9… \\
+  -H "Authorization: Bearer $ESC_API_KEY" -d action=cancel`;
+
+const batchSample = `{
+  "id": "bat_3kq9w2m1x0aa",
+  "status": "running",
+  "label": "Before the redesign",
+  "total": 240, "queued": 180, "running": 2, "done": 57, "failed": 1, "cancelled": 0,
+  "shots": 240, "notify": true, "project_id": null,
+  "created_at": "2026-03-11T09:12:04.101Z", "completed_at": null, "cancelled_at": null,
+  "items": [
+    { "id": "job_…", "url": "https://example.com/", "display_url": "example.com",
+      "device": "desktop", "status": "done", "capture_id": "cap_…", "updated_at": "…" }
+  ],
+  "captures": [ { "id": "cap_…", "status": "done", "images": ["…"], … } ],
+  "failures": [ { "url": "https://example.com/old", "device": "mobile",
+                  "error": "The page could not be loaded (net::ERR_NAME_NOT_RESOLVED)." } ],
+  "as_of": "2026-03-11T09:20:31.007Z"
+}`;
 
 const htmlExample = `curl ${origin}/v1/capture \\
   -H "Authorization: Bearer $ESC_API_KEY" \\
@@ -67,6 +100,29 @@ const batchExample = `curl ${origin}/v1/batch \\
   -d mode="fullpage" -d device="desktop"
 
 # → { "requested": 18, "captures": [ … ], "failed": [] }`;
+
+const watchChangedExample = `{
+  "event": "watch.changed",
+  "watch": { "id": "wat_8Yx2m1q0", "label": "Pricing", "url": "https://example.com/pricing" },
+  "change_pct": 4.71,
+  "before": "${origin}/f/cap_3kQ9…/capture.png?t=…",
+  "after": "${origin}/f/cap_7Lm2…/capture.png?t=…",
+  "highlight_url": "${origin}/f/cap_7Lm2…/changes.jpg?t=…",
+  "regions": [{ "x": 0.08, "y": 0.12, "w": 0.4, "h": 0.06 }],
+  "detail_url": "${origin}/app/watches/wat_8Yx2m1q0"
+}`;
+
+const pinExample = `# Session API, as the app and the iOS app use it
+POST /api/watches/wat_8Yx2m1q0
+{ "action": "pin", "capture_id": "cap_3kQ9…" }   # omit capture_id to pin the current baseline
+
+# → the monitor, with
+#   "baseline_pinned": true,
+#   "baseline_pinned_at": "2026-10-02T16:00:03.412Z",
+#   "baseline_capture_id": "cap_3kQ9…"
+
+POST /api/watches/wat_8Yx2m1q0
+{ "action": "unpin" }`;
 
 const factsExample = `{
   "page": {
@@ -149,7 +205,7 @@ const params = [
   { name: 'headers', type: 'string', required: false, desc: 'JSON object of request headers. Host and hop-by-hop headers are refused.' },
   { name: 'cookies', type: 'string', required: false, desc: 'JSON object of cookies, scoped to the captured host.' },
   { name: 'basic_auth', type: 'string', required: false, desc: '`username:password` for a page behind HTTP basic auth.' },
-  { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop.' },
+  { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop. Tablet and mobile load as Safari on iPad and iPhone.' },
   { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
   { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
   { name: 'width', type: 'integer', required: false, desc: `Viewport width, ${LIMITS.minWidth}–${LIMITS.maxWidth}. Setting it switches device to custom.` },
@@ -160,7 +216,7 @@ const params = [
   { name: 'block_ads', type: 'boolean', required: false, desc: 'Block known ad and analytics hosts. Default true.' },
   { name: 'dark_mode', type: 'boolean', required: false, desc: 'Emulate prefers-color-scheme: dark. Default false.' },
   { name: 'max_frames', type: 'integer', required: false, desc: `Cap on scroll-series frames (max ${LIMITS.maxSeriesFrames}).` },
-  { name: 'async', type: 'boolean', required: false, desc: 'Return 202 immediately and render in the background.' },
+  { name: 'async', type: 'boolean', required: false, desc: 'Return 202 at once with status `pending` and capture in the background; poll the capture. `Prefer: respond-async` does the same.' },
 ];
 
 const errors = [
@@ -178,6 +234,10 @@ const endpoints = [
   { method: 'POST', path: '/v1/capture', desc: 'Create a capture.' },
   { method: 'POST', path: '/v1/compare', desc: 'Capture two pages and measure the difference.' },
   { method: 'POST', path: '/v1/batch', desc: 'Capture a list of URLs, or a whole sitemap.' },
+  { method: 'POST', path: '/v1/batches', desc: 'Queue a list or a sitemap to capture in the background.' },
+  { method: 'GET', path: '/v1/batches', desc: 'Recent background batches, newest first.' },
+  { method: 'GET', path: '/v1/batches/:id', desc: 'A batch’s progress, items and finished captures.' },
+  { method: 'POST', path: '/v1/batches/:id', desc: 'With action=cancel: stop what has not started.' },
   { method: 'GET', path: '/v1/captures', desc: 'List captures, newest first.' },
   { method: 'GET', path: '/v1/captures/:id', desc: 'Fetch one capture.' },
   { method: 'DELETE', path: '/v1/captures/:id', desc: 'Delete a capture and its files.' },
@@ -194,6 +254,7 @@ const toc = [
   { id: 'getting-past-what-is-in-the-way', title: 'Getting past what is in the way' },
   { id: 'pages-behind-a-login', title: 'Pages behind a login' },
   { id: 'a-list-or-a-whole-sitemap', title: 'A list, or a whole sitemap' },
+  { id: 'background-batches', title: 'Background batches' },
   { id: 'comparing-two-pages', title: 'Comparing two pages' },
   { id: 'watching-a-page', title: 'Watching a page' },
   { id: 'endpoints', title: 'Endpoints' },
@@ -262,7 +323,9 @@ const { list: sections, byId: s } = docSections(toc);
         <p>
           <span class="mono">sizes=desktop,tablet,mobile</span> shoots the same page at each viewport during a single
           page load, returning one file per device named after it. One load matters: three separate captures pay for
-          three, and a page that shows a cookie wall on first visit behaves differently the second time.
+          three, and a page that shows a cookie wall on first visit behaves differently the second time. The page is
+          loaded as <span class="mono">device</span>, so a site that picks its layout from the user agent sends the
+          one for that device to every size; capture each device separately when that matters.
         </p>
       </DocSection>
 
@@ -305,6 +368,41 @@ const { list: sections, byId: s } = docSections(toc);
           to each. A page that fails is reported in <span class="mono">failed</span> rather than losing the batch.
         </p>
         <CodeBlock tag="POST /v1/batch" code={batchExample} />
+        <p class="ai-note">
+          More than 25 pages, or pages slow enough that you would rather not wait: use a
+          {' '}<a href="#background-batches">background batch</a>.
+        </p>
+      </DocSection>
+
+      <DocSection {...s['background-batches']}>
+        <p>
+          <span class="mono">POST /v1/batches</span> takes the same <span class="mono">urls</span> or
+          {' '}<span class="mono">sitemap</span> and the same capture parameters, answers
+          {' '}<span class="mono">202</span> straight away, and captures the pages on our servers a few at a time.
+          {' '}<span class="mono">devices=desktop,mobile</span> captures each page once per device;
+          {' '}<span class="mono">label</span> names the batch, and <span class="mono">notify=1</span> emails you once
+          when it finishes. URLs that cannot be captured are listed in <span class="mono">rejected</span> and the rest
+          go ahead.
+        </p>
+        <p>
+          A batch takes up to {batchLimit('business').toLocaleString()} captures on {PLANS.business.name} and
+          {' '}{batchLimit('pro').toLocaleString()} on {PLANS.pro.name} — never more than {MAX_BACKGROUND_BATCH} — and
+          never more than the screenshots you have left. The whole cost is reserved when it is created and counted
+          against the hourly capture limit at once; a page that fails or is cancelled is refunded.
+          {' '}<span class="mono">headers</span>, <span class="mono">cookies</span> and
+          {' '}<span class="mono">basic_auth</span> are refused here: credentials are never stored, and a queued capture
+          has to be.
+        </p>
+        <p>
+          Poll <span class="mono">GET /v1/batches/:id</span> for the counts, every item's state and the finished
+          captures. Pass the previous answer's <span class="mono">as_of</span> as
+          {' '}<span class="mono">changed_since</span> to get only the items that moved.
+          {' '}<span class="mono">POST /v1/batches/:id</span> with <span class="mono">action=cancel</span> stops
+          everything that has not started. The app's own <span class="mono">/api/batches</span> takes the same
+          parameters with a signed-in session instead of a key.
+        </p>
+        <CodeBlock tag="POST /v1/batches" code={batchesExample} />
+        <CodeBlock tag="RESPONSE · GET /v1/batches/:id" code={batchSample} light copyable={false} />
       </DocSection>
 
       <DocSection {...s['comparing-two-pages']}>
@@ -328,6 +426,42 @@ const { list: sections, byId: s } = docSections(toc);
           a webhook if you want one — a <span class="mono">watch.changed</span> POST carrying the
           before and after file URLs and the percentage that moved. Watches are set up in the
           <a href="/app/watches">app</a>; they are not on the public API yet.
+        </p>
+        <p>
+          A visual check also says <em>where</em> the page changed: up to eight boxes in
+          {' '}<span class="mono">regions</span>, as fractions (0–1) of the after image so they fit any size it is
+          shown at, and — for a check that alerts — <span class="mono">highlight_url</span>, a copy of the after image
+          with those areas outlined. Areas you ignore or hide never produce a box, and a page that grew or shrank
+          gets one for the area that came or went. Both arrive with the webhook and on every run in the monitor's
+          history; Slack, Teams, Google Chat and Discord messages link the highlighted image.
+        </p>
+        <CodeBlock tag="watch.changed" code={watchChangedExample} />
+        <p>
+          Each check is normally compared with the one before it. Pin a baseline instead and every check is compared
+          with that approved version until you unpin it; no check replaces it. A check alerts when the page first
+          differs from the pinned version, and again only when it changes from the version you were last alerted
+          about, so one change is one alert rather than one per check. Checks that still show the same difference
+          are recorded without a new alert. If a capture engine update reaches the pinned version, the next check
+          saves a fresh baseline and releases the pin, and its history says so.
+        </p>
+        <CodeBlock tag="POST /api/watches/:id" code={pinExample} />
+        <p>
+          A watch can alert on what search engines read instead of on pixels. The SEO signals rule compares the
+          title, meta description, canonical URL, robots <span class="mono">noindex</span> and
+          {' '}<span class="mono">nofollow</span> (the meta tags and the <span class="mono">X-Robots-Tag</span>
+          header), the first <span class="mono">h1</span> and how many there are, hreflang alternates, the Open Graph
+          title, description and image, and the HTTP status — all of them, or the ones you tick. The alert lists each
+          change, such as <span class="mono">Title: "Old" → "New"</span> or
+          {' '}<span class="mono">Robots: index → noindex</span>, with a new noindex or a 4xx/5xx status first; the
+          webhook carries it as <span class="mono">rule: {'{'} kind: "seo", detail {'}'}</span>. Differences in
+          whitespace are ignored, and a canonical that differs only by a trailing slash, the case of its host, a fragment or being
+          written protocol-relative is the same URL. The first check after the rule is chosen records the signals; the
+          next one compares.
+        </p>
+        <p class="ai-note">
+          When the way captures are taken changes — tablets and phones loading as Safari, say — a watch whose
+          baseline the change reaches saves its next capture as the baseline instead of comparing, and its history
+          reads “Baseline refreshed after a capture engine update”. Nothing is sent for that check.
         </p>
       </DocSection>
 
@@ -377,6 +511,12 @@ const { list: sections, byId: s } = docSections(toc);
             ))
           }
         </div>
+        <p>
+          Tablet and mobile are an iPad and an iPhone to the page: Safari's user agent, touch, and mobile viewport
+          rules, so a site that chooses its layout on the server, or turns away headless browsers by name, sends what a
+          visitor on that device gets. Desktop is the rendering browser's own Chrome. Every request still carries
+          Cloudflare's Browser Rendering headers, so a site's bot protection sees the capture for what it is.
+        </p>
         <p class="ai-note">
           Pass <span class="mono">width</span> and <span class="mono">height</span> for anything else — that switches
           the capture to <span class="mono">device=custom</span> (Pro and above).
@@ -429,8 +569,20 @@ const { list: sections, byId: s } = docSections(toc);
       <DocSection {...s['long-pages-async-mode']}>
         <p>
           Captures normally run inline and return when the files are stored. For slow pages, pass
-          <span class="mono"> async=1</span> to get a <span class="mono">202</span> with
-          <span class="mono"> status: "pending"</span> and poll the capture until it is done.
+          <span class="mono"> async=1</span> (or send <span class="mono">Prefer: respond-async</span>) to get a
+          <span class="mono"> 202</span> with <span class="mono">status: "pending"</span>, then poll the capture
+          until it reads <span class="mono">done</span> or <span class="mono">error</span>, usually within a minute
+          or two. While it is pending, <span class="mono">queue_status</span> says whether it is still
+          {' '}<span class="mono">queued</span> or already <span class="mono">running</span>. The screenshots are
+          reserved when you ask, and refunded if it fails.
+        </p>
+        <p>
+          Lists leave captures that are still pending out unless you pass
+          {' '}<span class="mono">include_pending=1</span>. A
+          capture sending <span class="mono">headers</span>, <span class="mono">cookies</span> or
+          {' '}<span class="mono">basic_auth</span> is never queued, because credentials are never stored: it renders
+          after the response instead, with no <span class="mono">queue_status</span>. The app's <span class="mono">POST /api/captures</span> takes the same <span class="mono">async</span>
+          flag and refuses credentials with it.
         </p>
         <CodeBlock tag="ASYNC" code={asyncExample} />
       </DocSection>

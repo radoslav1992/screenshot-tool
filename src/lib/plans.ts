@@ -187,6 +187,21 @@ export const APP_RATE_LIMIT: Record<PlanId, number> = {
   business: 600,
 };
 
+/** The most captures one background batch may queue, on any plan. */
+export const MAX_BACKGROUND_BATCH = 500;
+
+/**
+ * Captures one background batch may queue, by plan.
+ *
+ * A batch is charged against the hourly limit above in full when it is
+ * created — otherwise a batch is the way around it — so it can never be larger
+ * than that limit: Free 10, Lite 30, Plus 60, Pro 120, Business 500. The
+ * monthly quota caps it again at what is left.
+ */
+export function batchLimit(id: string | null | undefined): number {
+  return Math.min(MAX_BACKGROUND_BATCH, APP_RATE_LIMIT[getPlan(id).id]);
+}
+
 /** How long a capture's files are kept, by plan. */
 export function retentionDays(id: string | null | undefined): number {
   return getPlan(id).historyDays;
@@ -251,3 +266,21 @@ export function allowedFrequencies(id: string | null | undefined): WatchFrequenc
 export function runsPerMonth(frequency: string): number {
   return Math.round((30 * 24) / frequencyHours(frequency));
 }
+
+/* -------------------------------------------------------------------------- */
+/* Report branding                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether a project's review links may drop the "Shared with Easy Screen
+ * Capture" line. A logo, accent colour and footer line are on every plan; the
+ * pricing copy promises no white-label, so removing our name is kept for the
+ * top two plans and the branding form says so.
+ */
+export const REPORT_WHITE_LABEL: Record<PlanId, boolean> = {
+  free: false,
+  lite: false,
+  plus: false,
+  pro: true,
+  business: true,
+};

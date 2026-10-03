@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import { billingEnabled, createCheckoutSession, type BillingInterval } from '../../../lib/billing';
+import { billingFailureResponse } from '../../../lib/billing-errors';
 import { PAID_PLANS, type PlanId } from '../../../lib/plans';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
-import { toHttpError } from '../../../lib/errors';
 
 export const prerender = false;
 
@@ -36,16 +36,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!wantsJson) return new Response(null, { status: 303, headers: { location: url } });
     return json({ url });
   } catch (error) {
-    const failure = toHttpError(error, 'billing.checkout', 'Could not start checkout.');
-
     // Same as the portal: a form post ends up back on the pricing page with a
-    // message, rather than at a JSON dead end.
-    if (!(request.headers.get('accept') ?? '').includes('application/json')) {
-      return new Response(null, {
-        status: 303,
-        headers: { location: `/pricing?billing_error=${encodeURIComponent(failure.message.slice(0, 300))}` },
-      });
-    }
-    return failure.toResponse();
+    // message, rather than at a JSON dead end. Only a code travels in the URL.
+    return billingFailureResponse(error, { flow: 'checkout', request, locals });
   }
 };

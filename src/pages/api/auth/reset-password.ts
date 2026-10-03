@@ -3,6 +3,7 @@ import { checkNewPassword, createSession, isSecureRequest, replacePassword, sess
 import { AUTH_LIMITS, clientIp, enforceThrottles } from '../../../lib/auth-throttle';
 import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { redirectWithFlash } from '../../../lib/flash';
 import { discardResetToken, findResetUser } from '../../../lib/password-reset';
 
 export const prerender = false;
@@ -61,8 +62,7 @@ export const POST: APIRoute = async ({ request }) => {
   } catch (error) {
     const failure = toHttpError(error, 'auth.reset-password', 'Could not reset your password.');
     if (wantsJson) return failure.toResponse();
-    const back = new URLSearchParams({ error: failure.message });
-    if (token && failure.type !== 'invalid_token') back.set('token', token);
-    return new Response(null, { status: 303, headers: { location: `/reset-password?${back}` } });
+    const back = token && failure.type !== 'invalid_token' ? `/reset-password?${new URLSearchParams({ token })}` : '/reset-password';
+    return redirectWithFlash(request, back, failure.message);
   }
 };

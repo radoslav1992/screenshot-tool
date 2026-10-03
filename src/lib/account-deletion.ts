@@ -2,6 +2,9 @@ import { env } from 'cloudflare:workers';
 import { projectsReady } from './projects';
 import { collaborationReady } from './collaboration';
 import { watchSettingsReady } from './watch-settings';
+import { accountBrandingCleanup } from './branding';
+import { signoffsReady } from './signoff';
+import { captureJobsReady } from './capture-jobs';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -56,6 +59,8 @@ async function purgeFiles(userId: string): Promise<number> {
  */
 export async function deleteAccount(userId: string): Promise<DeletionResult> {
   const files = await purgeFiles(userId);
+  // Logos are keyed by project, not user, so they are found through the rows.
+  const brandingCleanup = await accountBrandingCleanup(userId);
 
   const captures = await env.DB.prepare(`SELECT COUNT(*) AS n FROM captures WHERE user_id = ?`)
     .bind(userId)
@@ -89,6 +94,20 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
         ),
       ]
     : [];
+  const signoffCleanup = (await signoffsReady())
+    ? [
+        env.DB.prepare(
+          'DELETE FROM report_signoffs WHERE report_id IN(SELECT r.id FROM review_reports r JOIN projects p ON p.id=r.project_id WHERE p.user_id=?)',
+        ).bind(userId),
+      ]
+    : [];
+  // Jobs before batches: a job points at its batch.
+  const jobCleanup = (await captureJobsReady())
+    ? [
+        env.DB.prepare('DELETE FROM capture_jobs WHERE user_id=?').bind(userId),
+        env.DB.prepare('DELETE FROM capture_batches WHERE user_id=?').bind(userId),
+      ]
+    : [];
   const noiseCleanup = (await watchSettingsReady())
     ? [
         env.DB.prepare('DELETE FROM watch_settings WHERE watch_id IN(SELECT id FROM watches WHERE user_id=?)').bind(
@@ -98,8 +117,11 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
     : [];
   await env.DB.batch([
     ...collaborationCleanup,
+    ...signoffCleanup,
+    ...brandingCleanup,
     ...noiseCleanup,
     ...projectCleanup,
+    ...jobCleanup,
     env.DB.prepare('DELETE FROM watch_runs WHERE user_id=?').bind(userId),
     env.DB.prepare('DELETE FROM watches WHERE user_id=?').bind(userId),
     env.DB.prepare(`DELETE FROM captures WHERE user_id = ?`).bind(userId),

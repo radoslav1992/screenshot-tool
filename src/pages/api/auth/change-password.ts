@@ -4,6 +4,7 @@ import { SESSION_COOKIE, checkNewPassword, replacePassword, verifyPassword } fro
 import { AUTH_LIMITS, enforceThrottles } from '../../../lib/auth-throttle';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { redirectWithFlash } from '../../../lib/flash';
 
 export const prerender = false;
 
@@ -57,9 +58,6 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
   } catch (error) {
     const failure = toHttpError(error, 'auth.change-password', 'Could not change your password.');
     if (wantsJson) return failure.toResponse();
-    return new Response(null, {
-      status: 303,
-      headers: { location: `/app/account?password_error=${encodeURIComponent(failure.message)}` },
-    });
+    return redirectWithFlash(request, '/app/account', failure.message);
   }
 };

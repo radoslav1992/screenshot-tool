@@ -10,6 +10,7 @@ import {
 import { AUTH_LIMITS, clientIp, emailBucket, enforceThrottles } from '../../../lib/auth-throttle';
 import { HttpError, assertSameOrigin, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { redirectWithFlash } from '../../../lib/flash';
 import { safeNext } from '../../../lib/safe-next';
 
 export const prerender = false;
@@ -58,8 +59,7 @@ export const POST: APIRoute = async ({ request }) => {
     const httpError = toHttpError(error, 'login', 'Could not sign you in.');
     if (wantsJson) return httpError.toResponse();
     // Keep `next` so a second attempt still lands where the first was going.
-    const back = new URLSearchParams({ error: httpError.message });
-    if (next !== '/app') back.set('next', next);
-    return new Response(null, { status: 303, headers: { location: `/login?${back}` } });
+    const back = next === '/app' ? '/login' : `/login?${new URLSearchParams({ next })}`;
+    return redirectWithFlash(request, back, httpError.message);
   }
 };

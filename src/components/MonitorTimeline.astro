@@ -1,7 +1,9 @@
 ---
 import { env } from 'cloudflare:workers';
 import { fileUrl, safeParseFiles, type CaptureRow } from '../lib/captures';
-import { decodeRunDetail, deliveryLabel, runLabel } from '../lib/monitor-health';
+import { decodeRunChanges, decodeRunDetail, deliveryLabel, runLabel } from '../lib/monitor-health';
+import { changedAreas, highlightUrl } from '../lib/change-highlights';
+import ChangeFrame from './ChangeFrame.astro';
 import { listProjects } from '../lib/projects';
 import { formatDateTime } from '../lib/dates';
 import type { WatchRunRow } from '../lib/watches';
@@ -16,7 +18,7 @@ const url = (id: string | null) => { const row=id?shots.get(id):null; const file
 const projects = await listProjects(userId);
 const link = (n:number) => `/app/library?collection=monitors&watch=${encodeURIComponent(watchId)}&view=timeline${changedOnly?'&changed=1':''}&page=${n}`;
 ---
-<form id="timeline-report" data-watch={watchId} class="stack gap-20">
+<form id="timeline-report" data-watch={watchId} class="stack gap-20 changes">
 <div class="card card--pad stack gap-12">
 <h2 class="h4">Turn changes into a client report</h2>
 <p>Select one or two completed comparisons below. The report stays private until you create a sharing link.</p>
@@ -27,15 +29,18 @@ const link = (n:number) => `/app/library?collection=monitors&watch=${encodeURICo
 <p role="status" id="report-status"></p>
 </div>
 {runs.length===0 && <p class="notice">No {changedOnly?'changed ':''}checks on this page yet.</p>}
+{runs.some(run=>decodeRunChanges(run.detail).regions.length) && <label class="change-toggle"><input type="checkbox" checked /> Show changes</label>}
 {runs.map(run=>{
- const before=url(run.baseline_capture_id), after=url(run.capture_id); const decoded=decodeRunDetail(run.detail);
+ const before=url(run.baseline_capture_id), after=url(run.capture_id); const decoded=decodeRunDetail(run.detail); const changes=decodeRunChanges(run.detail);
+ const shot=run.capture_id?shots.get(run.capture_id):null; const highlighted=changes.highlight&&shot?highlightUrl(shot,Astro.url.origin):null;
  return <article class="card card--pad stack gap-12">
- <div><strong>{runLabel(run)}</strong> · <time datetime={run.created_at}>{formatDateTime(run.created_at)}</time></div>
+ <div><strong>{runLabel({...run,repeat:changes.repeat})}</strong> · <time datetime={run.created_at}>{formatDateTime(run.created_at)}</time></div>
  <p class="small muted">{decoded.detail || (run.change_pct!==null?`${run.change_pct}% visually different`:'')}</p>
  <div class="comparison-pair">
- <div><span class="eyebrow">Before</span>{before?<a href={before} target="_blank" rel="noopener"><img src={before} loading="lazy" alt="Screenshot before this check" /></a>:<p>Baseline unavailable or expired.</p>}</div>
- <div><span class="eyebrow">After</span>{after?<a href={after} target="_blank" rel="noopener"><img src={after} loading="lazy" alt="Screenshot after this check" /></a>:<p>Screenshot unavailable or expired.</p>}</div>
+ <div><span class="eyebrow">Before{changes.pinned?' · pinned baseline':''}</span>{before?<a href={before} target="_blank" rel="noopener"><img src={before} loading="lazy" alt="Screenshot before this check" /></a>:<p>Baseline unavailable or expired.</p>}</div>
+ <div><span class="eyebrow">After</span>{after?<a href={after} target="_blank" rel="noopener"><ChangeFrame src={after} alt="Screenshot after this check" regions={after?changes.regions:[]} maxHeight="240px" /></a>:<p>Screenshot unavailable or expired.</p>}</div>
  </div>
+ {after && changes.regions.length>0 && <p class="small">{changedAreas(changes.regions)}{highlighted && <> · <a href={highlighted} target="_blank" rel="noopener">Open highlighted image</a></>}</p>}
  {run.changed===1 && <p class="small">Email: {deliveryLabel[decoded.delivery.email]} · Webhook: {deliveryLabel[decoded.delivery.webhook]}</p>}
  {before && after && run.status==='done' && <label><input type="checkbox" name="run" value={run.id} /> Include this comparison in report</label>}
  </article>;

@@ -404,7 +404,7 @@ await section('a deadline frees a hung capture', async () => {
 });
 
 /** A Puppeteer page that answers the calls the renderer makes, and records them. */
-function fakePage({ redirectTo, subrequests = [], navigateTo } = {}) {
+function fakePage({ redirectTo, subrequests = [], navigateTo, headers = {} } = {}) {
   const handlers = {};
   const mainFrame = {};
   const page = {
@@ -416,6 +416,7 @@ function fakePage({ redirectTo, subrequests = [], navigateTo } = {}) {
     authenticated: null,
     on: (event, fn) => (handlers[event] ??= []).push(fn),
     setViewport: async (viewport) => page.viewports.push(viewport),
+    setUserAgent: async (userAgent) => (page.userAgent = userAgent),
     setRequestInterception: async (on) => (page.interception = on),
     setExtraHTTPHeaders: async (headers) => (page.extraHeaders = headers),
     authenticate: async (credentials) => (page.authenticated = credentials),
@@ -449,6 +450,8 @@ function fakePage({ redirectTo, subrequests = [], navigateTo } = {}) {
       return request;
     },
     goto: async (url) => {
+      // What the server is told: the user agent in force when the document is requested.
+      page.userAgentAtLoad = page.userAgent ?? null;
       const first = page.request(url, { navigation: true });
       if (first.outcome !== 'continue') throw new Error('net::ERR_FAILED');
       if (redirectTo) {
@@ -457,7 +460,7 @@ function fakePage({ redirectTo, subrequests = [], navigateTo } = {}) {
       }
       for (const sub of subrequests) page.request(sub, { frame: {} });
       page.current = navigateTo ?? url;
-      return { status: () => 200 };
+      return { status: () => 200, headers: () => headers };
     },
   };
   return page;
@@ -611,6 +614,110 @@ try {
 
     setEnv({ BROWSER: {} });
     await rejects(renderer.render(parse({ url: 'https://example.com/', block_ads: '0' })), statusOf(503, 'browser_unavailable'));
+  });
+
+  await section('a phone or tablet capture loads as that device; desktop stays the browser it is', async () => {
+    setEnv({ BROWSER: {} });
+    const loaded = {};
+    for (const device of ['mobile', 'tablet', 'desktop', 'og-image']) {
+      const page = fakePage();
+      useBrowser(page);
+      await renderer.render(parse({ url: 'https://example.com/', device, block_ads: '0' }));
+      loaded[device] = { userAgent: page.userAgentAtLoad, viewport: page.viewports[0] };
+    }
+    assert.match(loaded.mobile.userAgent, /^Mozilla\/5\.0 \(iPhone; CPU iPhone OS \d+_\d+ like Mac OS X\) .*Version\/\d+\.\d+ Mobile\/\w+ Safari\/[\d.]+$/);
+    assert.match(loaded.tablet.userAgent, /^Mozilla\/5\.0 \(iPad; CPU OS \d+_\d+ like Mac OS X\) .*Version\/\d+\.\d+ Mobile\/\w+ Safari\/[\d.]+$/);
+    assert.doesNotMatch(loaded.mobile.userAgent + loaded.tablet.userAgent, /Headless/);
+    for (const device of ['mobile', 'tablet']) {
+      assert.deepEqual([loaded[device].viewport.isMobile, loaded[device].viewport.hasTouch], [true, true], device);
+    }
+    assert.deepEqual(
+      [loaded.mobile.viewport.width, loaded.mobile.viewport.height, loaded.mobile.viewport.deviceScaleFactor],
+      [390, 844, 3],
+      'the phone keeps its size',
+    );
+    assert.deepEqual(
+      [loaded.tablet.viewport.width, loaded.tablet.viewport.height, loaded.tablet.viewport.deviceScaleFactor],
+      [834, 1194, 2],
+      'the tablet keeps its size',
+    );
+    // Desktop is unchanged: the browser's own user agent, no touch, desktop viewport rules.
+    assert.equal(loaded.desktop.userAgent, null, 'desktop never overrides the user agent');
+    assert.deepEqual([loaded.desktop.viewport.isMobile, loaded.desktop.viewport.hasTouch], [false, false]);
+    assert.deepEqual([loaded.desktop.viewport.width, loaded.desktop.viewport.height], [1440, 900]);
+    assert.equal(loaded['og-image'].userAgent, null, 'a frame without its own user agent keeps the browser’s');
+    assert.deepEqual(options.browserIdentity('desktop'), { isMobile: false, hasTouch: false });
+    assert.deepEqual(options.browserIdentity('custom'), { isMobile: false, hasTouch: false });
+    assert.equal(options.browserIdentity('mobile').userAgent, options.DEVICES.mobile.userAgent);
+  });
+
+  await section('extra sizes keep the one page load, with each viewport’s own touch', async () => {
+    const page = fakePage();
+    useBrowser(page);
+    await renderer.render(parse({ url: 'https://example.com/', device: 'mobile', sizes: 'desktop' }), async () => {});
+    assert.match(page.userAgentAtLoad, /iPhone/, 'the page is loaded as the chosen device');
+    const desktop = page.viewports.find((viewport) => viewport.width === 1440);
+    assert.deepEqual([desktop.isMobile, desktop.hasTouch], [false, false]);
+  });
+
+  await section('a capture that cannot take on its device identity is not taken', async () => {
+    const page = fakePage();
+    page.setUserAgent = async () => {
+      throw new Error('Protocol error (Network.setUserAgentOverride): Target closed');
+    };
+    useBrowser(page);
+    await rejects(renderer.render(parse({ url: 'https://example.com/', device: 'mobile' })), statusOf(502, 'render_failed'));
+    assert.equal(page.requests.length, 0, 'nothing was requested as the wrong device');
+  });
+
+  await section('SEO facts read the document’s headers, and only when a rule asks', async () => {
+    const page = fakePage({ headers: { 'x-robots-tag': 'noindex', 'content-type': 'text/html' } });
+    const asked = [];
+    const evaluate = page.evaluate;
+    page.evaluate = async (fn, ...args) => {
+      if (fn?.name !== 'readFactsInPage') return evaluate(fn, ...args);
+      asked.push(args[0]);
+      const raw = {
+        title: 'Shoes', description: 'Buy shoes', canonical: 'https://example.com/shoes', lang: 'en', charset: 'UTF-8',
+        favicon: '', og: { title: 'Shoes' }, twitter: {}, headings: ['Shoes'], imageCount: 0, linksInternal: 0,
+        linksExternal: 0, documentHeight: 900, text: 'Shoes', textLength: 5, textHash: 'a', html: '<h1>Shoes</h1>',
+        htmlTruncated: false, timings: { ttfbMs: null, domContentLoadedMs: null, loadMs: null },
+      };
+      return args[0]?.seo ? { ...raw, seo: { robots: 'index', h1: 'Shoes', h1Count: 1, hreflang: [] } } : raw;
+    };
+    useBrowser(page);
+    const plain = parse({ url: 'https://example.com/shoes', facts: '1' });
+    const withoutRule = await renderer.render(plain);
+    assert.equal(asked[0].seo, undefined);
+    assert.equal(withoutRule.facts.seo, undefined, 'facts are what they were for every other capture');
+    const seo = { ...plain, monitorSeo: true };
+    const result = await renderer.render(seo);
+    assert.equal(asked[1].seo, true);
+    assert.equal(result.facts.seo.robots_header, 'noindex');
+    assert.equal(result.facts.seo.status, 200);
+    assert.equal(result.facts.seo.og.image, '');
+  });
+
+  await section('REST sends the same device identity', async () => {
+    setEnv({ CF_ACCOUNT_ID: 'acct', CF_API_TOKEN: 'token' });
+    const bodies = [];
+    const counting = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    };
+    try {
+      await renderer.render(parse({ url: 'https://example.com/', device: 'mobile' }));
+      await renderer.render(parse({ url: 'https://example.com/', device: 'tablet', format: 'pdf' }));
+      await renderer.render(parse({ url: 'https://example.com/' }));
+    } finally {
+      globalThis.fetch = counting;
+    }
+    assert.equal(bodies[0].userAgent, options.DEVICES.mobile.userAgent);
+    assert.deepEqual([bodies[0].viewport.isMobile, bodies[0].viewport.hasTouch], [true, true]);
+    assert.equal(bodies[1].userAgent, options.DEVICES.tablet.userAgent, 'PDFs too');
+    assert.equal('userAgent' in bodies[2], false, 'desktop keeps the REST browser’s own');
+    assert.deepEqual([bodies[2].viewport.isMobile, bodies[2].viewport.hasTouch], [false, false]);
   });
 
   await section('a REST-only deployment refuses what it cannot do', async () => {
@@ -830,6 +937,20 @@ await section('a short series gets its unused frames back', async () => {
     captures.safeParseFiles(done.files).map((f) => f.name),
     ['01.png', '02.png', '03.png'],
   );
+});
+
+await section('every stored file records the capture engine that took it', async () => {
+  const { CAPTURE_ENGINE, captureEngine } = await load('capture-engine');
+  const options = parse({ url: 'https://example.com', sizes: 'mobile' });
+  const row = await captures.createCaptureRow(user('series', 50), options, 'app');
+  cc.render = async (_options, onFile) => {
+    await onFile(file('desktop.png'));
+    return { files: [file('mobile.png')], engine: 'binding', durationMs: 5 };
+  };
+  const done = await captures.runCapture(row, options);
+  assert.deepEqual(captures.safeParseFiles(done.files).map((f) => f.engine), [CAPTURE_ENGINE, CAPTURE_ENGINE]);
+  assert.equal(captureEngine(db.prepare('SELECT files FROM captures WHERE id = ?').get(row.id)), CAPTURE_ENGINE);
+  assert.equal('engine' in captures.toDTO(done, 'https://app.test').files[0], false, 'the API shape is unchanged');
 });
 
 await section('a failed capture is refunded, keeps its error type, and leaves no files', async () => {

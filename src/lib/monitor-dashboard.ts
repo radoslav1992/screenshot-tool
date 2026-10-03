@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { decodeRunDetail } from './monitor-health';
+import { decodeRunChanges, decodeRunDetail } from './monitor-health';
 import type { WatchRunRow } from './watches';
 
 export async function monitorDashboard(userId: string, now = new Date()) {
@@ -9,7 +9,7 @@ export async function monitorDashboard(userId: string, now = new Date()) {
       `SELECT COUNT(*) AS total,
       SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS succeeded,
       SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS failed,
-      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status IN ('pending', 'queued', 'running') THEN 1 ELSE 0 END) AS pending,
       AVG(CASE WHEN status = 'done' THEN duration_ms END) AS average_ms
       FROM captures WHERE user_id = ? AND created_at >= ?`,
     )
@@ -40,7 +40,9 @@ export async function monitorDashboard(userId: string, now = new Date()) {
   return {
     stats,
     successRate: finished ? Math.round((100 * stats.succeeded) / finished) : null,
-    latest: new Map((latest.results ?? []).map((run) => [run.watch_id, { ...run, ...decodeRunDetail(run.detail) }])),
+    latest: new Map(
+      (latest.results ?? []).map((run) => [run.watch_id, { ...run, ...decodeRunDetail(run.detail), ...decodeRunChanges(run.detail) }]),
+    ),
     alerts: new Map((alerts.results ?? []).map((run) => [run.watch_id, { ...run, ...decodeRunDetail(run.detail) }])),
     successes: new Map((successes.results ?? []).map((row) => [row.watch_id, row.last_success])),
   };

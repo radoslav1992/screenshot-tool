@@ -73,7 +73,8 @@ CI=1 npm run dev
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
 retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1 schema
-files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made. Before changing an API the iOS app uses, also run
+files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
 shape the app decodes.
@@ -165,8 +166,8 @@ applies the migration that came with it, every later migration is checked too, b
 columns and indexes it creates (listed in `src/lib/schema-manifest.ts`). One that is missing, or
 only partly applied, also answers `503`, with an entry such as
 `{"name":"0011_apple_lite.sql","applied":false,"missing":["apple_accounts","users.free_quota",…],"upgrade":"db/0011-upgrade.sql"}`
-and a `database.detail` naming the upgrade files to paste, in order. Server-side causes are logged with a
-context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
+and a `database.detail` naming the upgrade files to paste, in order. Server-side causes are logged
+with a context tag, so `npx wrangler tail` shows lines like `[signup] D1_ERROR: no such table: users`.
 
 Browser Rendering requires a **paid Workers plan**. Without the binding, set `CF_ACCOUNT_ID` and
 `CF_API_TOKEN` (a token with *Browser Rendering: Edit*) as secrets to use the REST fallback — it

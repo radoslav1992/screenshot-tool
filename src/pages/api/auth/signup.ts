@@ -4,6 +4,7 @@ import { checkNewPassword, createSession, createUser, isSecureRequest, sessionCo
 import { AUTH_LIMITS, clientIp, emailBucket, enforceThrottles } from '../../../lib/auth-throttle';
 import { assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { redirectWithFlash } from '../../../lib/flash';
 import { safeNext } from '../../../lib/safe-next';
 import { confirmationEmailsEnabled, issueVerificationToken, sendVerificationEmail } from '../../../lib/verification';
 
@@ -65,8 +66,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   } catch (error) {
     const httpError = toHttpError(error, 'signup', 'Could not create the account.');
     if (wantsJson) return httpError.toResponse();
-    const back = new URLSearchParams({ error: httpError.message });
-    if (next !== '/app') back.set('next', next);
-    return new Response(null, { status: 303, headers: { location: `/signup?${back}` } });
+    const back = next === '/app' ? '/signup' : `/signup?${new URLSearchParams({ next })}`;
+    return redirectWithFlash(request, back, httpError.message);
   }
 };

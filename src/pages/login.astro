@@ -4,11 +4,13 @@ import AdonAuthStory from "../components/AdonAuthStory.astro";
 import Logo from "../components/Logo.astro";
 import PasswordField from "../components/PasswordField.astro";
 import { safeNext } from "../lib/safe-next";
+import { takeFlash } from "../lib/flash";
 
 // Sanitised here as well as by the API, so the form never carries a value that
 // would send someone off-site even if it were posted somewhere else.
 const next = safeNext(Astro.url.searchParams.get("next"), Astro.url.origin);
-const initialError = Astro.url.searchParams.get("error") ?? "";
+// Left by the API when a post without JavaScript failed; never read from the URL.
+const initialError = takeFlash(Astro.cookies, Astro.url.pathname);
 // Someone invited to a project usually has no account yet; keep where they
 // were going when they switch to signing up.
 const signupHref = next === "/app" ? "/signup" : `/signup?next=${encodeURIComponent(next)}`;

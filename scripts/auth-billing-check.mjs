@@ -304,7 +304,14 @@ try {
   assert.ok(Number(r.headers.get('retry-after')) > 0, '429 carries Retry-After');
   r = await call(routes.login, { email: target, password: 'guess-guess' }, { ip: '198.51.100.201', json: false });
   assert.equal(r.status, 303, 'a throttled form post is redirected, not shown JSON');
-  assert.match(r.headers.get('location'), /^\/login\?error=Too\+many/);
+  // The reason rides in a cookie scoped to /login, never in the URL, so a link
+  // cannot make the real login page say something this site did not.
+  assert.equal(r.headers.get('location'), '/login');
+  const flash = r.headers.get('set-cookie') ?? '';
+  assert.match(flash, /^sf_flash=Too%20many/);
+  assert.match(flash, /Path=\/login;/);
+  assert.match(flash, /HttpOnly/);
+  assert.match(flash, /Max-Age=60/);
 
   // Per IP: one machine cannot walk a list of accounts.
   for (let i = 0; i < 30; i++) {

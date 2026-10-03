@@ -5,6 +5,7 @@ import { afterResponse } from '../../../lib/background';
 import { COMPANY } from '../../../lib/company';
 import { HttpError, assertSameOrigin, badRequest, json, readBody } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
+import { redirectWithFlash } from '../../../lib/flash';
 import { issueResetToken, resetAvailable, sendResetEmail } from '../../../lib/password-reset';
 
 export const prerender = false;
@@ -60,9 +61,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
   } catch (error) {
     const failure = toHttpError(error, 'auth.forgot-password', 'Could not send the reset email.');
     if (wantsJson) return failure.toResponse();
-    return new Response(null, {
-      status: 303,
-      headers: { location: `/forgot-password?error=${encodeURIComponent(failure.message)}` },
-    });
+    return redirectWithFlash(request, '/forgot-password', failure.message);
   }
 };

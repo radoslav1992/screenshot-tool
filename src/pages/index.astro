@@ -61,7 +61,7 @@ const faqs = [
   },
   {
     q: "How does website monitoring work?",
-    a: `Save a page, choose a device and a schedule, then set your change threshold. We compare new captures with the previous capture and send alerts when it is met. Plus includes ${WATCH_LIMIT.plus} monitor slots; scheduled checks use your screenshot allowance.`,
+    a: `Save a page, choose a device and a schedule, then set your change threshold. We compare new captures with the previous capture and send alerts when it is met. Free includes ${WATCH_LIMIT.free} monitors checked weekly, and Plus ${WATCH_LIMIT.plus}; scheduled checks use your screenshot allowance.`,
   },
   {
     q: "Can I capture through an API?",
@@ -364,6 +364,13 @@ const faqs = [
               Use “any change” when every detected pixel matters. Each scheduled
               check uses your screenshot allowance.
             </p>
+            <p class="ai-free-offer">
+              <strong>
+                Watch your {WATCH_LIMIT.free} most important client pages free,
+                forever.
+              </strong>{" "}
+              <a href="/client-sign-off">From change to client sign-off ↗</a>
+            </p>
             <a class="rr-btn-classic" href={monitorHref}>
               Set up a monitor <span aria-hidden="true">↗</span>
             </a>
@@ -448,6 +455,26 @@ const faqs = [
     <SiteFooter />
   </div>
 </Base>
+<style>
+  .ai-free-offer {
+    padding: 14px 16px;
+    background: var(--lime-tint);
+    border-left: 3px solid var(--theme);
+  }
+  .ai-free-offer strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .ai-free-offer a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--green);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+</style>
 <script>
   import "../scripts/adon-ai";
   const form = document.querySelector<HTMLFormElement>(".hero-capture");

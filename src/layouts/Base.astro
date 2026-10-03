@@ -70,6 +70,8 @@ const fullTitle =
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    {/* A page's own canonical, og:url or og:image. */}
+    <slot name="head" />
 
     <script is:inline>
       // Standalone (installed PWA) drops the desktop "phone frame" treatment.

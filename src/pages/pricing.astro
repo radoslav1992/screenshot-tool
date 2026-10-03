@@ -5,7 +5,7 @@ import Base from '../layouts/Base.astro';
 import Icon from '../components/Icon.astro';
 import AiPage from '../components/AiPage.astro';
 import AiPageHead from '../components/AiPageHead.astro';
-import { PLANS, PLAN_ORDER } from '../lib/plans';
+import { PLANS, PLAN_ORDER, WATCH_FREQUENCIES, WATCH_LIMIT } from '../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, planPurchasable } from '../lib/billing';
 import { billingErrorMessage } from '../lib/billing-errors';
 import { fastChecksReady } from '../lib/fast-checks';
@@ -81,6 +81,14 @@ const smart = await fastChecksReady().catch(() => false);
                 <p class="small" style={plan.id === 'pro' ? 'color: var(--dim); margin-top: 6px' : 'color: var(--muted); margin-top: 6px'}>
                   {plan.tagline}
                 </p>
+
+                {plan.id === 'free' && (
+                  <p class="plan-offer">
+                    <strong>Watch your {WATCH_LIMIT.free} most important client pages free, forever.</strong>{' '}
+                    Checked {WATCH_FREQUENCIES.free.join(' or ')}, no card.{' '}
+                    <a href="/client-sign-off">How client sign-off works</a>
+                  </p>
+                )}
 
                 <p class="xs" data-annual-note data-annual={plan.priceYearly} data-month={plan.priceMonthly}
                   style="margin-top: 10px" hidden={!startYearly || plan.id === 'free'}>
@@ -177,6 +185,27 @@ const smart = await fastChecksReady().catch(() => false);
 </Base>
 
 <style>
+  .plan-offer {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--lime-tint);
+    border-left: 3px solid var(--theme);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .plan-offer strong {
+    font-weight: 600;
+  }
+  .plan-offer a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--green);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
   .pricing-plans {
     margin-top: 35px;
     border-top: 1px solid var(--line);

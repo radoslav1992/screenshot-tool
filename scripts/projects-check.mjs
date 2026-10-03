@@ -66,6 +66,9 @@ globalThis.__projects = {
       },
     },
     SHOTS: {
+      // Deleting a project clears its report logos under brand/<project>/.
+      list: async () => ({ objects: [], truncated: false }),
+      delete: async () => {},
       get: async () =>
         sourceMissing
           ? null

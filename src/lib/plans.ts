@@ -251,3 +251,21 @@ export function allowedFrequencies(id: string | null | undefined): WatchFrequenc
 export function runsPerMonth(frequency: string): number {
   return Math.round((30 * 24) / frequencyHours(frequency));
 }
+
+/* -------------------------------------------------------------------------- */
+/* Report branding                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether a project's review links may drop the "Shared with Easy Screen
+ * Capture" line. A logo, accent colour and footer line are on every plan; the
+ * pricing copy promises no white-label, so removing our name is kept for the
+ * top two plans and the branding form says so.
+ */
+export const REPORT_WHITE_LABEL: Record<PlanId, boolean> = {
+  free: false,
+  lite: false,
+  plus: false,
+  pro: true,
+  business: true,
+};

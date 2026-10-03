@@ -3,6 +3,7 @@ import { HttpError, badRequest } from './http';
 import { prefixedId, randomToken, sha256Hex } from './ids';
 import { parseCaptureOptions } from './capture-options';
 import { presetSettings, reportExpired, REVIEW_STATES } from './project-settings';
+import { deleteProjectLogos } from './branding';
 import type { CaptureRow } from './captures';
 export interface Project {
   id: string;
@@ -104,6 +105,8 @@ export async function projectAction(userId: string, b: Record<string, string>, o
       .bind(requiredText(b.name, 'Name', 100), (b.brand ?? '').trim().slice(0, 100), project.id)
       .run();
   } else if (b.action === 'delete') {
+    // Files first, as for accounts: the branding row goes with the project.
+    await deleteProjectLogos(project.id);
     await env.DB.prepare('DELETE FROM projects WHERE id=?').bind(project.id).run();
     return { redirect: '/app/projects' };
   } else if (b.action === 'attach' || b.action === 'detach' || b.action === 'review') {

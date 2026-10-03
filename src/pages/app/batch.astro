@@ -3,6 +3,12 @@ import { env } from 'cloudflare:workers';
 import AppShell from '../../layouts/AppShell.astro';
 import { projectsReady, ownProject } from '../../lib/projects';
 import { getUsage } from '../../lib/captures';
+import { captureJobsAvailable } from '../../lib/capture-jobs';
+import { listBatches, type BatchDTO } from '../../lib/capture-batches';
+import { MAX_BATCH } from '../../lib/batch';
+import { batchLimit } from '../../lib/plans';
+import { canSendEmail } from '../../lib/mailer';
+import { formatDateTime } from '../../lib/dates';
 import '../../styles/projects.css';
 const user = Astro.locals.user!;
 const usage = await getUsage(user);
@@ -20,6 +26,19 @@ if (projectId && (await projectsReady())) {
     .first<{ settings: string }>();
   if (preset) settings = JSON.parse(preset.settings);
 }
+
+// Background batches need migration 0013. Until it is applied this page is the
+// synchronous queue it always was, capped at MAX_BATCH.
+const background = await captureJobsAvailable();
+const limit = background ? batchLimit(user.plan) : MAX_BATCH;
+const recent: BatchDTO[] = background ? await listBatches(user.id, 10).catch(() => []) : [];
+const mailer = background && canSendEmail();
+const statusLabel: Record<BatchDTO['status'], string> = {
+  queued: 'Queued',
+  running: 'Running',
+  done: 'Finished',
+  cancelled: 'Cancelled',
+};
 ---
 
 <AppShell title="Batch capture" tab="projects">
@@ -32,12 +51,20 @@ if (projectId && (await projectsReady())) {
     id="batch-workspace"
     data-project={project?.id ?? ''}
     data-remaining={usage.remaining}
+    data-background={background ? '1' : ''}
+    data-limit={limit}
   >
     <div class="workspace-intro">
       <div>
         <span class="eyebrow">A WHOLE SITE. ONE WORKFLOW.</span>
         <h1>Ready for a closer look?</h1>
-        <p>Preview your pages, capture each one, then review the results.</p>
+        <p>
+          {
+            background
+              ? 'Preview your pages, start the batch, and come back to the results — it keeps running when you close this tab.'
+              : 'Preview your pages, capture each one, then review the results.'
+          }
+        </p>
       </div>
     </div>
     <form id="batch-form" class="project-grid">
@@ -50,7 +77,7 @@ if (projectId && (await projectsReady())) {
             name="urls"
             rows="6"
             placeholder="https://example.com/&#10;https://example.com/about"
-            maxlength="20000"
+            maxlength={background ? 200000 : 20000}
           ></textarea>
         </label>
         <p class="small muted">Or load a sitemap. A sitemap takes priority over the list above.</p>
@@ -58,7 +85,13 @@ if (projectId && (await projectsReady())) {
           Sitemap URL
           <input class="input" name="sitemap" type="url" placeholder="https://example.com/sitemap.xml" />
         </label>
-        <p class="small muted">Up to 25 URLs; sitemap indexes preview at most 5 child sitemaps.</p>
+        <p class="small muted">
+          {
+            background
+              ? `Up to ${limit} screenshots in one batch on your plan; sitemap indexes preview at most 5 child sitemaps.`
+              : 'Up to 25 URLs; sitemap indexes preview at most 5 child sitemaps.'
+          }
+        </p>
       </fieldset>
       <fieldset class="project-panel" id="batch-settings">
         <h2 class="section-heading"><span>[ 02 ]</span> Capture settings</h2>
@@ -101,8 +134,12 @@ if (projectId && (await projectsReady())) {
           </span>
         </label>
         <p class="small muted">
-          Two screenshots per URL. Up to 12 URLs in launch mode. Choose before/after baselines later in the project
-          report builder.
+          {
+            background
+              ? `Two screenshots per URL, so up to ${Math.floor(limit / 2)} URLs in launch mode.`
+              : 'Two screenshots per URL. Up to 12 URLs in launch mode.'
+          }{' '}
+          Choose before/after baselines later in the project report builder.
         </p>
         <label>
           Hide distracting elements
@@ -140,8 +177,11 @@ if (projectId && (await projectsReady())) {
         <p role="status" id="batch-status" aria-live="polite"></p>
         <p class="notice notice--error" id="batch-error" role="alert" hidden></p>
         <p class="small muted">
-          No captures are made during preview. Keep this tab open while running. Results are held in this tab; check
-          your library if the page is closed or a request is interrupted.
+          {
+            background
+              ? 'No captures are made during preview. A started batch runs on our servers, a few pages at a time: close this tab whenever you like and follow it under Recent batches.'
+              : 'No captures are made during preview. Keep this tab open while running. Results are held in this tab; check your library if the page is closed or a request is interrupted.'
+          }
         </p>
         {project && (
           <>
@@ -158,11 +198,19 @@ if (projectId && (await projectsReady())) {
     </form>
     <section class="project-panel" id="batch-results" hidden>
       <h2 class="section-heading"><span>[ 04 ]</span> <strong class="batch-cost" id="batch-cost">Capture queue</strong></h2>
+      <p class="notice notice--error" id="batch-start-error" role="alert" hidden></p>
+      {mailer && (
+        <label class="batch-notify">
+          <span>
+            <input type="checkbox" id="batch-notify" value="1" /> Email me when it is done
+          </span>
+        </label>
+      )}
       <div class="project-links">
         <button type="button" class="btn btn--lime" id="batch-start">
-          Start capture
+          {background ? 'Start background batch' : 'Start capture'}
         </button>
-        <button type="button" class="btn btn--outline" id="batch-stop" disabled>
+        <button type="button" class="btn btn--outline" id="batch-stop" disabled hidden={background}>
           Stop after current page
         </button>
         <button type="button" class="btn btn--outline" id="batch-retry" hidden>
@@ -171,11 +219,134 @@ if (projectId && (await projectsReady())) {
       </div>
       <ol class="project-items" id="batch-queue"></ol>
     </section>
+    {
+      background && (
+        <section class="project-panel stack gap-12" id="batch-progress" aria-labelledby="batch-progress-title" hidden>
+          <h2 class="section-heading" id="batch-progress-title">
+            <span>[ 05 ]</span> <strong class="batch-cost" id="batch-progress-label">Batch progress</strong>
+          </h2>
+          <p class="small" id="batch-progress-status" role="status" aria-live="polite"></p>
+          <div
+            class="batch-bar"
+            id="batch-progress-bar"
+            role="progressbar"
+            aria-label="Pages finished"
+            aria-valuemin="0"
+            aria-valuemax="0"
+            aria-valuenow="0"
+          >
+            <span class="batch-bar__fill"></span>
+          </div>
+          <dl class="batch-counts" id="batch-progress-counts"></dl>
+          <p class="notice notice--error" id="batch-progress-error" role="alert" hidden></p>
+          <div class="project-links">
+            <button type="button" class="btn btn--outline" id="batch-cancel" hidden>
+              Cancel pages not yet started
+            </button>
+            <a class="btn btn--outline" href="/app/library">Open library</a>
+          </div>
+          <ol class="project-items" id="batch-progress-items"></ol>
+        </section>
+      )
+    }
+    {
+      background && (
+        <section class="project-panel stack gap-12" aria-labelledby="batch-recent-title">
+          <h2 class="section-heading" id="batch-recent-title">
+            <span>[ 06 ]</span> Recent batches
+          </h2>
+          {recent.length === 0 ? (
+            <p class="small muted" id="batch-recent-empty">
+              No batches yet. Started batches are listed here for 30 days.
+            </p>
+          ) : null}
+          <ol class="project-items" id="batch-recent">
+            {recent.map((batch) => (
+              <li class="project-item project-item--row">
+                <div class="batch-item__text">
+                  <p class="batch-recent__label">{batch.label || 'Batch'}</p>
+                  <p class="small muted">
+                    {statusLabel[batch.status]} · {batch.done} of {batch.total} captured
+                    {batch.failed ? ` · ${batch.failed} failed` : ''}
+                    {batch.cancelled ? ` · ${batch.cancelled} cancelled` : ''} · {formatDateTime(batch.created_at)}
+                  </p>
+                </div>
+                <a class="btn btn--outline btn--sm" href={`/app/batch?batch=${encodeURIComponent(batch.id)}`}>
+                  View progress
+                </a>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )
+    }
   </div>
 </AppShell>
 <style>
   .batch-cost {
     font-weight: inherit;
+  }
+  .batch-notify {
+    margin-bottom: 14px;
+  }
+  .batch-bar {
+    height: 12px;
+    border: 1px solid var(--line);
+    background: white;
+    overflow: hidden;
+  }
+  .batch-bar__fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--theme, #fa814d);
+    transition: width 0.4s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .batch-bar__fill {
+      transition: none;
+    }
+  }
+</style>
+<style is:global>
+  /* Rendered by batch-progress.ts, so outside this page's scoped styles. */
+  .batch-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .batch-counts div {
+    display: flex;
+    gap: 6px;
+  }
+  .batch-counts dt {
+    color: var(--muted);
+  }
+  .batch-counts dd {
+    margin: 0;
+    font-weight: 600;
+  }
+  .batch-recent__label {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .batch-item__text {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .batch-item__link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .batch-state--running {
+    color: var(--theme-text-sm);
+  }
+  .batch-state--error {
+    color: var(--danger);
   }
 </style>
 <script>

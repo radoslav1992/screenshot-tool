@@ -1,3 +1,5 @@
+import { batchProgress, recentLine, request, type Batch } from './batch-progress';
+
 const root = document.querySelector<HTMLElement>('#batch-workspace');
 if (root) {
   const form = document.querySelector<HTMLFormElement>('#batch-form')!;
@@ -23,6 +25,14 @@ if (root) {
   let remaining = Number(root.dataset.remaining),
     running = false,
     stopping = false;
+  /*
+   * With migration 0013 a started queue becomes a background batch, sized by
+   * the plan; without it, this page runs the queue itself, one page per
+   * request, capped at 25.
+   */
+  const background = root.dataset.background === '1';
+  const limit = Number(root.dataset.limit) || 25;
+  const progress = background ? batchProgress() : null;
   type Job = {
     url: string;
     device: string;
@@ -64,7 +74,9 @@ if (root) {
       li.appendChild(text);
       const state = document.createElement('p');
       state.className = 'small';
-      state.textContent = `${job.state}${job.error ? ' · ' + job.error : ''}`;
+      // A background queue is not run here; until it is started its pages are only planned.
+      const label = background && job.state === 'pending' ? 'Ready to queue' : job.state;
+      state.textContent = `${label}${job.error ? ' · ' + job.error : ''}`;
       li.appendChild(state);
       if (job.id) {
         const link = document.createElement('a');
@@ -108,12 +120,18 @@ if (root) {
     button.disabled = true;
     clearError();
     status.textContent = 'Checking pages…';
+    document.querySelector<HTMLElement>('#batch-start-error')?.setAttribute('hidden', '');
     try {
       const data = input();
-      const result = await post('/api/batch-preview', data);
+      const result = await post('/api/batch-preview', background ? { ...data, background: '1' } : data);
       const devices = data.launch ? ['desktop', 'mobile'] : [data.device];
       const count = result.urls.length * devices.length;
-      if (count > 25) throw new Error('Launch checks support up to 12 URLs. Reduce the list and preview again.');
+      if (count > limit)
+        throw new Error(
+          background
+            ? `This batch needs ${count} screenshots; your plan takes up to ${limit} in one batch. Reduce the list and preview again.`
+            : 'Launch checks support up to 12 URLs. Reduce the list and preview again.',
+        );
       if (count > remaining)
         throw new Error(`This queue needs ${count} screenshots; ${remaining} remain. Reduce the list or upgrade.`);
       options = {
@@ -141,7 +159,76 @@ if (root) {
       button.disabled = false;
     }
   });
+  /** Hands the previewed queue to the server as one background batch, then follows its progress. */
+  async function startBackground() {
+    if (running || !jobs.length) return;
+    running = true;
+    clearError();
+    // Shown beside the Start button, not up in the preview panel out of sight.
+    const startError = document.querySelector<HTMLElement>('#batch-start-error');
+    if (startError) startError.hidden = true;
+    start.disabled = true;
+    status.textContent = 'Starting the batch…';
+    try {
+      const batch = await request<Batch & { rejected?: { url: string; error: string }[] }>('/api/batches', {
+        ...options,
+        urls: [...new Set(jobs.map((job) => job.url))].join('\n'),
+        url_lines: '1',
+        devices: [...new Set(jobs.map((job) => job.device))].join(','),
+        notify: document.querySelector<HTMLInputElement>('#batch-notify')?.checked ? '1' : '0',
+        ...(root!.dataset.project ? { project: root!.dataset.project } : {}),
+      });
+      jobs = [];
+      document.querySelector<HTMLElement>('#batch-results')!.hidden = true;
+      const skipped = batch.rejected?.length ?? 0;
+      status.textContent =
+        `Batch started: ${batch.total} capture${batch.total === 1 ? '' : 's'} queued.` +
+        (skipped ? ` ${skipped} URL${skipped === 1 ? '' : 's'} could not be queued (${batch.rejected![0]!.error}).` : '') +
+        ' It runs in the background — close this tab whenever you like.';
+      remaining = Math.max(0, remaining - batch.shots);
+      addRecent(batch);
+      const params = new URLSearchParams(location.search);
+      params.set('batch', batch.id);
+      history.replaceState(null, '', `${location.pathname}?${params}`);
+      await progress?.open(batch.id);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'The batch could not be started.';
+      status.textContent = '';
+      if (startError) {
+        startError.textContent = message;
+        startError.hidden = false;
+      } else fail(message);
+    } finally {
+      running = false;
+      render();
+    }
+  }
+  function addRecent(batch: Batch) {
+    const list = document.querySelector<HTMLOListElement>('#batch-recent');
+    if (!list) return;
+    document.querySelector('#batch-recent-empty')?.remove();
+    const item = document.createElement('li');
+    item.className = 'project-item project-item--row';
+    const text = document.createElement('div');
+    text.className = 'batch-item__text';
+    const name = document.createElement('p');
+    name.className = 'batch-recent__label';
+    name.textContent = batch.label || 'Batch';
+    const line = document.createElement('p');
+    line.className = 'small muted';
+    line.textContent = recentLine(batch);
+    text.appendChild(name);
+    text.appendChild(line);
+    const link = document.createElement('a');
+    link.className = 'btn btn--outline btn--sm';
+    link.href = `/app/batch?batch=${encodeURIComponent(batch.id)}`;
+    link.textContent = 'View progress';
+    item.appendChild(text);
+    item.appendChild(link);
+    list.insertBefore(item, list.firstChild);
+  }
   async function run() {
+    if (background) return startBackground();
     if (running) return;
     running = true;
     stopping = false;
@@ -204,6 +291,8 @@ if (root) {
     });
     void run();
   };
+  const opened = new URLSearchParams(location.search).get('batch');
+  if (progress && opened) void progress.open(opened);
   window.addEventListener('beforeunload', (e) => {
     if (running) {
       e.preventDefault();

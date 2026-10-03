@@ -7,6 +7,7 @@ import { prefixedId, randomToken } from './ids';
 import { getPlan } from './plans';
 import { render, type RenderedFile } from './renderer';
 import { safeParseFacts, type PageFacts } from './page-facts';
+import { CAPTURE_ENGINE } from './capture-engine';
 
 /** Where a capture was asked for. Watch runs are nobody's click, so they count separately. */
 export type CaptureSource = 'app' | 'api' | 'watch';
@@ -18,6 +19,8 @@ export interface CaptureFile {
   width: number;
   height: number;
   contentType: string;
+  /** The capture engine that rendered it (capture-engine.ts). Absent on files from before it was recorded. */
+  engine?: number;
 }
 
 export interface CaptureRow {
@@ -470,6 +473,7 @@ export async function runCapture(row: CaptureRow, options: CaptureOptions): Prom
       width: file.width,
       height: file.height,
       contentType: file.contentType,
+      engine: CAPTURE_ENGINE,
     });
   };
 

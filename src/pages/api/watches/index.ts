@@ -36,7 +36,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
      * and denylist checks come along with it.
      */
     const rule = parseMonitorRule(body);
-    if (rule.kind !== 'visual' && !env.BROWSER) throw new HttpError(503,'setup_required','Text and element rules require Browser Rendering.');
+    if (rule.kind !== 'visual' && !env.BROWSER) throw new HttpError(503,'setup_required','Text, element and SEO rules require Browser Rendering.');
     if ((rule.kind !== 'visual' || rule.region) && !await workflowsReady()) throw new HttpError(503,'setup_required','Monitor rules are being prepared.');
     const options = parseCaptureOptions({ ...body, mode: body.mode ?? 'fullpage' });
 

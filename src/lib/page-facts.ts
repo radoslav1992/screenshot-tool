@@ -54,8 +54,37 @@ export interface PageFacts {
   text_hash?: string;
   /** Whether each phrase a monitor rule asked about appears anywhere in the visible text. */
   phrases?: Record<string, boolean>;
+  /**
+   * What an SEO monitor rule compares, read only for captures that asked
+   * (seo-signals.ts). Its absence is how a baseline from before the rule says
+   * it has nothing to compare yet.
+   */
+  seo?: SeoFacts;
   /** True when the page was too large to derive signals from in full. */
   truncated: boolean;
+}
+
+/**
+ * One capture's SEO signals, as found — normalised only when two are compared,
+ * so a better normalisation applies to baselines already stored.
+ */
+export interface SeoFacts {
+  title: string;
+  /** The meta description itself; unlike `description` above, never the OG one standing in. */
+  description: string;
+  /** Resolved against the page, as a crawler resolves it. */
+  canonical: string;
+  /** The robots and googlebot meta directives, as written. */
+  robots: string;
+  /** The X-Robots-Tag response header; '' when absent, null when the response was not seen. */
+  robots_header: string | null;
+  /** The first visible h1, and how many are visible. */
+  h1: string;
+  h1_count: number;
+  hreflang: Array<{ lang: string; href: string }>;
+  og: { title: string; description: string; image: string };
+  /** The main document's HTTP status, null when there was no response (inline HTML). */
+  status: number | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -258,7 +287,23 @@ export function buildFacts(input: FactsInput): PageFacts {
     text_length: raw.textLength,
     text_hash: raw.textHash,
     ...(raw.phrases ? { phrases: raw.phrases } : {}),
+    ...(raw.seo ? { seo: seoFacts(input) } : {}),
     truncated: raw.htmlTruncated,
+  };
+}
+
+function seoFacts({ raw, status, headers }: FactsInput): SeoFacts {
+  return {
+    title: raw.title,
+    description: raw.description,
+    canonical: raw.canonical,
+    robots: raw.seo!.robots,
+    robots_header: headers ? (headers['x-robots-tag'] ?? '').slice(0, 500) : null,
+    h1: raw.seo!.h1,
+    h1_count: raw.seo!.h1Count,
+    hreflang: raw.seo!.hreflang,
+    og: { title: raw.og.title ?? '', description: raw.og.description ?? '', image: raw.og.image ?? '' },
+    status,
   };
 }
 

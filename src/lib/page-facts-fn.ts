@@ -30,10 +30,26 @@ export interface RawPageFacts {
   textHash: string;
   /** For each phrase asked about, whether the whole visible text contains it. */
   phrases?: Record<string, boolean>;
+  /** The SEO signals not read above, when asked for. */
+  seo?: RawSeoSignals;
   /** Rendered markup, for the derived signals the Worker computes. */
   html: string;
   htmlTruncated: boolean;
   timings: { ttfbMs: number | null; domContentLoadedMs: number | null; loadMs: number | null };
+}
+
+/**
+ * What an SEO monitor rule needs beyond the title, description, canonical and
+ * Open Graph tags every read already has.
+ */
+export interface RawSeoSignals {
+  /** The robots and googlebot meta tags' directives, as written. */
+  robots: string;
+  /** The first h1 a visitor can see, and how many they can see. */
+  h1: string;
+  h1Count: number;
+  /** Alternate-language links, resolved to absolute URLs. */
+  hreflang: Array<{ lang: string; href: string }>;
 }
 
 /**
@@ -47,7 +63,7 @@ const MAX_HTML_BYTES = 2_000_000;
 const MAX_TEXT_CHARS = 8_000;
 
 /**
- * What the caller knows that the page does not. Both are optional, and a call
+ * What the caller knows that the page does not. All are optional, and a call
  * without them reads the same facts as before.
  */
 export interface FactsRequest {
@@ -57,6 +73,8 @@ export interface FactsRequest {
    * all of it, or it reads as missing.
    */
   phrases?: string[];
+  /** Read the SEO signals too (RawSeoSignals): a few selector queries, asked for by SEO monitor rules. */
+  seo?: boolean;
   /**
    * The redaction patterns (redact-fn's PII_PATTERNS) when the capture asked
    * for PII to be covered. Redaction rewrites the body before this runs; the
@@ -146,6 +164,36 @@ export function readFactsInPage(request?: FactsRequest): RawPageFacts {
   const ms = (value: number | undefined): number | null =>
     typeof value === 'number' && value > 0 ? Math.round(value) : null;
 
+  // h1s as `headings` reads them: shown ones only, so `hide` keeps them out.
+  const h1s = [...document.querySelectorAll('h1')].filter(shown);
+  const h1Text = (node: Element): string =>
+    scrub(((node as HTMLElement).innerText ?? node.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+  /*
+   * The signals an SEO rule watches that the facts below do not already carry.
+   * Cheap — three selector queries — but only read when asked for, so a
+   * capture's facts stay what they were for everyone else. Googlebot's meta
+   * tag counts with the generic one: Google obeys the stricter of the two.
+   */
+  const seo = request?.seo
+    ? {
+        robots: [...document.querySelectorAll('meta[name="robots" i], meta[name="googlebot" i]')]
+          .map((node) => (node as HTMLMetaElement).content?.trim() ?? '')
+          .filter(Boolean)
+          .join(', ')
+          .slice(0, 500),
+        h1: h1s.length ? h1Text(h1s[0]!).slice(0, 500) : '',
+        h1Count: h1s.length,
+        hreflang: [...document.querySelectorAll('link[rel~="alternate" i][hreflang]')]
+          .map((node) => ({
+            lang: (node.getAttribute('hreflang') ?? '').trim().toLowerCase(),
+            href: absolute(node.getAttribute('href')),
+          }))
+          .filter((entry) => entry.lang && entry.href)
+          .slice(0, 50),
+      }
+    : undefined;
+
   const html = document.documentElement.outerHTML;
   const text = scrub((document.body?.innerText ?? '').replace(/\s+/g, ' ').trim());
   const lower = text.toLowerCase();
@@ -169,11 +217,7 @@ export function readFactsInPage(request?: FactsRequest): RawPageFacts {
     ),
     og: scrubAll(prefixed('property', 'og:')),
     twitter: scrubAll(prefixed('name', 'twitter:')),
-    headings: [...document.querySelectorAll('h1')]
-      .filter(shown)
-      .map((node) => scrub(((node as HTMLElement).innerText ?? node.textContent ?? '').replace(/\s+/g, ' ').trim()))
-      .filter(Boolean)
-      .slice(0, 10),
+    headings: h1s.map(h1Text).filter(Boolean).slice(0, 10),
     imageCount: document.querySelectorAll('img').length,
     linksInternal: internal,
     linksExternal: external,
@@ -182,6 +226,7 @@ export function readFactsInPage(request?: FactsRequest): RawPageFacts {
     textLength: text.length,
     textHash: hash(text),
     ...(phrases ? { phrases } : {}),
+    ...(seo ? { seo } : {}),
     html: html.length > MAX_HTML_BYTES ? html.slice(0, MAX_HTML_BYTES) : html,
     htmlTruncated: html.length > MAX_HTML_BYTES,
     timings: {

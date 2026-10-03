@@ -14,8 +14,10 @@ export const POST: APIRoute = async ({ locals, request, params }) => {
   if (!watch || watch.user_id !== locals.user.id) throw new HttpError(404,'not_found','Monitor not found.');
   if (!await workflowsReady()) throw new HttpError(503,'setup_required','Monitor rules are being prepared.');
   const rule = parseMonitorRule(await readBody(request));
-  if (rule.kind !== 'visual' && !env.BROWSER) throw new HttpError(503,'setup_required','Text and element rules require Browser Rendering.');
+  if (rule.kind !== 'visual' && !env.BROWSER) throw new HttpError(503,'setup_required','Text, element and SEO rules require Browser Rendering.');
   await saveMonitorRule(watch.id,rule);
-  return json({ message:'Rule saved. Element rules establish their baseline on the next check.' });
+  return json({ message: rule.kind === 'seo'
+   ? 'Rule saved. The next check records the SEO signals if the baseline has none; alerts start from the check after.'
+   : 'Rule saved. Element rules establish their baseline on the next check.' });
  } catch(e) { return toHttpError(e,'watch.rules','Could not save rule.').toResponse(); }
 };

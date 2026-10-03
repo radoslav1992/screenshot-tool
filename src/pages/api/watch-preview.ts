@@ -16,7 +16,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
     await assertVerified(locals.user);
     if (!(await watchSettingsReady()))
       throw new HttpError(503, 'setup_required', 'Monitor setup is being prepared. Try again later.');
-    const options = previewOptions(await readBody(request));
+    const body = await readBody(request);
+    // The preview becomes the baseline, so it records what the chosen rule will compare.
+    const options = { ...previewOptions(body), monitorSeo: body.rule_kind === 'seo' };
     if (
       !(await checkRateLimit(`app:${locals.user.id}`, APP_RATE_LIMIT[locals.user.plan] ?? APP_RATE_LIMIT.free, 3600)).ok
     )

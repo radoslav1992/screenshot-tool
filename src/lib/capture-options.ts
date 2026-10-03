@@ -32,12 +32,92 @@ export interface ViewportPreset {
   userAgent?: string;
 }
 
-/** Kept exactly as they were — these are the everyday captures. */
+/*
+ * What the handheld devices say they are. A page that picks its layout on the
+ * server, or turns away "HeadlessChrome", decides from this string before any
+ * CSS runs, so a phone-sized viewport alone still got the desktop page.
+ *
+ * Safari on purpose, for both. Setting a user agent through the DevTools
+ * protocol drops the client hints (Sec-CH-UA, navigator.userAgentData) unless
+ * a full brand list is supplied, and Safari is the browser that sends none —
+ * so these identities are consistent as they stand, where an Android Chrome
+ * string would arrive without the hints every real Chrome sends.
+ *
+ * The tablet is an iPad asking for the mobile site. A default iPad sends the
+ * Mac string, byte for byte, which a server cannot tell from a desktop; the
+ * iPad form is what servers recognise as a tablet, it is what DevTools and
+ * Playwright send for an iPad, and 834×1194 is an 11-inch iPad.
+ *
+ * Since iOS 26 Safari freezes the OS version (18_7) and only `Version/` moves.
+ * Changing either string changes what monitors capture: raise CAPTURE_ENGINE
+ * and add an ENGINE_CHANGES entry in capture-engine.ts with it, so their
+ * baselines refresh instead of alerting.
+ */
+const IPHONE_SAFARI =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Mobile/15E148 Safari/604.1';
+const IPAD_SAFARI =
+  'Mozilla/5.0 (iPad; CPU OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Mobile/15E148 Safari/604.1';
+
+/**
+ * Sizes kept exactly as they were — these are the everyday captures. Desktop
+ * keeps the browser's own user agent: see browserIdentity.
+ */
 export const DEVICES: Record<DeviceId, ViewportPreset> = {
   desktop: { id: 'desktop', label: 'Desktop', icon: 'desktop', width: 1440, height: 900, scale: 2, mobile: false },
-  tablet: { id: 'tablet', label: 'Tablet', icon: 'tablet', width: 834, height: 1194, scale: 2, mobile: true },
-  mobile: { id: 'mobile', label: 'Mobile', icon: 'mobile', width: 390, height: 844, scale: 3, mobile: true },
+  tablet: {
+    id: 'tablet',
+    label: 'Tablet',
+    icon: 'tablet',
+    width: 834,
+    height: 1194,
+    scale: 2,
+    mobile: true,
+    userAgent: IPAD_SAFARI,
+  },
+  mobile: {
+    id: 'mobile',
+    label: 'Mobile',
+    icon: 'mobile',
+    width: 390,
+    height: 844,
+    scale: 3,
+    mobile: true,
+    userAgent: IPHONE_SAFARI,
+  },
 };
+
+export interface BrowserIdentity {
+  /** Sent instead of the browser's own. Undefined keeps the browser's. */
+  userAgent?: string;
+  /** Mobile viewport rules: the meta viewport tag is honoured, and the page may be zoomed to fit. */
+  isMobile: boolean;
+  /** Touch events, and a non-zero navigator.maxTouchPoints. */
+  hasTouch: boolean;
+}
+
+/**
+ * Who the browser says it is for a capture at this device or frame.
+ *
+ * The handheld devices are a phone and a tablet in every respect a page can
+ * see: user agent, touch and mobile viewport together, never one without the
+ * others. Frames and custom sizes render as they always have, taking only a
+ * user agent their preset names.
+ *
+ * Desktop keeps the browser's own string, "HeadlessChrome" and all. Replacing
+ * the word would drop the client hints with it (see IPHONE_SAFARI), and a
+ * Chrome that sends none looks less like a browser to bot managers, not more;
+ * it would not get past them either, since Browser Rendering marks every
+ * request with headers no user agent removes.
+ */
+export function browserIdentity(device: ViewportId): BrowserIdentity {
+  const preset = Object.hasOwn(PRESETS, device) ? PRESETS[device as DeviceId | FrameId] : undefined;
+  const handheld = device === 'mobile' || device === 'tablet';
+  return {
+    ...(preset?.userAgent ? { userAgent: preset.userAgent } : {}),
+    isMobile: handheld,
+    hasTouch: handheld,
+  };
+}
 
 export const DEVICE_LIST = [DEVICES.desktop, DEVICES.tablet, DEVICES.mobile];
 
@@ -187,6 +267,8 @@ export interface CaptureOptions {
   monitorSelector?: string;
   /** Phrases a monitor rule looks for, answered against the whole page text rather than the stored excerpt. */
   monitorPhrases?: string[];
+  /** Read the SEO signals an SEO monitor rule compares (see seo-signals.ts) into the facts. */
+  monitorSeo?: boolean;
   /**
    * Extra viewports to shoot in the same visit, on top of the main one. One
    * page load, several sizes — the browser is already there and warm.

@@ -46,7 +46,8 @@ There is no build-time UI framework and no runtime npm dependency beyond Astro a
 - **series** — viewport-sized frames from top to bottom; each frame counts against quota.
 
 Devices: `desktop` 1440×900 @2x, `tablet` 834×1194 @2x, `mobile` 390×844 @3x, or any custom
-`width`×`height` (paid plans). Output frames land on an exact pixel size without cropping:
+`width`×`height` (paid plans). Tablet and mobile load as Safari on an iPad and an iPhone (user agent,
+touch and mobile viewport together); desktop keeps the rendering browser's own Chrome user agent. Output frames land on an exact pixel size without cropping:
 `instagram-post` 1080×1350, `instagram-square` 1080×1080, `instagram-story` 1080×1920, `og-image`
 1200×630, `x-post` 1600×900 — named presets, so they are available on every plan. Formats: `png`,
 `jpg`, `pdf` (`pdf` not valid with `series`).
@@ -72,8 +73,8 @@ CI=1 npm run dev
 ```
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
-retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1 schema
-files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+SEO rules, retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1
+schema files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
 Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
@@ -614,6 +615,40 @@ The AI summary integration remains optional and configuration-dependent; this re
 
 Validation: `npm run check`, `npm run workflows:check`, `npm run monitor:check`, `npm run library:check`, `npm run projects:check`, `npm run build`. Automated checks use SQLite and mocked external services; they do not send real alerts.
 
+
+### SEO rules and real device identities (no migration)
+
+- **SEO signals rule.** A monitor can alert when what search engines read changes: the title, meta
+  description, canonical URL (resolved to absolute), robots `noindex`/`nofollow` from the robots and
+  googlebot meta tags and the `X-Robots-Tag` header, the first visible `h1` and the count of them, hreflang
+  alternates as a set, the Open Graph title/description/image, and the main document's HTTP status. All of
+  them by default, or the ones ticked on the rule; the choice is a comma list in `monitor_rules.selector`
+  (empty means all, including signals added later), so no column was added. The signals are read in the page
+  only for SEO monitors and stored on the capture as `facts.seo`, next to the existing page facts.
+- **What an alert says.** One line per change, joined by `; `: `HTTP status: 200 → 404; Robots: index →
+  noindex; Title: "Old" → "New"`. A new noindex or a 4xx/5xx status comes first. Whitespace is collapsed; a
+  canonical that differs only by a trailing slash, host case, a fragment or a protocol-relative form is the
+  same URL; the X-Robots-Tag only counts when both captures saw the response. The webhook gets
+  `rule: { kind: "seo", detail }`. Facts are redacted as before when `redact_pii` applies.
+- **The first check records.** A baseline from before the rule has no `facts.seo`, so that check stores them
+  and its history reads "SEO signals recorded; the next check compares them." — no alert. A baseline approved in
+  monitor setup already records them. Bulk import can create SEO monitors (all signals).
+- **Phones and tablets as Safari.** `mobile` sends an iPhone Safari user agent and `tablet` an iPad Safari
+  one (the iPad's "mobile website" form: a default iPad sends the Mac string, which a server cannot tell from
+  a desktop), with `isMobile` and `hasTouch` set together; the REST fallback sends the same `userAgent`.
+  Safari was chosen because overriding the user agent drops Chrome's client hints, which Safari never sends.
+  Desktop keeps the browser's own `HeadlessChrome` string: replacing it would drop those hints too and make
+  the identity less consistent, and Browser Rendering's own headers identify every request regardless. With
+  `sizes`, the page loads once as `device`.
+- **Capture engine marker.** Every stored file records `engine` (`CAPTURE_ENGINE` in
+  `src/lib/capture-engine.ts`, now 2) in the capture's `files` JSON; the API's file list is unchanged. A
+  monitor whose baseline is from an older engine that a later change reaches (engine 2 reaches tablet and
+  mobile) saves the new capture as its baseline without comparing: the run has `changed: 0`, no
+  `baseline_capture_id`, the detail "Baseline refreshed after a capture engine update", and no email, push or
+  webhook. Desktop monitors keep comparing. A future engine change adds an entry to `ENGINE_CHANGES`.
+
+`npm run seo:check` covers the comparison, signal selection, extraction in local Chromium, first-check
+recording and the engine refresh; `npm run capture:check` covers the device identities.
 
 ### Accounts: password reset and confirmation emails
 

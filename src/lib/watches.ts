@@ -1,6 +1,7 @@
 import { drainPush, pushQueueStatement } from './push';
 import { getMonitorRule, workflowsReady } from './monitor-rule-store';
 import { evaluateRule, type MonitorRule } from './monitor-rules';
+import { BASELINE_REFRESHED, shouldRefreshBaseline } from './capture-engine';
 import { watchSettingsReady, watchNoise, noiseStrings } from './watch-settings';
 import { parseIgnoreRegions } from './ignore-regions';
 import { decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery } from './monitor-health';
@@ -581,8 +582,10 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     const noise = await watchNoise(watch.id);
     const options = {
       ...optionsFor(watch),
-      monitorSelector: rule.selector || undefined,
+      // An SEO rule keeps its signal list in `selector`; only element rules name an element there.
+      monitorSelector: (rule.kind === 'price' || rule.kind === 'element') && rule.selector ? rule.selector : undefined,
       monitorPhrases: (rule.kind === 'appeared' || rule.kind === 'disappeared') && rule.phrase ? [rule.phrase] : undefined,
+      monitorSeo: rule.kind === 'seo',
       hide: noise.hide.split(',').filter(Boolean),
       ignoreRegions: parseIgnoreRegions(noise.ignore_regions),
     };
@@ -600,6 +603,12 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
 
   // First run: nothing to compare against yet, so this becomes the baseline.
   const baseline = watch.baseline_capture_id ? await captureById(watch.baseline_capture_id) : null;
+  /*
+   * A baseline an older capture engine took differs from this capture because
+   * of the engine. It is replaced the way a first check saves one: no
+   * comparison, no alert, and a run that says why.
+   */
+  const refresh = Boolean(baseline && shouldRefreshBaseline(baseline));
 
   let changed = false;
   let changePct: number | null = null;
@@ -607,6 +616,8 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
 
   if (!baseline) {
     detail = 'first check — saved as the baseline';
+  } else if (refresh) {
+    detail = BASELINE_REFRESHED;
   } else if (rule.kind !== 'visual') {
     try {
       const result = evaluateRule(rule, safeParseFacts(baseline.facts), safeParseFacts(capture.facts));
@@ -679,7 +690,7 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
         watch_id: watch.id,
         user_id: watch.user_id,
         capture_id: capture.id,
-        baseline_capture_id: baseline?.id ?? null,
+        baseline_capture_id: refresh ? null : baseline?.id ?? null,
         status: 'done',
         changed: changed ? 1 : 0,
         change_pct: changePct,

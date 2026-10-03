@@ -8,7 +8,7 @@ import { applyWatermark, watermarkId, watermarkScript } from './watermark';
 import { PII_PATTERNS, redactInPage } from './redact-fn';
 import { CONSENT_SELECTORS, CONSENT_TEXTS, dismissConsentInPage } from './actions';
 import { hasRequestAuth, type RequestAuth } from './request-auth';
-import { DEVICES } from './capture-options';
+import { DEVICES, browserIdentity } from './capture-options';
 
 export interface RenderedFile {
   data: Uint8Array;
@@ -340,6 +340,19 @@ function isMainFrameNavigation(page: any, request: any): boolean {
   }
 }
 
+/**
+ * A response's headers, lower-cased as Puppeteer gives them; a header sent
+ * twice arrives as one value with the two joined by a newline.
+ */
+function documentHeaders(response: any): Record<string, string> | undefined {
+  try {
+    const headers = response?.headers?.();
+    return headers && typeof headers === 'object' ? (headers as Record<string, string>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Page calls that reject once the page is gone are not worth a log line. */
 function quietly(result: unknown): void {
   if (result && typeof (result as Promise<unknown>).catch === 'function') {
@@ -452,13 +465,32 @@ async function applyMasks(page: any, options: CaptureOptions): Promise<void> {
 
 async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink): Promise<PageOutcome> {
   {
+    const identity = browserIdentity(options.device);
     await page.setViewport({
       width: options.width,
       height: options.height,
       deviceScaleFactor: options.scale,
-      isMobile: options.device === 'mobile' || options.device === 'tablet',
-      hasTouch: options.device === 'mobile' || options.device === 'tablet',
+      isMobile: identity.isMobile,
+      hasTouch: identity.hasTouch,
     });
+
+    /*
+     * Before anything loads: the server reads the user agent off the first
+     * request. A phone capture sent as the desktop browser is a different page
+     * from the one its baseline shows, so one that cannot be dressed is not
+     * taken at all.
+     */
+    if (identity.userAgent) {
+      try {
+        await page.setUserAgent(identity.userAgent);
+      } catch (error) {
+        throw new HttpError(
+          502,
+          'render_failed',
+          `The browser would not take on the ${options.device} identity, so nothing was captured: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
 
     /*
      * Every request the page makes is judged on its own, for three reasons.
@@ -531,6 +563,8 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
     const redirects: string[] = [];
     let status: number | null = null;
     let finalUrl = options.url;
+    /** The main document's response headers, when there was a response to read them from. */
+    let headers: Record<string, string> | undefined;
 
     if (options.html) {
       await page.setContent(options.html, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
@@ -571,6 +605,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
         throw error;
       }
       status = response ? Number(response.status()) : null;
+      headers = documentHeaders(response);
       finalUrl = page.url() ?? options.url;
       await settleNetwork(page);
     }
@@ -631,9 +666,10 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
         // covers them itself; monitor phrases are answered against all the text.
         const raw = await page.evaluate(readFactsInPage, {
           phrases: options.monitorPhrases,
+          seo: options.monitorSeo,
           redact: options.redactPii ? PII_PATTERNS.map(({ source, flags }) => ({ source, flags })) : undefined,
         });
-        facts = buildFacts({ raw, finalUrl, status, redirects });
+        facts = buildFacts({ raw, finalUrl, status, redirects, headers });
         if (options.monitorSelector) {
           facts.monitored_element = await page.evaluate((selector: string) => {
             try {
@@ -676,6 +712,10 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
        * capture at", so ticking Mobile next to a Desktop capture must produce
        * both. Sizes that repeat the chosen device are dropped rather than shot
        * twice and charged twice.
+       *
+       * Each size gets its own viewport and touch, but the page was loaded
+       * once, as the chosen device: what the server sent for that user agent
+       * is what every size shows.
        */
       const shots = [
         {
@@ -683,7 +723,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
           width: options.width,
           height: options.height,
           scale: options.scale,
-          mobile: options.device === 'mobile' || options.device === 'tablet',
+          mobile: identity.isMobile,
         },
         ...options.sizes
           .filter((size) => size !== options.device)
@@ -692,7 +732,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
             width: DEVICES[size].width,
             height: DEVICES[size].height,
             scale: DEVICES[size].scale,
-            mobile: size !== 'desktop',
+            mobile: browserIdentity(size).isMobile,
           })),
       ];
 
@@ -758,7 +798,7 @@ async function capturePage(page: any, options: CaptureOptions, onFile?: FileSink
           width: options.width,
           height: options.height,
           scale: options.scale,
-          mobile: options.device === 'mobile' || options.device === 'tablet',
+          mobile: identity.isMobile,
         },
         shotOptions,
       );
@@ -1004,16 +1044,24 @@ async function renderWithRest(options: CaptureOptions): Promise<RenderedFile[]> 
   }
 
   const endpoint = options.format === 'pdf' ? 'pdf' : 'screenshot';
+  /*
+   * The same identity the binding gives the page, so a phone capture is the
+   * phone page on either path. Where the binding keeps the browser's own user
+   * agent, REST keeps its own too, which already has no "HeadlessChrome" in it.
+   */
+  const identity = browserIdentity(options.device);
   const body: Record<string, unknown> = {
     url: options.url,
     viewport: {
       width: options.width,
       height: options.height,
       deviceScaleFactor: options.scale,
-      isMobile: options.device === 'mobile' || options.device === 'tablet',
+      isMobile: identity.isMobile,
+      hasTouch: identity.hasTouch,
     },
     gotoOptions: { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT_MS },
   };
+  if (identity.userAgent) body.userAgent = identity.userAgent;
   if (options.delayMs > 0) body.waitForTimeout = options.delayMs;
   // The REST endpoint has no page handle, so the mark goes in as an injected
   // script instead. Best-effort — the binding path is the supported one.

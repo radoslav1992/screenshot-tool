@@ -14,6 +14,7 @@ import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options
 import { allowedFrequencies, FREQUENCIES, frequencyLabel } from '../../../lib/plans';
 import { checkInProgress, getWatch, listRuns, listWatches } from '../../../lib/watches';
 import { safeParseFacts } from '../../../lib/page-facts';
+import { describeSeo } from '../../../lib/seo-signals';
 import { diffText } from '../../../lib/text-diff';
 import { formatDateTime } from '../../../lib/dates';
 import { env } from 'cloudflare:workers';
@@ -86,6 +87,19 @@ const change = diffText(
   safeParseFacts(afterRow?.facts ?? null)?.text ?? '',
 );
 const hasWords = change.comparable && (change.added.length > 0 || change.removed.length > 0);
+
+/*
+ * What an SEO rule compares the next check with: the baseline's signals, which
+ * are the last ones recorded. A baseline from before the rule has none yet.
+ */
+const seoRow =
+  rule.kind !== 'seo' || !watch.baseline_capture_id
+    ? null
+    : afterRow?.id === watch.baseline_capture_id
+      ? afterRow
+      : await capture(watch.baseline_capture_id);
+const seo = safeParseFacts(seoRow?.facts ?? null)?.seo;
+const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
 ---
 
 <AppShell title={name} tab="watches">
@@ -119,7 +133,7 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
     <div class="app-col">
       <section class="card card--pad stack gap-10">
         <p class="xs muted-2">
-          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? (watch.threshold === 0 ? 'alerts for any detected visual change' : `visual alerts at ${watch.threshold}% or more`) : `${rule.kind} alert rule`}
+          {deviceLabel(watch.device, watch.width, watch.height)} · {modeLabel(watch.mode)} · {rule.kind === 'visual' ? (watch.threshold === 0 ? 'alerts for any detected visual change' : `visual alerts at ${watch.threshold}% or more`) : rule.kind === 'seo' ? 'SEO signals alert rule' : `${rule.kind} alert rule`}
           {watch.webhook_url && ' · webhook on'}
         </p>
         <div class="rows">
@@ -147,6 +161,30 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
           </div>
         </div>
       </section>
+
+      {rule.kind === 'seo' && (
+        <section class="card card--pad stack gap-8" aria-labelledby="seo-signals-heading">
+          <h2 class="h4" id="seo-signals-heading">Last recorded SEO signals</h2>
+          {seo && seoRow && (
+            <p class="xs muted-2">
+              Recorded <time datetime={seoRow.created_at}>{formatDateTime(seoRow.created_at)}</time>; the next check
+              compares with these.
+            </p>
+          )}
+          {seoSignals.length ? (
+            <dl class="seo-signals">
+              {seoSignals.map((signal) => (
+                <>
+                  <dt>{signal.label}</dt>
+                  <dd>{signal.value}</dd>
+                </>
+              ))}
+            </dl>
+          ) : (
+            <p class="small muted">The next check records them; each check after that compares with the last.</p>
+          )}
+        </section>
+      )}
 
       {latestAlert && (
         <section class="card card--pad stack gap-8">
@@ -384,6 +422,25 @@ const hasWords = change.comparable && (change.added.length > 0 || change.removed
   }
   .alert-actions .btn {
     width: auto;
+  }
+  .seo-signals {
+    display: grid;
+    grid-template-columns: minmax(90px, 32%) minmax(0, 1fr);
+    gap: 8px 12px;
+    margin: 0;
+    font-size: 13px;
+  }
+  .seo-signals dt {
+    font: 500 11px var(--mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    padding-top: 2px;
+  }
+  .seo-signals dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 </style>
 

@@ -101,7 +101,7 @@
   border-top-color: var(--line);
 }
 .adon-theme .sitefooter__grid {
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  grid-template-columns: 2fr repeat(4, 1fr);
   gap: 0;
   padding-block: 0;
 }
@@ -178,6 +178,16 @@
   }
   .adon-workspace .rail-note a {
     color: var(--green);
+  }
+}
+@media (max-width: 1000px) and (min-width: 681px) {
+  .adon-theme .sitefooter__grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .adon-theme .sitefooter__grid > div:first-child {
+    grid-column: 1/-1;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 }
 @media (max-width: 680px) {

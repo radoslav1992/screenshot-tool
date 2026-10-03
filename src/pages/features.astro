@@ -3,7 +3,10 @@ import Base from '../layouts/Base.astro';
 import AiPage from '../components/AiPage.astro';
 import AiPageHead from '../components/AiPageHead.astro';
 import WorkspaceFeatures from '../components/WorkspaceFeatures.astro';
+import { TOOL_ORDER, TOOL_PAGES } from '../lib/tool-pages';
+import '../styles/adon/tools.css';
 const user = Astro.locals.user;
+const tools = TOOL_ORDER.map((id) => TOOL_PAGES[id]);
 ---
 
 <Base
@@ -33,5 +36,31 @@ const user = Astro.locals.user;
       </div>
     </AiPageHead>
     <WorkspaceFeatures />
+    <section aria-labelledby="free-tools-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ FREE TOOLS / NO SIGNUP ]</span>
+        <div>
+          <h2 id="free-tools-title" data-adon-title>Try it without an account</h2>
+          <p class="ai-section-lede">
+            Four free tools run on the same engine: take a full-page screenshot, preview a page on three devices,
+            check its SEO tags, or compare staging with live.
+          </p>
+        </div>
+      </div>
+      <ul class="tool-links">
+        {
+          tools.map((tool, index) => (
+            <li>
+              <a href={tool.path}>
+                <span class="tool-links__num">[ 0{index + 1} ]</span>
+                <strong>{tool.name}</strong>
+                <span>{tool.summary}</span>
+                <i aria-hidden="true">↗</i>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
   </AiPage>
 </Base>

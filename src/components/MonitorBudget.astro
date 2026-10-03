@@ -2,30 +2,45 @@
 import { forecast, type Schedule, type Budget } from '../lib/monitor-health';
 import { formatDate } from '../lib/dates';
 interface Props {
+  /** Each monitor with what its checks cost (watches.ts budgetSchedules). */
   schedules: Schedule[];
   budget: Budget;
   allowed: string[];
   candidateId?: string;
   frequency?: string;
   paused?: boolean;
+  /** What this monitor's checks cost; a form with a rule picker decides it from the rule when `smart` is set. */
+  cost?: 'check' | 'change';
+  /**
+   * Smart checks exist (migration 0016): rule-based monitors read first and cost on change, and a form's rule
+   * picker decides what the new monitor costs.
+   */
+  smart?: boolean;
 }
-const { schedules, budget, allowed, candidateId = 'new-monitor', frequency = 'daily', paused = false } = Astro.props;
-const safeSchedules = schedules.map(({ id, frequency, status, next_run_at }) => ({
+const { schedules, budget, allowed, candidateId = 'new-monitor', frequency = 'daily', paused = false, cost = 'check', smart = false } = Astro.props;
+const safeSchedules = schedules.map(({ id, frequency, status, next_run_at, cost }) => ({
   id,
   frequency,
   status,
   next_run_at,
+  cost: cost ?? 'check',
 }));
 const current = forecast(
   [
     ...safeSchedules.filter((item) => item.id !== candidateId),
-    { id: candidateId, frequency, status: paused ? 'paused' : 'active', next_run_at: new Date().toISOString() },
+    { id: candidateId, frequency, status: paused ? 'paused' : 'active', next_run_at: new Date().toISOString(), cost },
   ],
   budget,
 );
 // A monitor that is still a form ("new-monitor") is counted, so the copy has to say so.
 const isDraft = candidateId === 'new-monitor';
 const monitors = (count: number) => `${count.toLocaleString()} active monitor${count === 1 ? '' : 's'}`;
+const onChange = (count: number) =>
+  count === 1
+    ? ' One of them reads the page first and adds a screenshot only when it changes.'
+    : count
+      ? ` ${count.toLocaleString()} of them read the page first and add a screenshot only when it changes.`
+      : '';
 const lead = isDraft ? 'Including this new monitor' : paused ? 'While this monitor is paused' : 'With this schedule';
 const renews = formatDate(`${budget.renewsOn}T00:00:00Z`);
 ---
@@ -39,10 +54,12 @@ const renews = formatDate(`${budget.renewsOn}T00:00:00Z`);
   data-candidate-id={candidateId}
   data-frequency={frequency}
   data-paused={String(paused)}
+  data-cost={cost}
+  data-smart={String(smart)}
 >
   <h3 class="label">Schedule budget{isDraft && <span class="muted"> · draft, not saved yet</span>}</h3>
   <p class="small" data-budget-summary>
-    {lead}: {current.monthly.toLocaleString()} screenshots / 30 days across {monitors(current.active)}.
+    {lead}: {current.monthly.toLocaleString()} screenshots / 30 days across {monitors(current.active)}.{onChange(current.onChange)}
   </p>
   <p class="xs muted" data-budget-remaining>
     {current.untilReset.toLocaleString()} scheduled before {renews} · {budget.remaining.toLocaleString()} screenshots
@@ -53,7 +70,10 @@ const renews = formatDate(`${budget.renewsOn}T00:00:00Z`);
   </p>
   <button type="button" class="btn btn--outline btn--sm" data-budget-suggestion hidden></button>
   <p class="xs muted">
-    {isDraft ? 'Estimate includes this new monitor.' : 'Estimate includes this schedule.'} One check uses one screenshot.
+    {isDraft ? 'Estimate includes this new monitor.' : 'Estimate includes this schedule.'}
+    {smart
+      ? ' A visual monitor uses one screenshot per check. A text, price, element or SEO monitor reads the page and uses one only when something changed, plus a weekly full check, so for those this is the least they use. '
+      : ' One check uses one screenshot. '}
     Manual captures, retries and other account activity can use more. Other paused monitors are excluded.
   </p>
 </section>
@@ -61,10 +81,18 @@ const renews = formatDate(`${budget.renewsOn}T00:00:00Z`);
   import { forecast, suggestFrequency, type Schedule, type Budget } from '../lib/monitor-health';
   import { formatDate } from '../lib/dates';
   const monitors = (count: number) => `${count.toLocaleString()} active monitor${count === 1 ? '' : 's'}`;
+  const onChange = (count: number) =>
+    count === 1
+      ? ' One of them reads the page first and adds a screenshot only when it changes.'
+      : count
+        ? ` ${count.toLocaleString()} of them read the page first and add a screenshot only when it changes.`
+        : '';
   for (const panel of document.querySelectorAll<HTMLElement>('[data-monitor-budget]')) {
     const form = panel.closest('form');
     const frequency = form?.querySelector('[name="frequency"]') as HTMLSelectElement | null;
     if (!frequency) continue;
+    // Workers types redefine Element, so select elements are cast via unknown.
+    const rule = (panel.dataset.smart === 'true' ? form?.querySelector('[name="rule_kind"]') : null) as unknown as HTMLSelectElement | null;
     const schedules = JSON.parse(panel.dataset.schedules!) as Schedule[];
     const budget = JSON.parse(panel.dataset.budget!) as Budget;
     const allowed = JSON.parse(panel.dataset.allowed!) as string[];
@@ -84,11 +112,12 @@ const renews = formatDate(`${budget.renewsOn}T00:00:00Z`);
         frequency: frequency.value,
         status: paused ? 'paused' : 'active',
         next_run_at: new Date().toISOString(),
+        cost: rule ? (rule.value === 'visual' ? 'check' : 'change') : panel.dataset.cost === 'change' ? 'change' : 'check',
       };
       const next = [...schedules.filter((item) => item.id !== candidate.id), candidate];
       const result = forecast(next, budget);
       panel.querySelector('[data-budget-summary]')!.textContent =
-        `${lead}: ${result.monthly.toLocaleString()} screenshots / 30 days across ${monitors(result.active)}.`;
+        `${lead}: ${result.monthly.toLocaleString()} screenshots / 30 days across ${monitors(result.active)}.${onChange(result.onChange)}`;
       panel.querySelector('[data-budget-remaining]')!.textContent =
         `${result.untilReset.toLocaleString()} scheduled before ${renews} · ${budget.remaining.toLocaleString()} screenshots left.`;
       const warning = panel.querySelector<HTMLElement>('[data-budget-warning]')!;
@@ -101,6 +130,7 @@ const renews = formatDate(`${budget.renewsOn}T00:00:00Z`);
       suggestion.textContent = suggested ? `Switch to ${suggested} checks` : '';
     };
     frequency.addEventListener('change', update);
+    rule?.addEventListener('change', update);
     suggestion.addEventListener('click', () => {
       if (suggested) {
         frequency.value = suggested;

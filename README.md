@@ -128,6 +128,10 @@ npx wrangler kv namespace create RATE
    | `db/0010-upgrade.sql` | mobile push |
    | `db/0011-upgrade.sql` | Apple subscriptions and the free quota |
    | `db/0012-upgrade.sql` | watch-run index |
+   | `db/0013-upgrade.sql` | background captures and batches |
+   | `db/0014-upgrade.sql` | pinned baselines |
+   | `db/0015-upgrade.sql` | report sign-off and branding |
+   | `db/0016-upgrade.sql` | smart checks for rule-based monitors |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -346,11 +350,14 @@ matter are the ones protecting the render pool and storage rather than the month
   draws two units from the burst limit rather than one.
 
 - **Watches.** A saved capture that re-runs on a schedule and alerts when the page actually looks
-  different. Paid plans only (`WATCH_LIMIT` in `plans.ts`): 5 on Plus at daily or weekly, 25 on Pro
-  and 100 on Business, both down to hourly.
+  different. Every plan has them (`WATCH_LIMIT` and `WATCH_FREQUENCIES` in `plans.ts`): 3 on Free,
+  weekly; 10 on Lite and 25 on Plus, daily or weekly; 100 on Pro and 300 on Business, down to hourly,
+  and every 15 minutes (`quarter-hourly`) for rule-based watches. Weekly checks on Free's three cost at
+  most about 12 screenshots a month, inside its 20.
 
-  Each run is an ordinary capture and spends one screenshot from the monthly quota, counted
-  separately as `via_watch` so a customer can see what ran without them. The new capture is compared
+  A visual watch's run is an ordinary capture and spends one screenshot from the monthly quota, counted
+  separately as `via_watch` so a customer can see what ran without them. A rule-based watch reads its
+  page first and renders only when that changed (see *Smart checks* below). The new capture is compared
   against the previous one and becomes the next baseline, so a watch reports "changed since last
   check" rather than drift from some distant original — unless the owner pins a baseline (see
   "Changed areas and pinned baselines" below). The retention sweep skips whatever a watch is
@@ -363,7 +370,8 @@ matter are the ones protecting the render pool and storage rather than the month
   pixels that moved is just as accurate from a quarter of them. `npm run diff:check` runs that exact
   function in local Chromium against images whose answer is known in advance.
 
-  The cron trigger is hourly, since a watch can be. Retention still runs once a day, gated on the
+  The hourly cron runs every due watch; the minute cron also runs the 15-minute ones at :15, :30
+  and :45, claimed under the same lease so the two never run one twice. Retention still runs once a day, gated on the
   03:00 UTC tick — `scheduled` cannot tell which expression woke it. Five consecutive failures pause
   a watch rather than spending quota for ever on a page that has moved.
 
@@ -744,6 +752,64 @@ inline (`/v1/capture` keeps its old background render), and `/api/batches` answe
 it with `npm run db:migrate`, or paste `db/0013-upgrade.sql` into the D1 console; it is picked up within a
 minute, without a redeploy. `npm run jobs:check` covers claims, leases, retries, quota, cancel, plan limits,
 the list filter, the cron dispatch and the fallback.
+
+### Smart checks for rule-based monitors (0016)
+
+A text, phrase, price, element or SEO monitor watches a few values, and most checks find them unchanged.
+So it now reads its page's HTML with a plain `fetch()` first (`lib/fast-checks.ts`, `lib/fast-extract.ts`)
+and renders — spending a screenshot — only when what its rule watches changed. Visual monitors render
+every check, exactly as before.
+
+- **A gate, not a judge.** The reading takes only what the rule needs, with `HTMLRewriter`: whether the
+  phrase is in the visible text (scripts, styles, templates and noscript left out), the selector's text,
+  or the SEO signals `seo-signals.ts` compares, from the HTML, status and headers. Its normalised values
+  are hashed, and the hash is only ever compared with the previous reading's, never with a browser's
+  facts. Unchanged: the run is recorded with `capture_id` NULL, the current `baseline_capture_id`,
+  `changed` 0 and "No change · read the page, no screenshot needed" — no capture, no quota, no alert.
+  Changed: the full browser check runs unchanged, and only it decides an alert. A reading the browser does
+  not confirm is not kept, so the change is looked for again.
+- **Safe fetch.** `lib/safe-fetch.ts`, shared with sitemaps: `assertPublicCaptureUrl` (private addresses
+  and `CAPTURE_HOST_DENYLIST`) on the start URL and every redirect hop, `redirect: 'manual'`, at most five
+  hops, ten seconds in all, and nothing read past 3 MB. It asks with the user agent the monitor's device
+  uses (`browserIdentity`); desktop says what it is. Monitors carry no credentials, so none are sent.
+- **Unavailable, never a change.** Bot checks (`cf-mitigated: challenge`; 403/429/503 pages from
+  Cloudflare, Imperva, DataDome, PerimeterX, Akamai, Sucuri, AWS WAF, DDoS-Guard), 401/403/407/429,
+  network errors, timeouts, non-HTML, 5xx (except for an SEO rule watching the status, where it is news),
+  selectors `HTMLRewriter` cannot use (`+`, `~`, `:has()`…) or does not find, and a page cut at 3 MB
+  all fall back to the full check for that run.
+- **Learning.** A monitor's row in `watch_fast_checks` starts `learning`: each check reads and renders.
+  A check agrees when the reading changed exactly when the browser's facts did, and the reading said what
+  the browser saw (the phrase there or not, the same price, the same SEO tags). Three agreements make it
+  `fast`. A change the reading missed sends it to `browser` at once; two readings that disagree with the
+  page, two unavailable readings, or three that changed when the page did not, do too — with a reason in
+  plain words, such as "This page builds its content with JavaScript, so it needs a full browser", and
+  one email.
+- **Fast.** The gate, plus a full check once a week as a safety net, judged as a learning check is (on a
+  weekly schedule every check is that full one). Three unavailable readings in a row move it to the browser;
+  a reading that keeps disagreeing with the page sends it back to learning.
+- **Owner override.** "Always use a full browser" (`{"action":"check_mode","force_browser":"1"}`) and
+  "Try fast checks again" (`{"action":"retry_fast"}`) on `POST /api/watches/:id`, both answering the
+  Monitor. Monitors gain `check_mode` (`fast`, `learning`, `browser`, `forced` or `visual`) and
+  `check_reason`.
+- **Quota.** A reading spends nothing; learning, safety-net and confirming renders spend one each. Out of
+  screenshots, readings still run; a change spotted then keeps its signature, is recorded as "Change
+  spotted, but no screenshots are left this month to confirm it; it is checked again after your allowance
+  renews", and shares the monthly quota notice. Readings never count toward the auto-pause, and a network
+  failure that falls back to a successful render is a success.
+- **Every 15 minutes.** Pro and Business, rule-based monitors only, and only once 0016 exists (before it
+  the schedule answers `503 setup_required`). A visual monitor cannot take it, nor switch to visual while on
+  it (`400`). One that moves to the browser drops to hourly, said in the same email. `/api/mobile/profile`
+  never offers it: the iOS app only creates visual monitors.
+- **Sweeps.** The minute cron runs due 15-minute monitors at :15, :30 and :45; the hourly sweep runs
+  everything at :00. Renders stay three at once; fast monitors get eight lanes of their own, up to 240 a
+  tick within four minutes, and one that has to render waits for a render slot.
+- **SEO notes.** On a browser check of an SEO monitor, a canonical or noindex that only JavaScript adds
+  (or removes) adds a note to the run's detail. It never alerts.
+
+**Before the migration** every monitor renders on every check exactly as before, and smart-check copy
+stays hidden in the app. Apply it with `npm run db:migrate`, or paste `db/0016-upgrade.sql` into the D1
+console; it is picked up within a minute. `npm run fast:check` runs the HTML reader in workerd (through
+Miniflare, against the real `HTMLRewriter`) and the check flow against SQLite with and without the table.
 
 ### iOS push notifications
 

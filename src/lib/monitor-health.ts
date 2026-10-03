@@ -5,23 +5,38 @@ export interface Schedule {
   frequency: string;
   status: string;
   next_run_at: string;
+  /**
+   * What a check costs: `check`, a screenshot every time (visual monitors, and
+   * rule-based ones that need a full browser); `change`, a rule-based monitor
+   * that reads its page and takes one only when something changed (fast-checks.ts).
+   */
+  cost?: 'check' | 'change';
 }
 export interface Budget {
   quota: number;
   remaining: number;
   renewsOn: string;
 }
-const HOURS: Record<string, number> = { hourly: 1, daily: 24, weekly: 168 };
+const HOURS: Record<string, number> = { 'quarter-hourly': 0.25, hourly: 1, daily: 24, weekly: 168 };
+/**
+ * A monitor that reads first still takes a full check at least weekly, as a
+ * safety net. That is what it is certain to spend; each change it finds
+ * costs one more, which no forecast can know.
+ */
+const SAFETY_NET_HOURS = 168;
 export function forecast(schedules: Schedule[], budget: Budget, now = new Date()) {
   const reset = Date.parse(`${budget.renewsOn}T00:00:00Z`);
   let monthly = 0,
     untilReset = 0,
-    active = 0;
+    active = 0,
+    onChange = 0;
   for (const schedule of schedules) {
     if (schedule.status !== 'active') continue;
-    const hours = HOURS[schedule.frequency];
-    if (!hours) continue;
+    const every = HOURS[schedule.frequency];
+    if (!every) continue;
     active++;
+    if (schedule.cost === 'change') onChange++;
+    const hours = schedule.cost === 'change' ? Math.max(every, SAFETY_NET_HOURS) : every;
     monthly += 720 / hours;
     const next = Date.parse(schedule.next_run_at);
     const start = Math.max(now.getTime(), Number.isFinite(next) ? next : now.getTime());
@@ -30,6 +45,8 @@ export function forecast(schedules: Schedule[], budget: Budget, now = new Date()
   monthly = Math.ceil(monthly);
   return {
     active,
+    /** Active monitors that spend a screenshot only when something changes; `monthly` counts their weekly full checks alone. */
+    onChange,
     monthly,
     untilReset,
     shortfall: Math.max(0, untilReset - budget.remaining),

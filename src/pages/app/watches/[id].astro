@@ -11,8 +11,9 @@ import AppShell from '../../../layouts/AppShell.astro';
 import Icon from '../../../components/Icon.astro';
 import { fileUrl, safeParseFiles, type CaptureRow } from '../../../lib/captures';
 import { deviceLabel, displayUrl, modeLabel } from '../../../lib/capture-options';
-import { allowedFrequencies, FREQUENCIES, frequencyLabel } from '../../../lib/plans';
-import { checkInProgress, getWatch, listRuns, listWatches } from '../../../lib/watches';
+import { allowedFrequencies, FREQUENCIES, frequencyLabel, RULE_ONLY_FREQUENCY } from '../../../lib/plans';
+import { budgetSchedules, checkCost, checkInProgress, getWatch, listRuns, listWatches, watchChecks } from '../../../lib/watches';
+import { AGREEMENTS_NEEDED, fastChecksReady } from '../../../lib/fast-checks';
 import { safeParseFacts } from '../../../lib/page-facts';
 import { describeSeo } from '../../../lib/seo-signals';
 import { diffText } from '../../../lib/text-diff';
@@ -26,15 +27,36 @@ const user = Astro.locals.user!;
 const watch = await getWatch(Astro.params.id ?? '');
 if (!watch || watch.user_id !== user.id) return Astro.redirect('/app/watches', 302);
 
-const [runs, schedules, usage, health] = await Promise.all([
+const [runs, watches, usage, health, smart, checks] = await Promise.all([
   listRuns(watch.id, 25),
   listWatches(user.id),
   getUsage(user),
   monitorDashboard(user.id),
+  fastChecksReady(),
+  watchChecks([watch]),
 ]);
+const schedules = await budgetSchedules(watches);
 const rule = await getMonitorRule(watch.id);
 const rulesReady = await workflowsReady();
-const frequencies = FREQUENCIES.filter((entry) => allowedFrequencies(user.plan).includes(entry.id));
+const check = checks.get(watch.id)!;
+// Every 15 minutes only for a monitor that reads its page first.
+const readsFirst = check.mode === 'fast' || check.mode === 'learning';
+const frequencies = FREQUENCIES.filter(
+  (entry) =>
+    allowedFrequencies(user.plan).includes(entry.id) &&
+    (entry.id !== RULE_ONLY_FREQUENCY || (smart && readsFirst) || watch.frequency === entry.id),
+);
+/** The [ CHECK ] line: how every check of this monitor runs, in plain words. */
+const checkLine = {
+  fast: 'Reads the page · a screenshot is taken only when something changes',
+  learning: `Learning: checking both ways for the first few checks (${check.agreements} of ${AGREEMENTS_NEEDED})`,
+  browser: check.reason ? `Full browser on every check · ${check.reason}` : 'Full browser on every check',
+  forced: 'Full browser on every check (your choice)',
+  visual: 'Full browser on every check, a visual monitor compares screenshots',
+}[check.mode];
+const forceNote =
+  'Every check then renders the page and uses one screenshot, as a visual monitor does.' +
+  (watch.frequency === RULE_ONLY_FREQUENCY ? ' A monitor checked every 15 minutes moves to hourly checks.' : '');
 const origin = Astro.url.origin;
 const latestAlert = health.alerts.get(watch.id);
 const name = watch.label || displayUrl(watch.url);
@@ -191,6 +213,30 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
           </div>
         </div>
       </section>
+
+      {smart && (
+        <section class="card card--pad stack gap-10" id="check-card" data-watch={watch.id} aria-labelledby="check-heading">
+          <h2 class="h4" id="check-heading">How each check runs</h2>
+          <p class="baseline-line" data-check-line>
+            <span class="baseline-tag">[ CHECK ]</span> {checkLine}
+          </p>
+          {check.mode === 'browser' && (
+            <div class="btn-row">
+              <button type="button" class="btn btn--outline" data-check="retry_fast">Try fast checks again</button>
+            </div>
+          )}
+          {rule.kind !== 'visual' && (
+            <details class="check-advanced" open={check.mode === 'forced'}>
+              <summary>Advanced</summary>
+              <label class="check-option">
+                <input type="checkbox" data-check="force" checked={check.mode === 'forced'} />
+                Always use a full browser
+              </label>
+              <p class="xs muted">{forceNote}</p>
+            </details>
+          )}
+        </section>
+      )}
 
       {rule.kind === 'seo' && (
         <section class="card card--pad stack gap-8" aria-labelledby="seo-signals-heading">
@@ -388,7 +434,7 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
         <button type="button" class="row" data-action="run" style="width: 100%">
           <span class="row__label">Check now</span>
           <span class="row__value" style="color: var(--muted-2)">
-            Uses one screenshot ›
+            {check.mode === 'fast' ? 'Uses a screenshot only if the page changed ›' : 'Uses one screenshot ›'}
           </span>
         </button>
         <button
@@ -431,7 +477,12 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
           allowed={frequencies.map((entry) => entry.id)}
           candidateId={watch.id}
           frequency={watch.frequency}
+          cost={checkCost(check)}
+          smart={smart}
         />
+        {smart && rule.kind !== 'visual' && !readsFirst && allowedFrequencies(user.plan).includes(RULE_ONLY_FREQUENCY) && (
+          <p class="xs muted">Every 15 minutes is available while the monitor reads its page first.</p>
+        )}
         <p class="xs muted">
           {!active
             ? 'The forecast shows the cost if resumed. Saving keeps this monitor paused.'
@@ -585,6 +636,34 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
     margin-block: 0;
     font-size: 12px;
   }
+  .check-advanced {
+    border-top: 1px solid var(--line-2);
+    padding-top: 2px;
+  }
+  /* Summary and option are whole-row tap targets, at least 44px tall. */
+  .check-advanced > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    font: 500 11px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    cursor: pointer;
+  }
+  .check-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  .check-option input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    flex: 0 0 auto;
+  }
 </style>
 
 <script>
@@ -734,6 +813,42 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
         }
       }
     });
+  });
+
+  // How each check runs: "Always use a full browser", and "Try fast checks again".
+  const checkCard = document.querySelector<HTMLElement>('#check-card');
+  const setCheck = async (control: HTMLInputElement | HTMLButtonElement, body: Record<string, string>) => {
+    const errorBox = document.getElementById('watch-error');
+    if (!checkCard || control.disabled) return;
+    control.disabled = true;
+    try {
+      const response = await fetch(`/api/watches/${checkCard.dataset.watch}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || 'That did not work. Try again.');
+      window.location.reload();
+    } catch (cause) {
+      control.disabled = false;
+      if (control instanceof HTMLInputElement) control.checked = !control.checked;
+      if (errorBox) {
+        errorBox.textContent = cause instanceof Error ? cause.message : 'That did not work. Try again.';
+        errorBox.hidden = false;
+        errorBox.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  };
+  const forceBox = checkCard?.querySelector<HTMLInputElement>('[data-check="force"]');
+  forceBox?.addEventListener('change', () => setCheck(forceBox, { action: 'check_mode', force_browser: forceBox.checked ? '1' : '0' }));
+  const retryButton = checkCard?.querySelector<HTMLButtonElement>('[data-check="retry_fast"]');
+  retryButton?.addEventListener('click', async () => {
+    const label = retryButton.textContent;
+    retryButton.textContent = 'Working…';
+    await setCheck(retryButton, { action: 'retry_fast' });
+    // Still enabled means it failed, and the page is not reloading.
+    if (!retryButton.disabled) retryButton.textContent = label;
   });
 
   const scheduleForm = document.querySelector<HTMLFormElement>('#schedule-form');

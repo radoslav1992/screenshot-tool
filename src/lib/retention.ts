@@ -166,3 +166,36 @@ export async function failStrandedCaptures(now = Date.now()): Promise<number> {
     .run();
   return result.meta.changes ?? 0;
 }
+
+/**
+ * How long a quiet monitor run is kept: a check that read the page, found
+ * nothing new and took no screenshot. A 15-minute monitor writes 96 of them a
+ * day, and after a month they say nothing the monitor's status does not.
+ */
+const QUIET_RUN_DAYS = 30;
+const QUIET_RUN_BATCH = 1000;
+
+/**
+ * Deletes quiet runs older than QUIET_RUN_DAYS, a bounded batch per call.
+ * Every run that changed something, failed, was skipped or has a screenshot
+ * stays, so alerts, history and health keep everything they read.
+ *
+ * watch_runs has no index on created_at alone, so the scan is bounded by rowid
+ * instead: rows are only ever appended, so everything before the first run
+ * newer than the cutoff is older than it, and the query never walks the
+ * recent part of the table.
+ */
+export async function pruneQuietRuns(now = Date.now()): Promise<number> {
+  const cutoff = cutoffFor(QUIET_RUN_DAYS, now);
+  const result = await env.DB.prepare(
+    `DELETE FROM watch_runs WHERE rowid IN (
+       SELECT rowid FROM watch_runs
+        WHERE rowid < COALESCE((SELECT rowid FROM watch_runs WHERE created_at >= ?1 ORDER BY rowid LIMIT 1),
+                               (SELECT MAX(rowid) + 1 FROM watch_runs))
+          AND created_at < ?1 AND status = 'done' AND changed = 0 AND capture_id IS NULL
+        LIMIT ${QUIET_RUN_BATCH})`,
+  )
+    .bind(cutoff)
+    .run();
+  return result.meta?.changes ?? 0;
+}

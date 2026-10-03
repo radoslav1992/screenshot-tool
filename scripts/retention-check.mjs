@@ -26,5 +26,16 @@ assert.equal(first.failed,2);assert(first.truncated);assert(deleted.has('paid-ol
 fail=false;await sweepExpiredCaptures(now);await sweepExpiredCaptures(now);assert(!db.prepare("SELECT id FROM captures WHERE id='fail'").get());assert.equal(db.prepare("SELECT count(*) AS n FROM captures WHERE id LIKE 'old-%'").get().n,0);assert(db.prepare("SELECT id FROM captures WHERE id='corrupt'").get());
 for(const id of ['change-before','change-after','retry-before','retry-after'])assert(!deleted.has(id),`${id} is still linked from an alert`);
 for(const id of ['stale-before','stale-after','done-before','done-after'])assert(deleted.has(id),`${id} is no longer linked from anything`);
-console.log('Retention checks passed: expiry, plan windows, baselines, alert links, bounded queries, backlog drain, R2 retry and corrupt manifests.');
+// Quiet monitor runs (read the page, nothing new, no screenshot) go after 30 days; every other run stays.
+const runs=new DatabaseSync(':memory:');
+runs.exec(`CREATE TABLE watch_runs(id TEXT PRIMARY KEY,watch_id TEXT,capture_id TEXT,baseline_capture_id TEXT,status TEXT,changed INTEGER,created_at TEXT);
+INSERT INTO watch_runs VALUES('q-old','w',NULL,'cap','done',0,'2026-08-01T00:00:00Z'),('changed-old','w','cap',NULL,'done',1,'2026-08-01T01:00:00Z'),('error-old','w',NULL,NULL,'error',0,'2026-08-01T02:00:00Z'),('skipped-old','w',NULL,NULL,'skipped',0,'2026-08-01T03:00:00Z'),('shot-old','w','cap2','cap','done',0,'2026-08-01T04:00:00Z'),('q-old-2','w',NULL,'cap','done',0,'2026-08-02T00:00:00Z'),('q-recent','w',NULL,'cap','done',0,'2026-09-10T00:00:00Z');`);
+globalThis.__retentionEnv.DB={prepare:sql=>({bind:(...v)=>({run:async()=>({meta:runs.prepare(sql).run(...v)})})})};
+const {pruneQuietRuns}=await import(pathToFileURL(join(dir,'test.mjs')));
+assert.equal(await pruneQuietRuns(now),2,'both old quiet runs go');
+assert.deepEqual(runs.prepare('SELECT id FROM watch_runs ORDER BY rowid').all().map((r)=>r.id),['changed-old','error-old','skipped-old','shot-old','q-recent'],'changes, failures, skips, screenshots and recent quiet runs stay');
+assert.equal(await pruneQuietRuns(now),0,'nothing left to prune');
+runs.exec('DELETE FROM watch_runs');assert.equal(await pruneQuietRuns(now),0,'an empty table is fine');
+runs.close();
+console.log('Retention checks passed: expiry, plan windows, baselines, alert links, bounded queries, backlog drain, R2 retry, corrupt manifests and quiet run pruning.');
 }finally{db.close();delete globalThis.__retentionEnv;rmSync(dir,{recursive:true,force:true});}

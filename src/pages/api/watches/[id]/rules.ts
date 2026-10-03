@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { getWatch } from '../../../../lib/watches';
+import { getWatch, setWatchRule } from '../../../../lib/watches';
 import { parseMonitorRule } from '../../../../lib/monitor-rules';
-import { saveMonitorRule, workflowsReady } from '../../../../lib/monitor-rule-store';
+import { workflowsReady } from '../../../../lib/monitor-rule-store';
 import { assertSameOrigin, readBody, json, HttpError } from '../../../../lib/http';
 import { assertVerified } from '../../../../lib/verification';
 import { toHttpError } from '../../../../lib/errors';
@@ -15,7 +15,8 @@ export const POST: APIRoute = async ({ locals, request, params }) => {
   if (!await workflowsReady()) throw new HttpError(503,'setup_required','Monitor rules are being prepared.');
   const rule = parseMonitorRule(await readBody(request));
   if (rule.kind !== 'visual' && !env.BROWSER) throw new HttpError(503,'setup_required','Text, element and SEO rules require Browser Rendering.');
-  await saveMonitorRule(watch.id,rule);
+  // A rule that watches something new starts learning its fast check afresh.
+  await setWatchRule(watch,rule);
   return json({ message: rule.kind === 'seo'
    ? 'Rule saved. The next check records the SEO signals if the baseline has none; alerts start from the check after.'
    : 'Rule saved. Element rules establish their baseline on the next check.' });

@@ -4,7 +4,8 @@ import { toHttpError } from '../../../lib/errors';
 import { assertVerified } from '../../../lib/verification';
 import { importUrls, readSitemap } from '../../../lib/monitor-import';
 import { previewOptions } from '../../../lib/watch-settings';
-import { createWatch, listWatches } from '../../../lib/watches';
+import { assertFrequencyFits, budgetSchedules, createWatch, listWatches } from '../../../lib/watches';
+import { fastChecksReady } from '../../../lib/fast-checks';
 import { watchLimit, allowedFrequencies } from '../../../lib/plans';
 import { getUsage } from '../../../lib/captures';
 import { forecast } from '../../../lib/monitor-health';
@@ -28,12 +29,15 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const rule = kind === 'seo' ? parseMonitorRule({ rule_kind: 'seo' }) : undefined;
   if (rule && !env.BROWSER) throw new HttpError(503,'setup_required','Text, element and SEO rules require Browser Rendering.');
   if (rule && !await workflowsReady()) throw new HttpError(503,'setup_required','Monitor rules are being prepared.');
+  await assertFrequencyFits(frequency, kind);
   const urls = importUrls(body.urls || '');
   const existing = await listWatches(user.id);
   const candidates = urls.map(url=>previewOptions({url,device:body.device || 'desktop'})).filter(o=>!existing.some(w=>w.url===o.url && w.device===o.device));
   if (existing.length+candidates.length > watchLimit(user.plan)) throw badRequest('This import exceeds your monitor limit. Reduce the list or upgrade.');
   const budget = await getUsage(user);
-  const projection = forecast([...existing,...candidates.map((_o,i)=>({id:String(i),status:'active',frequency,next_run_at:new Date().toISOString()}))],budget);
+  // SEO monitors read their pages first once smart checks exist, and render only on a change.
+  const cost = rule && await fastChecksReady() ? 'change' as const : 'check' as const;
+  const projection = forecast([...await budgetSchedules(existing),...candidates.map((_o,i)=>({id:String(i),status:'active',frequency,next_run_at:new Date().toISOString(),cost}))],budget);
   if (projection.monthlyOver || projection.shortfall) throw badRequest('This schedule exceeds your screenshot allowance. Choose a slower schedule or fewer pages.');
   const created: string[] = []; const failed: string[] = [];
   for (const options of candidates) {

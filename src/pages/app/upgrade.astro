@@ -3,9 +3,11 @@ import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import { PLANS, PLAN_ORDER, getPlan, type PlanId } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, priceIdFor, type BillingInterval } from '../../lib/billing';
+import { fastChecksReady } from '../../lib/fast-checks';
 import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
+const smart = await fastChecksReady();
 const plan = getPlan(user.plan);
 
 const billing = billingEnabled() ? await getBillingRow(user.id).catch(() => null) : null;
@@ -147,6 +149,8 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
         Manual captures and monitor checks share your monthly screenshot allowance. One daily monitor uses about 30
         screenshots; one hourly monitor uses about 720. Pro can cover 25 daily monitors (about 750 checks), but checking
         all 25 hourly would require about 18,000 screenshots. A monitor slot is not an unlimited check allowance.
+        {smart &&
+          ' That is for visual monitors, which compare screenshots. A text, price, element or SEO monitor reads the page and uses a screenshot only when something changes, plus a weekly full check.'}
       </p>
       <p class="xs muted-2">
         Stripe shows the payment details before you confirm. Credits and the timing of plan changes depend on the

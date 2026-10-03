@@ -800,7 +800,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     '@astrojs/cloudflare/entrypoints/server': 'export default { fetch: () => new Response("ok") };',
     './lib/apple-billing': record('refreshAppleSubscriptions'),
     './lib/push': record('drainPush'),
-    './lib/retention': `${record('failStrandedCaptures')}\n${record('sweepExpiredCaptures')}`,
+    './lib/retention': `${record('failStrandedCaptures')}\n${record('sweepExpiredCaptures')}\n${record('pruneQuietRuns')}`,
     './lib/watches': `${record('runDueWatches')}\n${record('retryAlerts')}`,
     './lib/digests': record('runProjectDigests'),
     './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,
@@ -811,6 +811,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     runDueWatches: { due: 0 },
     sweepExpiredCaptures: { scanned: 0, deleted: 0, filesDeleted: 0, bytesFreed: 0, tokensPurged: 0, failed: 0, truncated: false },
     pruneCaptureJobs: { jobs: 0, batches: 0 },
+    pruneQuietRuns: 0,
   };
   const fire = async (cron) => {
     cc.calls.length = 0;
@@ -825,6 +826,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     'drainPush',
     'failStrandedCaptures',
     'pruneCaptureJobs',
+    'pruneQuietRuns',
     'refreshAppleSubscriptions',
     'retryAlerts',
     'runDueWatches',

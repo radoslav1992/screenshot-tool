@@ -82,12 +82,12 @@ Reliability and usage clarity shipped first. The subsequent workspace release im
 
 Keep the current $7 Plus, $19 Pro and $79 Business pricing while learning. Do not change Stripe prices or existing entitlements as part of the redesign.
 
-- Free: first successful capture and share; protect the render budget with existing rate limits.
-- Plus: clean exports and a small number of daily monitors.
+- Free: first successful capture and share, and three weekly monitors (at most about 12 screenshots a month); protect the render budget with existing rate limits.
+- Lite and Plus: clean exports and 10 or 25 daily or weekly monitors.
 - Pro: freelancers using monitors, API and repeat client work. Projects and reports are now implemented; PDF exports follow existing paid-plan eligibility.
 - Business: higher volume and retention today. The workspace release includes three project collaborators with explicit roles and owner-paid capture usage; Stripe prices are unchanged.
 
-**Monitor slots are not a promise that every slot can run hourly all month.** A 30-day estimate is 30 screenshots for one daily monitor and 720 for one hourly monitor. Twenty-five hourly monitors would require 18,000 checks against Pro's 2,000-screenshot allowance; 100 hourly monitors would require 72,000 against Business's 15,000. Capture modes producing multiple files may use more. Explain this prominently and implement aggregate forecasting before promoting large monitor counts.
+**Monitor slots are not a promise that every slot can run hourly all month.** A 30-day estimate is 30 screenshots for one daily visual monitor and 720 for one hourly one. Twenty-five hourly visual monitors would require 18,000 checks against Pro's 2,000-screenshot allowance; 100 would require 72,000 against Business's 15,000. Capture modes producing multiple files may use more. Rule-based monitors (text, price, element, SEO) are what make the larger counts — 100 on Pro, 300 on Business, and 15-minute checks — workable: they read the page and render only when something changed, plus a weekly safety-net render (smart checks, migration 0016). Explain this prominently, and watch how often their readings change in practice before promoting the 15-minute schedule further.
 
 Track browser seconds, retries, storage byte-days, notification volume and support time by active account. Proposed gate: at least 70% contribution margin after these variable costs before scaling acquisition. This is a target to test, not the current margin. Avoid unlimited plans and lifetime deals with unbounded rendering.
 

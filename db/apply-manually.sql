@@ -369,6 +369,20 @@ CREATE TABLE IF NOT EXISTS project_branding (
   updated_at       TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS watch_fast_checks (
+  watch_id     TEXT PRIMARY KEY REFERENCES watches(id) ON DELETE CASCADE,
+  mode         TEXT NOT NULL DEFAULT 'learning' CHECK(mode IN ('learning','fast','browser')),
+  forced       INTEGER NOT NULL DEFAULT 0,
+  signature    TEXT,
+  agreements   INTEGER NOT NULL DEFAULT 0,
+  mismatches   INTEGER NOT NULL DEFAULT 0,
+  noise        INTEGER NOT NULL DEFAULT 0,
+  unavailable  INTEGER NOT NULL DEFAULT 0,
+  last_full_at TEXT,
+  reason       TEXT,
+  updated_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -390,3 +404,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0012_watch_runs_user_index.s
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0013_capture_jobs.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0014_pinned_baseline.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0015_report_signoff_branding.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0016_watch_fast_checks.sql');

@@ -7,12 +7,14 @@ import {
   deleteWatch,
   getWatch,
   listRuns,
+  retryFastChecks,
   runWatchNow,
+  setCheckMode,
   setWatchAlerts,
   setWatchStatus,
   setWatchFrequency,
   setWatchThreshold,
-  toWatchDTO,
+  watchDTO,
 } from '../../../lib/watches';
 import { pinBaseline, unpinBaseline } from '../../../lib/baseline-pin';
 import { withHighlightUrls } from '../../../lib/change-highlights';
@@ -30,6 +32,11 @@ async function owned(id: string | undefined, userId: string) {
   return watch;
 }
 
+/** The monitor as it is now, which is what every action answers with. */
+async function current(id: string) {
+  return watchDTO((await getWatch(id))!);
+}
+
 export const GET: APIRoute = async ({ params, locals, url }) => {
   const user = locals.user;
   if (!user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
@@ -37,13 +44,18 @@ export const GET: APIRoute = async ({ params, locals, url }) => {
   try {
     const watch = await owned(params.id, user.id);
     // Each run also carries `regions` and `highlight_url`, both additive.
-    return json({ ...toWatchDTO(watch), runs: await withHighlightUrls(await listRuns(watch.id), user.id, url.origin) });
+    return json({ ...(await watchDTO(watch)), runs: await withHighlightUrls(await listRuns(watch.id), user.id, url.origin) });
   } catch (error) {
     return toHttpError(error, 'watches.get', 'Could not load that watch.').toResponse();
   }
 };
 
-/** Pause, resume, run one now, pin or unpin its baseline, or change its schedule, sensitivity or alert channels. */
+/**
+ * Pause, resume, run one now, pin or unpin its baseline, change its schedule,
+ * sensitivity or alert channels, or choose how it is checked: `check_mode`
+ * with `force_browser` 1 or 0 for "Always use a full browser", and
+ * `retry_fast` to try fast checks again.
+ */
 export const POST: APIRoute = async ({ request, params, locals }) => {
   const user = locals.user;
   if (!user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
@@ -53,42 +65,58 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     const watch = await owned(params.id, user.id);
     const body = await readBody(request);
     const action = body.action ?? '';
-    if (['schedule', 'threshold', 'alerts', 'resume', 'run', 'pin', 'unpin'].includes(action)) await assertVerified(user);
+    if (['schedule', 'threshold', 'alerts', 'resume', 'run', 'pin', 'unpin', 'check_mode', 'retry_fast'].includes(action)) {
+      await assertVerified(user);
+    }
     if (action === 'threshold') {
       await setWatchThreshold(watch, user, body.threshold ?? '');
-      return json(toWatchDTO((await getWatch(watch.id))!));
+      return json(await current(watch.id));
     }
     if (action === 'schedule') {
       await setWatchFrequency(watch, user, body.frequency ?? '');
-      return json(toWatchDTO((await getWatch(watch.id))!));
+      return json(await current(watch.id));
     }
     if (action === 'alerts') {
       await setWatchAlerts(watch, user, body);
-      return json(toWatchDTO((await getWatch(watch.id))!));
+      return json(await current(watch.id));
     }
     // `capture_id` pins one of this monitor's earlier captures; without it, the current baseline.
     if (action === 'pin' || action === 'unpin') {
       if (action === 'pin') await pinBaseline(watch, user.id, body.capture_id);
       else await unpinBaseline(watch, user.id);
-      return json(toWatchDTO((await getWatch(watch.id))!));
+      return json(await current(watch.id));
+    }
+    if (action === 'check_mode') {
+      const value = (body.force_browser ?? '').trim().toLowerCase();
+      if (!['1', '0', 'true', 'false', 'on', 'off'].includes(value)) {
+        throw badRequest('`force_browser` must be 1 to always use a full browser, or 0 to check smartly.', 'force_browser');
+      }
+      await setCheckMode(watch, user, ['1', 'true', 'on'].includes(value));
+      return json(await current(watch.id));
+    }
+    if (action === 'retry_fast') {
+      await retryFastChecks(watch, user);
+      return json(await current(watch.id));
     }
 
     if (action === 'resume') await assertCanResume(watch, user);
     if (action === 'pause' || action === 'resume') {
       await setWatchStatus(watch.id, action === 'pause' ? 'paused' : 'active');
-      const updated = await getWatch(watch.id);
-      return json(toWatchDTO(updated!));
+      return json(await current(watch.id));
     }
 
     if (action === 'run') {
-      // Checking now spends a capture from the quota exactly as a scheduled run
-      // does, and is the only way to see the feature work without waiting.
+      // Checking now spends a screenshot when it renders, exactly as a scheduled
+      // run does — a fast check that finds nothing changed spends none — and is
+      // the only way to see the feature work without waiting.
       const outcome = await runWatchNow(watch, new URL(request.url).origin);
-      const updated = await getWatch(watch.id);
-      return json({ ...toWatchDTO(updated!), outcome });
+      return json({ ...(await current(watch.id)), outcome });
     }
 
-    throw badRequest('`action` must be one of: pause, resume, run, schedule, threshold, alerts, pin, unpin.', 'action');
+    throw badRequest(
+      '`action` must be one of: pause, resume, run, schedule, threshold, alerts, pin, unpin, check_mode, retry_fast.',
+      'action',
+    );
   } catch (error) {
     return toHttpError(error, 'watches.update', 'Could not update that watch.').toResponse();
   }

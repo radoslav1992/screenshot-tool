@@ -124,6 +124,17 @@ POST /api/watches/wat_8Yx2m1q0
 POST /api/watches/wat_8Yx2m1q0
 { "action": "unpin" }`;
 
+const checkModeExample = `# How a watch is checked: fast, learning, browser, forced or visual
+GET /api/watches/wat_8Yx2m1q0
+# → { …, "check_mode": "browser",
+#       "check_reason": "This page builds its content with JavaScript, so it needs a full browser" }
+
+POST /api/watches/wat_8Yx2m1q0
+{ "action": "check_mode", "force_browser": "1" }   # "0" to check smartly again
+
+POST /api/watches/wat_8Yx2m1q0
+{ "action": "retry_fast" }   # learn again from the next check`;
+
 const factsExample = `{
   "page": {
     "final_url": "https://stripe.com/pricing",
@@ -458,6 +469,21 @@ const { list: sections, byId: s } = docSections(toc);
           written protocol-relative is the same URL. The first check after the rule is chosen records the signals; the
           next one compares.
         </p>
+        <p>
+          Text, phrase, price, element and SEO watches check smartly. Each check first reads the page’s HTML with a
+          plain request — asking as the watch’s device does, following redirects only to public addresses, for at most
+          ten seconds and 3 MB — and renders the page, spending a screenshot, only when what the rule watches changed.
+          That render is the check it always was, and it alone decides an alert; a reading that found nothing new is
+          recorded as <span class="mono">No change · read the page, no screenshot needed</span>, against the baseline,
+          with no capture. A new watch learns first, reading and rendering every check, and goes fast after three
+          checks where the two agree. A page that builds its content with JavaScript, shows a bot check, or changes
+          its HTML on every visit gets a full browser on every check instead, and its monitor page says why. Fast
+          watches still take a full check once a week, and you can always choose a full browser. On Pro and Business,
+          rule-based watches can be checked every 15 minutes; visual watches, which compare screenshots, hourly at
+          most. An SEO watch whose canonical or noindex is only added, or removed, by JavaScript gets a note on the
+          check, never an alert, since crawlers that run no JavaScript read the HTML.
+        </p>
+        <CodeBlock tag="POST /api/watches/:id" code={checkModeExample} />
         <p class="ai-note">
           When the way captures are taken changes — tablets and phones loading as Safari, say — a watch whose
           baseline the change reaches saves its next capture as the baseline instead of comparing, and its history

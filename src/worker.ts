@@ -2,10 +2,11 @@ import { refreshAppleSubscriptions } from './lib/apple-billing';
 import { drainPush } from './lib/push';
 import astro from '@astrojs/cloudflare/entrypoints/server';
 import { env } from 'cloudflare:workers';
-import { failStrandedCaptures, sweepExpiredCaptures } from './lib/retention';
-import { runDueWatches, retryAlerts } from './lib/watches';
+import { failStrandedCaptures, pruneQuietRuns, sweepExpiredCaptures } from './lib/retention';
+import { runDueWatches, retryAlerts, type WatchSweepResult } from './lib/watches';
 import { runProjectDigests } from './lib/digests';
 import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
+import { RULE_ONLY_FREQUENCY } from './lib/plans';
 
 /**
  * Worker entrypoint.
@@ -15,7 +16,7 @@ import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
  * `main` here instead of at the adapter.
  */
 
-/** The minute trigger in wrangler.jsonc: background capture jobs, and nothing else. */
+/** The minute trigger in wrangler.jsonc: background capture jobs, and at :15, :30 and :45 the 15-minute monitors. */
 const JOBS_CRON = '* * * * *';
 
 export default {
@@ -25,16 +26,39 @@ export default {
    * Two triggers. On the hour both fire, as separate invocations with their own
    * time limits: the minute one works the capture queue, and anything else —
    * the hourly `0 * * * *`, or a manual run with no cron at all — is the sweep
-   * it always was.
+   * it always was, 15-minute monitors included. At a quarter past, half past
+   * and a quarter to, the minute one also runs the 15-minute monitors that are
+   * due, and nothing else; the hourly sweep has them on the hour.
    */
   async scheduled(event: ScheduledController, _env: Env, ctx: ExecutionContext): Promise<void> {
     if (event.cron === JOBS_CRON) {
-      ctx.waitUntil(runJobs(new Date(event.scheduledTime)));
+      const now = new Date(event.scheduledTime);
+      ctx.waitUntil(runJobs(now));
+      if (now.getUTCMinutes() % 15 === 0 && now.getUTCMinutes() !== 0) ctx.waitUntil(quarterHourly(now));
       return;
     }
     hourly(event, ctx);
   },
 } satisfies ExportedHandler<Env>;
+
+/** The 15-minute monitors due at a quarter hour. Claimed like every sweep's, so the hourly one never runs them too. */
+async function quarterHourly(now: Date): Promise<void> {
+  try {
+    logSweep(await runDueWatches(siteOrigin(), now, { frequency: RULE_ONLY_FREQUENCY }), '[watch:15m]');
+  } catch (error) {
+    console.error('[watch:15m] sweep failed', error);
+  }
+}
+
+function logSweep(result: WatchSweepResult, tag = '[watch]'): void {
+  if (!result.due) return;
+  // backlog: due but left for a later tick; late_max: the most overdue start, in minutes.
+  console.log(
+    `${tag} due=${result.due} ran=${result.ran} changed=${result.changed} ` +
+      `errors=${result.errors} skipped=${result.skipped} backlog=${result.backlog} ` +
+      `late_max=${Math.round(result.maxLateMs / 60_000)}m`,
+  );
+}
 
 async function runJobs(now: Date): Promise<void> {
   try {
@@ -65,15 +89,7 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
 
   ctx.waitUntil(
     runDueWatches(siteOrigin(), now)
-      .then((result) => {
-        if (!result.due) return;
-        // backlog: due but left for a later tick; late_max: the most overdue start, in minutes.
-        console.log(
-          `[watch] due=${result.due} ran=${result.ran} changed=${result.changed} ` +
-            `errors=${result.errors} skipped=${result.skipped} backlog=${result.backlog} ` +
-            `late_max=${Math.round(result.maxLateMs / 60_000)}m`,
-        );
-      })
+      .then((result) => logSweep(result))
       .catch((error) => {
         console.error('[watch] sweep failed', error);
       }),
@@ -98,6 +114,14 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
       .catch((error) => {
         console.error('[retention] sweep failed', error);
       }),
+  );
+
+  ctx.waitUntil(
+    pruneQuietRuns(now.getTime())
+      .then((pruned) => {
+        if (pruned) console.log(`[retention] pruned quiet monitor runs=${pruned}`);
+      })
+      .catch((error) => console.error('[retention] quiet run prune failed', error)),
   );
 
   ctx.waitUntil(

@@ -3,7 +3,7 @@ import { toSessionUser, type UserRow } from '../../../lib/auth';
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getUsage } from '../../../lib/captures';
-import { getPlan, allowedFrequencies } from '../../../lib/plans';
+import { getPlan, visualFrequencies } from '../../../lib/plans';
 import { verificationEnabled } from '../../../lib/verification';
 import { HttpError, json } from '../../../lib/http';
 import { toHttpError } from '../../../lib/errors';
@@ -27,7 +27,8 @@ export const GET: APIRoute = async ({ locals }) => {
       retentionDays: getPlan(user.plan).historyDays,
       verified: !verificationEnabled() || Boolean(row?.email_verified_at),
       usage: await getUsage(user),
-      frequencies: allowedFrequencies(user.plan),
+      // The app creates only visual monitors, so it is never offered the 15-minute schedule.
+      frequencies: visualFrequencies(user.plan),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toHttpError(error, 'mobile.profile', 'Could not load your account.').toResponse();

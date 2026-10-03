@@ -29,6 +29,12 @@ export type { ChangeRegion, DiffResult };
 export interface CompareOptions {
   /** Draw the highlighted copy when the change reaches this threshold, in percent (0: any change). */
   highlight?: number;
+  /**
+   * A second "before" to measure the same "after" against, in the same page:
+   * the version a pinned monitor last alerted about. Its comparison is best
+   * effort — one that fails leaves `previous` out rather than failing the check.
+   */
+  previous?: string;
 }
 
 const rounded = (result: DiffResult): DiffResult => ({
@@ -42,7 +48,7 @@ export async function compareImages(
   afterUrl: string,
   region?: { x: number; y: number; width: number; height: number },
   options: CompareOptions = {},
-): Promise<DiffResult> {
+): Promise<DiffResult & { previous?: DiffResult }> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
   const lease = await acquireBrowser(puppeteer);
   let succeeded = false;
@@ -64,8 +70,28 @@ export async function compareImages(
       MAX_REGIONS,
     )) as DiffResult;
 
+    let previous: DiffResult | undefined;
+    if (options.previous) {
+      try {
+        previous = rounded(
+          (await page.evaluate(
+            compareInPage,
+            options.previous,
+            afterUrl,
+            CHANNEL_TOLERANCE,
+            MAX_COMPARE_PIXELS,
+            region,
+            undefined,
+            MAX_REGIONS,
+          )) as DiffResult,
+        );
+      } catch (error) {
+        console.error('[diff] comparison with the last alerted version failed', error);
+      }
+    }
+
     succeeded = true;
-    return rounded(result);
+    return { ...rounded(result), ...(previous ? { previous } : {}) };
   } finally {
     if (page) {
       try {

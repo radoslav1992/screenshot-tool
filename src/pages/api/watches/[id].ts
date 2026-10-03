@@ -14,6 +14,7 @@ import {
   setWatchThreshold,
   toWatchDTO,
 } from '../../../lib/watches';
+import { pinBaseline, unpinBaseline } from '../../../lib/baseline-pin';
 import { withHighlightUrls } from '../../../lib/change-highlights';
 
 export const prerender = false;
@@ -42,7 +43,7 @@ export const GET: APIRoute = async ({ params, locals, url }) => {
   }
 };
 
-/** Pause, resume, run one now, or change its schedule, sensitivity or alert channels. */
+/** Pause, resume, run one now, pin or unpin its baseline, or change its schedule, sensitivity or alert channels. */
 export const POST: APIRoute = async ({ request, params, locals }) => {
   const user = locals.user;
   if (!user) return new HttpError(401, 'unauthorized', 'Sign in first.').toResponse();
@@ -52,7 +53,7 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     const watch = await owned(params.id, user.id);
     const body = await readBody(request);
     const action = body.action ?? '';
-    if (['schedule', 'threshold', 'alerts', 'resume', 'run'].includes(action)) await assertVerified(user);
+    if (['schedule', 'threshold', 'alerts', 'resume', 'run', 'pin', 'unpin'].includes(action)) await assertVerified(user);
     if (action === 'threshold') {
       await setWatchThreshold(watch, user, body.threshold ?? '');
       return json(toWatchDTO((await getWatch(watch.id))!));
@@ -63,6 +64,12 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     }
     if (action === 'alerts') {
       await setWatchAlerts(watch, user, body);
+      return json(toWatchDTO((await getWatch(watch.id))!));
+    }
+    // `capture_id` pins one of this monitor's earlier captures; without it, the current baseline.
+    if (action === 'pin' || action === 'unpin') {
+      if (action === 'pin') await pinBaseline(watch, user.id, body.capture_id);
+      else await unpinBaseline(watch, user.id);
       return json(toWatchDTO((await getWatch(watch.id))!));
     }
 
@@ -81,7 +88,7 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
       return json({ ...toWatchDTO(updated!), outcome });
     }
 
-    throw badRequest('`action` must be one of: pause, resume, run, schedule, threshold, alerts.', 'action');
+    throw badRequest('`action` must be one of: pause, resume, run, schedule, threshold, alerts, pin, unpin.', 'action');
   } catch (error) {
     return toHttpError(error, 'watches.update', 'Could not update that watch.').toResponse();
   }

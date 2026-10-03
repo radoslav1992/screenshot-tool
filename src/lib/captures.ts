@@ -563,15 +563,19 @@ export async function getCapture(id: string): Promise<CaptureRow | null> {
 export async function deleteCapture(row: CaptureRow): Promise<void> {
   // A monitor compares each check with its baseline. Deleting it would make the
   // next check a silent "first check" and miss whatever changed in between.
-  const monitor = await env.DB.prepare(`SELECT label, url FROM watches WHERE baseline_capture_id = ? LIMIT 1`)
+  // `*` because baseline_pinned_at arrives with a migration that may not be applied yet.
+  const monitor = await env.DB.prepare(`SELECT * FROM watches WHERE baseline_capture_id = ? LIMIT 1`)
     .bind(row.id)
-    .first<{ label: string; url: string }>();
+    .first<{ label: string; url: string; baseline_pinned_at?: string | null }>();
   if (monitor) {
+    const name = monitor.label || displayUrl(monitor.url);
     throw new HttpError(
       409,
       'baseline_in_use',
-      `This capture is the comparison baseline for the monitor “${monitor.label || displayUrl(monitor.url)}”. ` +
-        'It is replaced after the next check, or delete the monitor first.',
+      monitor.baseline_pinned_at
+        ? `This capture is the pinned baseline for the monitor “${name}”. Unpin it on the monitor first, or delete the monitor.`
+        : `This capture is the comparison baseline for the monitor “${name}”. ` +
+            'It is replaced after the next check, or delete the monitor first.',
     );
   }
   // A monitor check may have a highlighted copy beside its files (see change-highlights).

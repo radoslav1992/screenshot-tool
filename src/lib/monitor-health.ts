@@ -79,6 +79,13 @@ export interface RunChanges {
   regions: ChangeRegion[];
   /** A highlighted copy of the "after" image was stored next to it. */
   highlight: boolean;
+  /** Compared against a pinned baseline rather than the previous check. */
+  pinned: boolean;
+  /**
+   * Differed from the pinned baseline, but not from the version last alerted
+   * about, so no new alert went out. Recorded with `changed` 0.
+   */
+  repeat: boolean;
 }
 const PREFIX = 'esc-run-v1:';
 export function encodeRunDetail(message: string | null, delivery: Delivery, changes: Partial<RunChanges> = {}): string {
@@ -86,6 +93,8 @@ export function encodeRunDetail(message: string | null, delivery: Delivery, chan
   const extra = {
     ...(changes.regions?.length ? { regions: changes.regions } : {}),
     ...(changes.highlight ? { highlight: true } : {}),
+    ...(changes.pinned ? { pinned: true } : {}),
+    ...(changes.repeat ? { repeat: true } : {}),
   };
   return PREFIX + JSON.stringify({ message, delivery, ...extra });
 }
@@ -107,7 +116,7 @@ export function decodeRunDetail(detail: string | null): { detail: string | null;
 }
 /** What a run's comparison found (see RunChanges); all empty for older runs and text rules. */
 export function decodeRunChanges(detail: string | null): RunChanges {
-  const none: RunChanges = { regions: [], highlight: false };
+  const none: RunChanges = { regions: [], highlight: false, pinned: false, repeat: false };
   if (!detail?.startsWith(PREFIX)) return none;
   try {
     const data = JSON.parse(detail.slice(PREFIX.length));
@@ -115,6 +124,8 @@ export function decodeRunChanges(detail: string | null): RunChanges {
     return {
       regions: parseRegions(data.regions),
       highlight: data.highlight === true,
+      pinned: data.pinned === true,
+      repeat: data.repeat === true,
     };
   } catch {
     return none;
@@ -134,11 +145,13 @@ export function runLabel(run: {
   changed: number;
   baseline_capture_id: string | null;
   change_pct: number | null;
+  repeat?: boolean;
 }) {
   if (run.status === 'error') return 'Check failed';
   if (run.status === 'skipped') return 'Check skipped';
   if (!run.baseline_capture_id) return 'Baseline saved';
   if (run.changed) return 'Change detected';
+  if (run.repeat) return 'No new change';
   if (run.change_pct === null) return 'Check completed';
   return 'No significant change';
 }

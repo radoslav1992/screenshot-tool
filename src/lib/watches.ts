@@ -26,6 +26,7 @@ import { summariseChange } from './summarise';
 import { webhookBody, webhookFlavour } from './chat-webhook';
 import { formatDate } from './dates';
 import { highlightUrl, storeHighlight, type ChangeRegion } from './change-highlights';
+import { PINNED_REPEAT, lastAlertWhilePinned, pinReady } from './baseline-pin';
 
 export interface WatchRow {
   id: string;
@@ -53,6 +54,11 @@ export interface WatchRow {
   consecutive_errors: number;
   created_at: string;
   updated_at: string;
+  /**
+   * When the owner pinned the baseline, or null while it follows the latest
+   * check (see baseline-pin). Absent until migration 0014 adds the column.
+   */
+  baseline_pinned_at?: string | null;
 }
 
 export interface WatchRunRow {
@@ -142,6 +148,10 @@ export interface WatchDTO {
   last_change_pct: number | null;
   last_error: string | null;
   created_at: string;
+  baseline_capture_id: string | null;
+  /** True while every check compares against one approved capture rather than the previous check. */
+  baseline_pinned: boolean;
+  baseline_pinned_at: string | null;
 }
 
 export function toWatchDTO(row: WatchRow): WatchDTO {
@@ -165,6 +175,9 @@ export function toWatchDTO(row: WatchRow): WatchDTO {
     last_change_pct: row.last_change_pct,
     last_error: row.last_error,
     created_at: row.created_at,
+    baseline_capture_id: row.baseline_capture_id,
+    baseline_pinned: Boolean(row.baseline_pinned_at),
+    baseline_pinned_at: row.baseline_pinned_at ?? null,
   };
 }
 
@@ -605,10 +618,18 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
   // First run: nothing to compare against yet, so this becomes the baseline.
   const baseline = watch.baseline_capture_id ? await captureById(watch.baseline_capture_id) : null;
 
+  // A pinned baseline is compared against every check and replaced by none (see
+  // baseline-pin). A row read with `*` carries the column once it exists, which
+  // no probe cached a minute ago can contradict.
+  const pins = watch.baseline_pinned_at !== undefined || (await pinReady());
+  const pinned = pins && Boolean(watch.baseline_pinned_at) && Boolean(baseline);
+  const alertedId = pinned ? await lastAlertWhilePinned(watch) : null;
+  const lastAlerted = alertedId ? await captureById(alertedId) : null;
+
   let changed = false;
   let changePct: number | null = null;
   let detail: string | null = null;
-  let visual: DiffResult | null = null;
+  let visual: (DiffResult & { previous?: DiffResult }) | null = null;
 
   if (!baseline) {
     detail = 'first check — saved as the baseline';
@@ -625,11 +646,12 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     if (!before || !after) {
       return failed(run, 'Comparison unavailable: a capture has no comparable image.', { captureId: capture.id });
     }
-    let diff: DiffResult;
+    let diff: DiffResult & { previous?: DiffResult };
     try {
       const region = parseIgnoreRegions(rule.region)[0];
       const scaled = region ? { x: region.x * watch.scale, y: region.y * watch.scale, width: region.width * watch.scale, height: region.height * watch.scale } : undefined;
-      diff = await compareImages(before, after, scaled, { highlight: watch.threshold });
+      const previous = lastAlerted ? firstFileUrl(lastAlerted, origin) ?? undefined : undefined;
+      diff = await compareImages(before, after, scaled, { highlight: watch.threshold, previous });
     } catch (error) {
       // Preserve the last good baseline so the next successful check can still detect the change.
       const message = error instanceof Error ? error.message : '';
@@ -649,8 +671,16 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
     visual = diff;
   }
 
+  // Pinned, a page that moved away from the baseline differs from it on every
+  // check after; only one that moved again since the last alert is news.
+  let repeat = false;
+  if (changed && lastAlerted && !movedSinceAlert(rule, watch.threshold, lastAlerted, capture, visual)) {
+    repeat = true;
+    changed = false;
+    detail = `${detail ?? ''} ${PINNED_REPEAT}`.trim();
+  }
   const highlighted = visual?.highlight ? await storeHighlight(capture, visual.highlight) : false;
-  const changes = { regions: visual?.regions ?? [], highlight: highlighted };
+  const changes = { regions: visual?.regions ?? [], highlight: highlighted, pinned, repeat };
 
   const runId = prefixedId('wrn', 10);
   const alerting = changed && Boolean(baseline);
@@ -665,10 +695,18 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
    * the change and the jobs that will announce it. Before, a crash between the
    * baseline moving and the alert being queued lost the alert for good: the
    * next check compared against the new baseline and saw nothing.
+   *
+   * A pinned baseline stays, decided by the row as it is at the write, so a pin
+   * or unpin made during the check holds. A pin whose capture is gone is let go.
    */
+  const baselineSet = !pins
+    ? 'baseline_capture_id = ?'
+    : watch.baseline_pinned_at && !baseline
+      ? 'baseline_capture_id = ?, baseline_pinned_at = NULL'
+      : 'baseline_capture_id = CASE WHEN baseline_pinned_at IS NULL THEN ? ELSE baseline_capture_id END';
   const [moved] = await env.DB.batch([
     env.DB.prepare(
-      `UPDATE watches SET baseline_capture_id = ?, last_run_at = ?, next_run_at = ?, last_error = NULL,
+      `UPDATE watches SET ${baselineSet}, last_run_at = ?, next_run_at = ?, last_error = NULL,
          consecutive_errors = 0, updated_at = ?,
          last_changed_at = CASE WHEN ? = 1 THEN ? ELSE last_changed_at END,
          last_change_pct = ?
@@ -733,12 +771,36 @@ export async function runWatch(watch: WatchRow, origin: string): Promise<WatchOu
       // send: a crash before this is retried next hour, one after it is
       // ambiguous and never sent twice.
       retries ? () => claimRetry(runId) : undefined,
-      { regions: changes.regions, highlightUrl: highlighted ? highlightUrl(capture, origin) : null },
+      { regions: changes.regions, highlightUrl: highlighted ? highlightUrl(capture, origin) : null, pinned },
     );
     if (sent && retries) await finishRetry(runId, delivery, 1);
   }
 
   return { status: 'done', changed, changePct: changePct ?? undefined, detail: detail ?? undefined };
+}
+
+/**
+ * Whether a check that differs from its pinned baseline also differs from the
+ * version last alerted about, by the same rule and threshold. Whatever cannot
+ * be told counts as moved: a second alert is better than a missed one.
+ */
+function movedSinceAlert(
+  rule: MonitorRule,
+  threshold: number,
+  alerted: CaptureRow,
+  capture: CaptureRow,
+  visual: (DiffResult & { previous?: DiffResult }) | null,
+): boolean {
+  if (rule.kind !== 'visual') {
+    try {
+      return evaluateRule(rule, safeParseFacts(alerted.facts), safeParseFacts(capture.facts)).changed;
+    } catch {
+      return true;
+    }
+  }
+  const previous = visual?.previous;
+  if (!previous) return true;
+  return threshold === 0 ? previous.changedPixels > 0 || previous.resized : previous.changedPct >= threshold;
 }
 
 /** The run history line for a visual comparison, naming the sensitivity it used. */
@@ -975,6 +1037,7 @@ async function tellOwner(user: SessionUser, subject: string, text: string): Prom
 interface AlertChanges {
   regions: ChangeRegion[];
   highlightUrl: string | null;
+  pinned: boolean;
 }
 
 async function notify(
@@ -988,7 +1051,7 @@ async function notify(
   rule: { kind: string; detail: string | null },
   saveDelivery: () => Promise<void>,
   claim?: () => Promise<boolean>,
-  changes: AlertChanges = { regions: [], highlightUrl: null },
+  changes: AlertChanges = { regions: [], highlightUrl: null, pinned: false },
 ): Promise<boolean> {
   const name = watchName(watch);
   const link = `${origin}/app/watches/${watch.id}`;
@@ -1020,7 +1083,7 @@ async function notify(
               body +
               (changePct > 0 ? `${changePct}% of the picture changed.\n\n` : '') +
               (changes.regions.length ? `Changed areas: ${changes.regions.length}\n\n` : '') +
-              `Before: ${firstFileUrl(before, origin) ?? '—'}\n` +
+              `Before: ${firstFileUrl(before, origin) ?? '—'}${changes.pinned ? ' (your pinned baseline)' : ''}\n` +
               `After:  ${firstFileUrl(after, origin) ?? '—'}\n` +
               (changes.highlightUrl ? `Changes highlighted: ${changes.highlightUrl}\n` : '') +
               `\nHistory and settings: ${link}\n\n` +
@@ -1178,7 +1241,7 @@ export async function retryAlerts(origin: string) {
       const rule = await getMonitorRule(watch.id);
       await notify(watch,toSessionUser(owner),before,after,run.change_pct || 0,origin,decoded.delivery,{ kind: rule.kind, detail: decoded.detail },async()=>{
         await env.DB.prepare('UPDATE watch_runs SET detail=? WHERE id=?').bind(encodeRunDetail(decoded.detail,decoded.delivery,changes),run.id).run();
-      },undefined,{ regions: changes.regions, highlightUrl: changes.highlight ? highlightUrl(after, origin) : null });
+      },undefined,{ regions: changes.regions, highlightUrl: changes.highlight ? highlightUrl(after, origin) : null, pinned: changes.pinned });
       await finishRetry(run.id,decoded.delivery,job.attempts+1);
     } catch (error) { console.error('[alerts] retry interrupted',error); }
   }

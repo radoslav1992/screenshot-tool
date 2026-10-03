@@ -149,7 +149,7 @@ const params = [
   { name: 'headers', type: 'string', required: false, desc: 'JSON object of request headers. Host and hop-by-hop headers are refused.' },
   { name: 'cookies', type: 'string', required: false, desc: 'JSON object of cookies, scoped to the captured host.' },
   { name: 'basic_auth', type: 'string', required: false, desc: '`username:password` for a page behind HTTP basic auth.' },
-  { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop.' },
+  { name: 'device', type: 'string', required: false, desc: 'A device (desktop · tablet · mobile), an output frame (see below), or custom. Default desktop. Tablet and mobile load as Safari on iPad and iPhone.' },
   { name: 'mode', type: 'string', required: false, desc: 'visible · fullpage · series. Default visible.' },
   { name: 'format', type: 'string', required: false, desc: 'png · jpg · pdf. Default png. pdf is not valid with mode=series.' },
   { name: 'width', type: 'integer', required: false, desc: `Viewport width, ${LIMITS.minWidth}–${LIMITS.maxWidth}. Setting it switches device to custom.` },
@@ -262,7 +262,9 @@ const { list: sections, byId: s } = docSections(toc);
         <p>
           <span class="mono">sizes=desktop,tablet,mobile</span> shoots the same page at each viewport during a single
           page load, returning one file per device named after it. One load matters: three separate captures pay for
-          three, and a page that shows a cookie wall on first visit behaves differently the second time.
+          three, and a page that shows a cookie wall on first visit behaves differently the second time. The page is
+          loaded as <span class="mono">device</span>, so a site that picks its layout from the user agent sends the
+          one for that device to every size; capture each device separately when that matters.
         </p>
       </DocSection>
 
@@ -329,6 +331,24 @@ const { list: sections, byId: s } = docSections(toc);
           before and after file URLs and the percentage that moved. Watches are set up in the
           <a href="/app/watches">app</a>; they are not on the public API yet.
         </p>
+        <p>
+          A watch can alert on what search engines read instead of on pixels. The SEO signals rule compares the
+          title, meta description, canonical URL, robots <span class="mono">noindex</span> and
+          {' '}<span class="mono">nofollow</span> (the meta tags and the <span class="mono">X-Robots-Tag</span>
+          header), the first <span class="mono">h1</span> and how many there are, hreflang alternates, the Open Graph
+          title, description and image, and the HTTP status — all of them, or the ones you tick. The alert lists each
+          change, such as <span class="mono">Title: "Old" → "New"</span> or
+          {' '}<span class="mono">Robots: index → noindex</span>, with a new noindex or a 4xx/5xx status first; the
+          webhook carries it as <span class="mono">rule: {'{'} kind: "seo", detail {'}'}</span>. Differences in
+          whitespace are ignored, and a canonical that differs only by a trailing slash, the case of its host, a fragment or being
+          written protocol-relative is the same URL. The first check after the rule is chosen records the signals; the
+          next one compares.
+        </p>
+        <p class="ai-note">
+          When the way captures are taken changes — tablets and phones loading as Safari, say — a watch whose
+          baseline the change reaches saves its next capture as the baseline instead of comparing, and its history
+          reads “Baseline refreshed after a capture engine update”. Nothing is sent for that check.
+        </p>
       </DocSection>
 
       <DocSection {...s['endpoints']}>
@@ -377,6 +397,12 @@ const { list: sections, byId: s } = docSections(toc);
             ))
           }
         </div>
+        <p>
+          Tablet and mobile are an iPad and an iPhone to the page: Safari's user agent, touch, and mobile viewport
+          rules, so a site that chooses its layout on the server, or turns away headless browsers by name, sends what a
+          visitor on that device gets. Desktop is the rendering browser's own Chrome. Every request still carries
+          Cloudflare's Browser Rendering headers, so a site's bot protection sees the capture for what it is.
+        </p>
         <p class="ai-note">
           Pass <span class="mono">width</span> and <span class="mono">height</span> for anything else — that switches
           the capture to <span class="mono">device=custom</span> (Pro and above).

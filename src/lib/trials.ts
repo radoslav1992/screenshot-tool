@@ -8,7 +8,7 @@ import { HttpError } from './http';
 import { canSendEmail, sendMail } from './mailer';
 import { WATCH_FREQUENCIES, WATCH_LIMIT, getPlan, type PlanId } from './plans';
 import { TRIAL_DAYS, TRIAL_PLAN, trialRaises, trialsAvailable, trialsReady } from './trial-plan';
-import { isVerified } from './verification';
+import { hasConfirmedEmail } from './verification';
 
 /**
  * Starting a 14-day Pro trial, and seeing it through: the reminder three days
@@ -55,9 +55,20 @@ export async function trialOfferFor(user: SessionUser | null): Promise<boolean> 
 }
 
 /**
+ * Whether the account's email allows a trial. Stricter than captures, which
+ * follow REQUIRE_EMAIL_VERIFICATION: two weeks of Pro would be worth a
+ * throwaway signup, so wherever this deployment can send the link the address
+ * must be confirmed, whatever that setting says. A deployment that cannot send
+ * mail never locks anyone out.
+ */
+export async function trialEmailConfirmed(userId: string): Promise<boolean> {
+  return canSendEmail() ? hasConfirmedEmail(userId) : true;
+}
+
+/**
  * Starts the account's trial, or says why not: 404 before the migration, 429
  * for too many attempts or too many trials from one address, 403 while the
- * email waits to be confirmed (by the rule captures follow), 409 for a second
+ * email waits to be confirmed (trialEmailConfirmed), 409 for a second
  * trial or an account already paying.
  */
 export async function startTrial(
@@ -75,7 +86,7 @@ export async function startTrial(
     (wait) => `Too many attempts. Wait ${wait} and try again.`,
   );
 
-  if (!(await isVerified(user.id))) {
+  if (!(await trialEmailConfirmed(user.id))) {
     throw new HttpError(
       403,
       'verification_required',

@@ -6,8 +6,7 @@ import { billingEnabled, getBillingRow, hasActiveSubscription, priceIdFor, type 
 import { fastChecksReady } from '../../lib/fast-checks';
 import { formatDate } from '../../lib/dates';
 import { TRIAL_DAYS, TRIAL_PLAN } from '../../lib/trial-plan';
-import { trialOfferFor } from '../../lib/trials';
-import { isVerified } from '../../lib/verification';
+import { trialEmailConfirmed, trialOfferFor } from '../../lib/trials';
 import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
@@ -24,7 +23,7 @@ const offerTrial = await trialOfferFor(user);
 if (!hasActiveSubscription(billing) && !offerTrial) return Astro.redirect('/pricing', 302);
 
 const trialPlan = getPlan(TRIAL_PLAN);
-const trialWaitsForEmail = offerTrial && !(await isVerified(user.id).catch(() => true));
+const trialWaitsForEmail = offerTrial && !(await trialEmailConfirmed(user.id).catch(() => true));
 const trialEnds = formatDate(new Date(Date.now() + TRIAL_DAYS * 86_400_000));
 
 const current: BillingInterval = billing?.plan_interval === 'yearly' ? 'yearly' : 'monthly';

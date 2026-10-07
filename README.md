@@ -1017,7 +1017,9 @@ when it ends.
   applies for the rest of it, and what was already used still counts.
 - **Starting one.** `POST /api/trial` (same-origin, signed in) answers `201 {plan: "pro", ends_at}`, or
   `409 trial_used`, `409 already_paid` (not Free or Lite, or an active Stripe subscription), `403
-  verification_required` (by the rule captures follow), `429 rate_limited` (5 an hour per account, 20 per address,
+  verification_required` (the email is not confirmed: required wherever mail can be sent, even with
+  `REQUIRE_EMAIL_VERIFICATION` off, since two weeks of Pro would otherwise be worth a throwaway signup),
+  `429 rate_limited` (5 an hour per account, 20 per address,
   in KV) or `429 trial_limit` (3 trials per hashed address in 30 days, hashed like the signup address in
   `lib/growth.ts`, checked in the same statement that inserts the row). A form post lands on the account screen.
 - **The end.** The hourly cron (`runTrialLifecycle`) emails a reminder three days before the end and a note once

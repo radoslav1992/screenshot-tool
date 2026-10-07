@@ -13,9 +13,8 @@ import { canSendEmail } from '../../lib/mailer';
 import { REFERRAL_BONUS, REFERRAL_CAP, referralSummary, referralUrl, rewardReferral } from '../../lib/growth';
 import { isOwner } from '../../lib/growth-report';
 import { webPushReady } from '../../lib/push';
-import { trialOfferFor } from '../../lib/trials';
+import { trialEmailConfirmed, trialOfferFor } from '../../lib/trials';
 import { TRIAL_DAYS } from '../../lib/trial-plan';
-import { isVerified } from '../../lib/verification';
 import { formatDate } from '../../lib/dates';
 
 const user = Astro.locals.user!;
@@ -34,7 +33,7 @@ const plan = getPlan(user.ownPlan);
 const onTrial = Boolean(user.trial?.active && user.plan !== user.ownPlan);
 // Offered once, from Free or Lite, with no Stripe subscription (lib/trials.ts).
 const offerTrial = await trialOfferFor(user);
-const trialWaitsForEmail = offerTrial && !(await isVerified(user.id).catch(() => true));
+const trialWaitsForEmail = offerTrial && !(await trialEmailConfirmed(user.id).catch(() => true));
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
 const renews = new Date(usage.renewsOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });

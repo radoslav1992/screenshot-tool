@@ -288,7 +288,7 @@ try {
     assert.deepEqual([(await start('fresh')).status, (await start('fresh')).json.error.type], [409, 'trial_used']);
   });
 
-  await section('the email must be confirmed by the rule captures follow', async () => {
+  await section('the email must be confirmed wherever mail can be sent, even with the capture gate off', async () => {
     const db = world();
     addUser(db, 'unconfirmed', { verified: false });
     const r = await start('unconfirmed');
@@ -297,14 +297,20 @@ try {
     db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ?').run(iso(Date.now()), 'unconfirmed');
     assert.equal((await start('unconfirmed')).status, 201);
 
-    // Where the gate is off — no mailer, or not required — confirming is not asked for, as with captures.
+    // Production runs with REQUIRE_EMAIL_VERIFICATION off: captures do not ask, the trial still does.
+    fx.env.REQUIRE_EMAIL_VERIFICATION = '0';
+    addUser(db, 'notrequired', { verified: false });
+    const gateOff = await start('notrequired', { ip: '203.0.113.9' });
+    assert.deepEqual([gateOff.status, gateOff.json.error.type], [403, 'verification_required']);
+    assert.equal(trialOf(db, 'notrequired'), undefined);
+    db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ?').run(iso(Date.now()), 'notrequired');
+    assert.equal((await start('notrequired', { ip: '203.0.113.9' })).status, 201);
+
+    // A deployment that cannot send the link never locks anyone out.
     addUser(db, 'nomail', { verified: false });
     fx.mailReady = false;
     assert.equal((await start('nomail', { ip: '203.0.113.8' })).status, 201);
     fx.mailReady = true;
-    fx.env.REQUIRE_EMAIL_VERIFICATION = '0';
-    addUser(db, 'notrequired', { verified: false });
-    assert.equal((await start('notrequired', { ip: '203.0.113.9' })).status, 201);
   });
 
   await section('only from Free or Lite, and never while Stripe bills the account (409 already_paid)', async () => {

@@ -6,7 +6,7 @@
  * the installed app, after it is closed on this device, or anywhere else.
  */
 interface Props {
-  /** A block of its own between two .app-wrap blocks, padded like them but not above. */
+  /** A block of its own between two .app-wrap blocks, padded at the sides like them. */
   inset?: boolean;
 }
 const { inset = false } = Astro.props;
@@ -15,33 +15,43 @@ const { inset = false } = Astro.props;
 <aside class:list={['install-hint', { 'app-wrap install-hint--inset': inset }]} data-install-hint aria-label="Install the app" hidden>
   <div class="install-hint__bar">
     <span class="install-hint__label">[ APP ]</span>
-    <p class="install-hint__text" data-install-text></p>
-    <button type="button" class="btn btn--outline install-hint__install" data-install-button hidden>Install the app</button>
+    <div class="install-hint__body">
+      <p class="install-hint__text" data-install-text></p>
+      <button type="button" class="btn btn--outline install-hint__install" data-install-button hidden>Install the app</button>
+    </div>
     <button type="button" class="install-hint__close" data-install-close aria-label="Dismiss the install hint">×</button>
   </div>
 </aside>
 
 <style>
   .install-hint--inset {
-    padding-top: 0;
+    padding-block: 0;
   }
   .install-hint__bar {
     display: flex;
-    align-items: center;
-    gap: 6px 12px;
-    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
     padding: 4px 4px 4px 14px;
     border: 1px solid var(--line);
     background: white;
   }
+  .install-hint__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+  }
   .install-hint__label {
     flex: none;
+    padding-top: 13px;
     font: 500 10px/1 var(--mono);
     letter-spacing: 0.08em;
     color: var(--green);
   }
   .install-hint__text {
-    flex: 1 1 220px;
+    flex: 1 1 240px;
     min-width: 0;
     margin: 0;
     padding: 8px 0;
@@ -54,6 +64,19 @@ const { inset = false } = Astro.props;
     width: auto;
     min-height: 44px;
     padding: 10px 14px;
+    margin-bottom: 4px;
+  }
+  /* Wide enough for one line: everything on its centre line. */
+  @media (min-width: 600px) {
+    .install-hint__bar {
+      align-items: center;
+    }
+    .install-hint__label {
+      padding-top: 0;
+    }
+    .install-hint__install {
+      margin-bottom: 0;
+    }
   }
   .install-hint__close {
     flex: none;
@@ -61,7 +84,7 @@ const { inset = false } = Astro.props;
     place-items: center;
     width: 44px;
     height: 44px;
-    margin-left: auto;
+    align-self: flex-start;
     font: 400 22px/1 var(--sans);
     color: var(--muted);
   }
@@ -75,8 +98,8 @@ const { inset = false } = Astro.props;
   import { dismissInstallHint, installEnvironment, installHint, promptInstall, watchInstall } from '../scripts/install';
 
   const COPY = {
-    prompt: 'Install Easy Capture for a full-screen app that opens straight from your dock or home screen.',
-    ios: 'Add Easy Capture to your Home Screen: tap Share, then Add to Home Screen. On iPhone, that also lets it send you change alerts.',
+    prompt: 'Install Easy Capture as an app, one tap from your home screen or dock.',
+    ios: 'Add Easy Capture to your Home Screen: tap Share, then Add to Home Screen. It can then send you change alerts too.',
   } as const;
 
   for (const hint of document.querySelectorAll<HTMLElement>('[data-install-hint]')) {

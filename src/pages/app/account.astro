@@ -535,7 +535,8 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
     flex-wrap: wrap;
     gap: 8px;
   }
-  .device-alerts__actions:not(:has(> :not([hidden]))) {
+  .device-alerts__actions:not(:has(> :not([hidden]))),
+  .device-alerts [role='status']:empty {
     display: none;
   }
   .device-alerts__actions .btn {

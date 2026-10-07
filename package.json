@@ -14,6 +14,7 @@
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
     "stripe:setup": "node scripts/stripe-setup.mjs",
+    "vapid:keys": "node scripts/vapid-keys.mjs",
     "icons": "node scripts/build-icons.mjs",
     "api:smoke": "node scripts/api-smoke.mjs",
     "mobile:check": "node scripts/mobile-contract-check.mjs",

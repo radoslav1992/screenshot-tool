@@ -4,10 +4,14 @@ import CodeBlock from '../../components/CodeBlock.astro';
 import { env } from 'cloudflare:workers';
 import { getPlan } from '../../lib/plans';
 import { formatDate } from '../../lib/dates';
+import { trialEnded } from '../../lib/trial-plan';
 import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
 const plan = getPlan(user.plan);
+// Keys made during a Pro trial work while it runs and are kept after it.
+const onTrial = Boolean(user.trial?.active && user.plan !== user.ownPlan);
+const afterTrial = trialEnded(user);
 
 const { results: keys } = await env.DB.prepare(
   `SELECT id, prefix, last4, label, environment, created_at, last_used_at, revoked_at
@@ -53,7 +57,7 @@ const keyMeta = (key: { label: string; environment: string; created_at: string; 
 <AppShell title="API" tab="api">
   <header class="appbar" slot="appbar">
     <div class="appbar__title">API</div>
-    <span class="pill pill--quota">{plan.name} plan</span>
+    <span class="pill pill--quota">{onTrial ? `${plan.name} trial` : `${plan.name} plan`}</span>
   </header>
 
   <div class="app-wrap stack gap-20">
@@ -68,8 +72,18 @@ const keyMeta = (key: { label: string; environment: string; created_at: string; 
     {
       !plan.api && (
         <div class="notice notice--info">
-          API access is available on the Pro and Business plans. You can still create keys here once you upgrade.{' '}
+          {afterTrial
+            ? 'Your Pro trial has ended. API access is available on the Pro and Business plans; your keys are kept and work again once you upgrade.'
+            : 'API access is available on the Pro and Business plans. You can still create keys here once you upgrade.'}{' '}
           <a href="/pricing">See plans →</a>
+        </div>
+      )
+    }
+    {
+      onTrial && user.trial && (
+        <div class="notice notice--info">
+          Your keys work during your Pro trial, until {formatDate(user.trial.endsAt)}. After that they need Pro or
+          Business. <a href="/pricing#plan-pro">Keep Pro →</a>
         </div>
       )
     }

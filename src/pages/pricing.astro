@@ -9,6 +9,8 @@ import { PLANS, PLAN_ORDER, WATCH_FREQUENCIES, WATCH_LIMIT } from '../lib/plans'
 import { billingEnabled, getBillingRow, hasActiveSubscription, planPurchasable } from '../lib/billing';
 import { billingErrorMessage } from '../lib/billing-errors';
 import { fastChecksReady } from '../lib/fast-checks';
+import { TRIAL_DAYS, TRIAL_PLAN, trialDaysLeft, trialsAvailable } from '../lib/trial-plan';
+import { trialOffered } from '../lib/trials';
 
 const user = Astro.locals.user;
 const plans = PLAN_ORDER.map((id) => PLANS[id]);
@@ -31,6 +33,14 @@ const subscribed = hasActiveSubscription(billing);
 const startYearly = subscribed && billing?.plan_interval === 'yearly';
 // Monitors read their page first only once migration 0016 exists; until then every check is a screenshot.
 const smart = await fastChecksReady().catch(() => false);
+
+// The Pro trial (migration 0019): offered to visitors, and to Free and Lite
+// accounts that never had one. A secondary link on the Pro card, so buying
+// stays the page's one orange action — this is where purchases start.
+const trials = await trialsAvailable();
+const offerTrial = trials && (!user || trialOffered(user, billing, true));
+const trialSignup = `/signup?ref=trial&next=${encodeURIComponent('/app/upgrade#trial')}`;
+const trialRunning = user?.trial?.active && user.plan !== user.ownPlan ? user.trial : null;
 ---
 
 <Base title="Pricing" description="Start free with 20 screenshots and three weekly website monitors a month. Upgrade when you need more.">
@@ -104,7 +114,8 @@ const smart = await fastChecksReady().catch(() => false);
                 </ul>
 
                 {
-                  user && user.plan === plan.id ? (
+                  // The plan the account pays for: during a Pro trial, Pro is still for sale.
+                  user && user.ownPlan === plan.id ? (
                     <div class="plan__cta">
                       <span class="btn btn--outline-ink is-current" aria-disabled="true">Current plan</span>
                     </div>
@@ -135,6 +146,23 @@ const smart = await fastChecksReady().catch(() => false);
                     </div>
                   )
                 }
+
+                {plan.id === TRIAL_PLAN && offerTrial && (
+                  user ? (
+                    <form class="plan-trial" method="post" action="/api/trial">
+                      <button type="submit">Try {plan.name} free for {TRIAL_DAYS} days, no card</button>
+                    </form>
+                  ) : (
+                    <p class="plan-trial">
+                      <a href={trialSignup}>Try {plan.name} free for {TRIAL_DAYS} days, no card</a>
+                    </p>
+                  )
+                )}
+                {plan.id === TRIAL_PLAN && trialRunning && (
+                  <p class="plan-trial plan-trial--note">
+                    [ ON TRIAL · {trialDaysLeft(trialRunning)} {trialDaysLeft(trialRunning) === 1 ? 'DAY' : 'DAYS'} LEFT ]
+                  </p>
+                )}
               </section>
             ))
           }
@@ -156,6 +184,15 @@ const smart = await fastChecksReady().catch(() => false);
           {
             !checkout && (
               <p>Paid checkout is not available yet. You can start with Free and keep using your workspace.</p>
+            )
+          }
+          {
+            trials && (
+              <p>
+                Free and Lite accounts can try Pro free for {TRIAL_DAYS} days, once, with no card: everything Pro
+                includes, API access and its monitor schedules too. When the trial ends you go back to your own plan
+                automatically and nothing is charged; its allowance, monitor limit and capture history apply again.
+              </p>
             )
           }
           {
@@ -205,6 +242,32 @@ const smart = await fastChecksReady().catch(() => false);
     font-weight: 600;
     text-decoration: underline;
     text-underline-offset: 3px;
+  }
+  /* The trial sits under the Pro card's button: a link, so buying stays the orange action. */
+  .plan-trial {
+    margin-top: 8px;
+    text-align: center;
+  }
+  .plan-trial :is(a, button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--paper);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .plan-trial :is(a, button):hover {
+    color: var(--theme);
+  }
+  .plan-trial--note {
+    padding-top: 6px;
+    font: 10px/1.5 var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--dim);
   }
   .pricing-plans {
     margin-top: 35px;

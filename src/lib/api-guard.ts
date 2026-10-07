@@ -4,6 +4,7 @@ import { toHttpError } from './errors';
 import { API_RATE_LIMIT, getPlan } from './plans';
 import { checkRateLimit, rateLimitHeaders } from './rate-limit';
 import { assertVerified } from './verification';
+import { trialEnded } from './trial-plan';
 
 export interface GuardResult {
   auth: ApiKeyAuth;
@@ -22,10 +23,13 @@ export async function guardApiRequest(request: Request, cost = 1): Promise<Guard
   const plan = getPlan(auth.user.plan);
 
   if (!plan.api) {
+    // Keys made during a Pro trial are kept; they work again once the account is on Pro or Business.
     throw new HttpError(
       403,
       'plan_required',
-      'API access is available on the Pro and Business plans. Upgrade to start using keys.',
+      trialEnded(auth.user)
+        ? 'Your Pro trial has ended, and API access is available on the Pro and Business plans. Upgrade to keep using your keys.'
+        : 'API access is available on the Pro and Business plans. Upgrade to start using keys.',
     );
   }
 

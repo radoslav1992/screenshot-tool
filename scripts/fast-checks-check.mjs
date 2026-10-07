@@ -958,11 +958,12 @@ try {
       './lib/digests': record('runProjectDigests'),
       './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,
       './lib/ops-watchdog': record('runWatchdog'),
+      './lib/trials': record('runTrialLifecycle'),
     };
     const exact = {
       name: 'worker-stubs',
       setup(b) {
-        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
+        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog|trials))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
         b.onLoad({ filter: /.*/, namespace: 'worker' }, (args) => ({ contents: workerStubs[args.path], loader: 'js' }));
       },
     };

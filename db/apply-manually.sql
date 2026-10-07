@@ -452,6 +452,19 @@ CREATE TABLE IF NOT EXISTS web_push_deliveries (
 );
 CREATE INDEX IF NOT EXISTS web_push_deliveries_due ON web_push_deliveries(status, next_attempt_at);
 
+CREATE TABLE IF NOT EXISTS plan_trials (
+  user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  plan        TEXT NOT NULL DEFAULT 'pro',
+  started_at  TEXT NOT NULL,
+  ends_at     TEXT NOT NULL,
+  reminded_at TEXT,
+  ended_at    TEXT,
+  ip_hash     TEXT
+);
+CREATE INDEX IF NOT EXISTS plan_trials_open ON plan_trials(ended_at, ends_at);
+CREATE INDEX IF NOT EXISTS plan_trials_ip ON plan_trials(ip_hash, started_at);
+CREATE INDEX IF NOT EXISTS plan_trials_started ON plan_trials(started_at);
+
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -476,3 +489,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0015_report_signoff_branding
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0016_watch_fast_checks.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0017_growth.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0018_web_push.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0019_plan_trials.sql');

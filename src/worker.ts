@@ -8,6 +8,7 @@ import { runProjectDigests } from './lib/digests';
 import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
 import { RULE_ONLY_FREQUENCY } from './lib/plans';
 import { runWatchdog } from './lib/ops-watchdog';
+import { runTrialLifecycle } from './lib/trials';
 
 /**
  * Worker entrypoint.
@@ -103,6 +104,17 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
   ctx.waitUntil(retryAlerts(siteOrigin()).catch(error => console.error('[alerts] retry sweep failed', error)));
 
   ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
+
+  // Pro trials: the reminder three days out and the note once one has ended.
+  ctx.waitUntil(
+    runTrialLifecycle(siteOrigin(), now)
+      .then((result) => {
+        if (result.reminded || result.ended || result.closed) {
+          console.log(`[trials] reminded=${result.reminded} ended=${result.ended} closed=${result.closed}`);
+        }
+      })
+      .catch((error) => console.error('[trials] sweep failed', error)),
+  );
 
   ctx.waitUntil(
     sweepExpiredCaptures(now.getTime())

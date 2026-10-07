@@ -3,6 +3,7 @@ import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
 import Mark from '../../components/Mark.astro';
 import InstallHint from '../../components/InstallHint.astro';
+import TrialStatus from '../../components/TrialStatus.astro';
 import { DEVICE_LIST, FORMATS, FRAME_LIST, MODES } from '../../lib/capture-options';
 import { getUsage } from '../../lib/captures';
 import { cheapestPlanWith, getPlan } from '../../lib/plans';
@@ -12,6 +13,8 @@ import { formatDate } from '../../lib/dates';
 const user = Astro.locals.user!;
 const [usage, verified] = await Promise.all([getUsage(user), isVerified(user.id)]);
 const plan = getPlan(user.plan);
+// A Pro trial is what `plan` reflects while it runs; the card says so.
+const onTrial = Boolean(user.trial?.active && user.plan !== user.ownPlan);
 
 // Name the plan someone actually has to buy, rather than a hard-coded tier.
 const sizePlan = cheapestPlanWith((entry) => entry.customViewport);
@@ -35,6 +38,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
   </header>
 
   <aside class="app-wrap" aria-label="Getting started"><div class="notice"><strong>New to client projects?</strong> <a href="/app/start">Follow the three-step setup →</a> · <a href="/sample-report">See a sample report</a></div></aside>
+  <TrialStatus user={user} inset />
   <InstallHint inset />
   <div class="app-wrap capture-intro">
     <div class="workspace-intro">
@@ -45,7 +49,7 @@ const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
       </div>
       <div class="usage-card">
         <div class="row-between">
-          <strong>{plan.name} plan</strong>
+          <strong>{onTrial ? `${plan.name} trial` : `${plan.name} plan`}</strong>
           <a href="/app/upgrade">View plans ↗</a>
         </div>
         <progress value={Math.min(usage.used, usage.quota)} max={usage.quota} aria-label="Monthly screenshots used" />

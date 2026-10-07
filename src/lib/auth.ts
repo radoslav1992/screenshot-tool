@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { getPlan, type PlanId } from './plans';
 import { prefixedId, randomId, randomToken, sha256Hex, timingSafeEqual, toHex } from './ids';
 import { HttpError, badRequest } from './http';
+import { effectivePlan, trialColumns, trialFrom, type PlanTrial, type TrialColumns } from './trial-plan';
 
 export const SESSION_COOKIE = 'sf_session';
 export const SESSION_TTL_DAYS = 30;
@@ -25,13 +26,18 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  /** The plan the account acts on: what every entitlement reads. A Pro trial raises it above `ownPlan`. */
   plan: PlanId;
+  /** The plan the account holds itself — paid for through Stripe or Apple, or Free. Billing reads this. */
+  ownPlan: PlanId;
+  /** Its Pro trial (lib/trial-plan.ts), running or over, if it ever started one. */
+  trial?: PlanTrial;
   periodStart: string;
   createdAt: string;
   freeQuota?: number;
 }
 
-export interface UserRow {
+export interface UserRow extends TrialColumns {
   id: string;
   email: string;
   email_lower: string;
@@ -45,16 +51,39 @@ export interface UserRow {
   apple_expires_at?: string | null;
 }
 
+/**
+ * The one place a user's plan is decided. Their own is the recorded plan, or
+ * Lite while an Apple subscription is current; the one they act on is Pro
+ * while a trial runs on top of a plan below it. A row read without
+ * trialColumns has no trial, which is every row before migration 0019.
+ */
 export function toSessionUser(row: UserRow): SessionUser {
+  const now = new Date();
+  const own = getPlan(row.plan).id === 'free' && (row.apple_expires_at ?? '') > now.toISOString() ? 'lite' : getPlan(row.plan).id;
+  const trial = trialFrom(row, now);
   return {
     id: row.id,
     email: row.email,
     name: row.name,
-    plan: getPlan(row.plan).id === 'free' && (row.apple_expires_at ?? '') > new Date().toISOString() ? 'lite' : getPlan(row.plan).id,
+    plan: effectivePlan(own, trial),
+    ownPlan: own,
+    ...(trial ? { trial } : {}),
     freeQuota: row.free_quota ?? 20,
     periodStart: row.period_start,
     createdAt: row.created_at,
   };
+}
+
+/**
+ * An account as a SessionUser, trial included, for work done on its behalf
+ * with nobody signed in: monitor checks, queued captures, the iOS profile.
+ */
+export async function loadSessionUser(userId: string): Promise<SessionUser | null> {
+  const trial = await trialColumns();
+  const row = await env.DB.prepare(`SELECT u.*${trial.select} FROM users u${trial.join} WHERE u.id = ?`)
+    .bind(userId)
+    .first<UserRow>();
+  return row ? toSessionUser(row) : null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -203,8 +232,9 @@ export async function createSession(userId: string, userAgent: string): Promise<
 export async function resolveSession(token: string | undefined): Promise<SessionUser | null> {
   if (!token) return null;
   const id = await sha256Hex(token);
+  const trial = await trialColumns();
   const row = await env.DB.prepare(
-    `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT u.*${trial.select} FROM sessions s JOIN users u ON u.id = s.user_id${trial.join}
      WHERE s.id = ? AND s.expires_at > ?`,
   )
     .bind(id, new Date().toISOString())
@@ -299,6 +329,7 @@ export async function createUser(input: {
     email: input.email.trim(),
     name,
     plan: 'free',
+    ownPlan: 'free',
     periodStart: now,
     createdAt: now,
   };
@@ -374,9 +405,10 @@ export async function authenticateApiKey(request: Request): Promise<ApiKeyAuth> 
   }
 
   const hash = await sha256Hex(secret);
+  const trial = await trialColumns();
   const row = await env.DB.prepare(
-    `SELECT k.id AS key_id, k.environment, k.revoked_at, u.*
-     FROM api_keys k JOIN users u ON u.id = k.user_id
+    `SELECT k.id AS key_id, k.environment, k.revoked_at, u.*${trial.select}
+     FROM api_keys k JOIN users u ON u.id = k.user_id${trial.join}
      WHERE k.hash = ?`,
   )
     .bind(hash)

@@ -29,7 +29,7 @@ import { parseIgnoreRegions } from './ignore-regions';
 import { decodeRunChanges, decodeRunDetail, encodeRunDetail, observeDelivery, type Delivery, type Schedule } from './monitor-health';
 import { env } from 'cloudflare:workers';
 import type { SessionUser } from './auth';
-import { toSessionUser, type UserRow } from './auth';
+import { loadSessionUser } from './auth';
 import { createCaptureRow, fileUrl, getUsage, runCapture, safeParseFiles, type CaptureRow } from './captures';
 import {
   assertPublicCaptureUrl,
@@ -50,6 +50,7 @@ import { webhookBody, webhookFlavour } from './chat-webhook';
 import { formatDate } from './dates';
 import { highlightUrl, storeHighlight, type ChangeRegion } from './change-highlights';
 import { PINNED_REPEAT, PIN_RELEASED, lastAlertWhilePinned, pinReady } from './baseline-pin';
+import { trialJustEnded } from './trial-plan';
 
 export interface WatchRow {
   id: string;
@@ -748,25 +749,34 @@ export interface RunOptions {
 export async function runWatch(watch: WatchRow, origin: string, options: RunOptions = {}): Promise<WatchOutcome> {
   const now = new Date();
 
-  const userRow = await env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(watch.user_id).first<UserRow>();
-  if (!userRow) {
+  // With its trial, if it has one: a trial that has ended reads as the plan it went back to.
+  const user = await loadSessionUser(watch.user_id);
+  if (!user) {
     // The account went away between the sweep and now.
     await deleteWatch(watch.id);
     return { status: 'skipped', changed: false, detail: 'account no longer exists' };
   }
-  const user = toSessionUser(userRow);
   const run: RunContext = { watch, user, now, origin };
 
   // A plan downgrade should stop the watch running, not silently keep spending.
+  // When it was a Pro trial that ended, the reason says so.
+  const trialOver = trialJustEnded(user, now);
   const limit = watchLimit(user.plan);
   if (limit === 0 || !allowedFrequencies(user.plan).includes(watch.frequency as never)) {
-    return pauseForPlan(run, 'This monitoring schedule is not included on your current plan.', 'current schedule is not included in this plan');
+    return pauseForPlan(
+      run,
+      trialOver
+        ? `Paused: your Pro trial ended; checks ${frequencyLabel(watch.frequency).toLowerCase()} are not included on your plan.`
+        : 'This monitoring schedule is not included on your current plan.',
+      'current schedule is not included in this plan',
+    );
   }
   // The oldest `limit` watches keep running; the ones beyond it pause.
   if ((await activeAhead(watch)) >= limit) {
+    const monitors = `${limit} ${limit === 1 ? 'monitor' : 'monitors'}`;
     return pauseForPlan(
       run,
-      `Paused: your plan includes ${limit} ${limit === 1 ? 'monitor' : 'monitors'}.`,
+      trialOver ? `Paused: your Pro trial ended; your plan includes ${monitors}.` : `Paused: your plan includes ${monitors}.`,
       'monitor limit for this plan reached',
     );
   }
@@ -1696,7 +1706,7 @@ export async function retryAlerts(origin: string) {
     try {
       const run = await env.DB.prepare('SELECT * FROM watch_runs WHERE id=?').bind(job.run_id).first<WatchRunRow>();
       const watch = run ? await getWatch(run.watch_id) : null;
-      const owner = watch ? await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(watch.user_id).first<UserRow>() : null;
+      const owner = watch ? await loadSessionUser(watch.user_id) : null;
       const before = run?.baseline_capture_id ? await captureById(run.baseline_capture_id) : null;
       const after = run?.capture_id ? await captureById(run.capture_id) : null;
       if (!run || !watch || !owner || !before || !after || watch.status !== 'active' || watchLimit(owner.plan) === 0 || run.user_id !== watch.user_id || before.user_id !== watch.user_id || after.user_id !== watch.user_id || Date.parse(run.created_at) < Date.now()-86400000) {
@@ -1705,7 +1715,7 @@ export async function retryAlerts(origin: string) {
       const decoded = decodeRunDetail(run.detail);
       const changes = decodeRunChanges(run.detail);
       const rule = await getMonitorRule(watch.id);
-      await notify(watch,toSessionUser(owner),before,after,run.change_pct || 0,origin,decoded.delivery,{ kind: rule.kind, detail: decoded.detail },async()=>{
+      await notify(watch,owner,before,after,run.change_pct || 0,origin,decoded.delivery,{ kind: rule.kind, detail: decoded.detail },async()=>{
         await env.DB.prepare('UPDATE watch_runs SET detail=? WHERE id=?').bind(encodeRunDetail(decoded.detail,decoded.delivery,changes),run.id).run();
       },undefined,{ regions: changes.regions, highlightUrl: changes.highlight ? highlightUrl(after, origin) : null, pinned: changes.pinned });
       await finishRetry(run.id,decoded.delivery,job.attempts+1);

@@ -5,6 +5,7 @@ import { COMPANY } from './company';
 import { HttpError } from './http';
 import { toHex, timingSafeEqual } from './ids';
 import { getPlan, PAID_PLANS, PLANS, type PlanId } from './plans';
+import { closeTrialForPayment } from './trial-plan';
 
 /**
  * Stripe Checkout, done with `fetch`.
@@ -587,7 +588,7 @@ export async function diagnosePlanChange(
   const row = await getBillingRow(user.id);
 
   const report: Record<string, unknown> = {
-    plan: user.plan,
+    plan: user.ownPlan,
     target: `${target.plan}/${target.interval}`,
     subscription: row?.stripe_subscription_id ? 'recorded' : 'missing',
     customer: row?.stripe_customer_id ? 'recorded' : 'missing',
@@ -883,6 +884,15 @@ async function applySubscription(subscription: StripeSubscription): Promise<Appl
   }
 
   console.log(`[billing] ${userId} → ${plan} (${subscription.status})`);
+
+  // Paying for Pro or Business makes a running Pro trial moot: it is closed
+  // without the "trial ended" email. Best effort, like the metadata below —
+  // the hourly sweep closes it quietly too once it sees the plan.
+  if (entitled) {
+    await closeTrialForPayment(userId, plan).catch((error) =>
+      console.error(`[billing] could not close the Pro trial for ${userId}:`, error),
+    );
+  }
 
   // Keep the checkout metadata in step with the price, so the fallback above
   // never has a stale plan to fall back to. Best effort: the account is right

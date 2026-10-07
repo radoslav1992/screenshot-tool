@@ -74,7 +74,7 @@ CI=1 npm run dev
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
 SEO rules, retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1
-schema files, signup attribution and referrals, web push and the install hint) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+schema files, signup attribution and referrals, web push and the install hint, Pro trials) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
 Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
@@ -134,6 +134,7 @@ npx wrangler kv namespace create RATE
    | `db/0016-upgrade.sql` | smart checks for rule-based monitors |
    | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
    | `db/0018-upgrade.sql` | web push for browsers and the installed app |
+   | `db/0019-upgrade.sql` | 14-day Pro trials |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -994,3 +995,46 @@ queued; APNs and email alerts carry on as before. Keep the key pair once it is i
 to the public key it was made with, so a new pair stops alerts to every browser until each turns them on again.
 `npm run webpush:check` covers the RFC 8291 test vector, VAPID, subscriptions, delivery beside APNs, the test-alert
 limit, dormancy and account deletion against SQLite with a mocked `fetch`.
+
+### Pro trials (0019)
+
+Free and Lite accounts can try Pro for 14 days, once, with no card, and go back to their own plan on their own
+when it ends.
+
+- **One plan decision** (`lib/trial-plan.ts`, `toSessionUser` in `lib/auth.ts`). Every user has two plans:
+  `ownPlan`, what the account holds through Stripe or Apple (or Free), and `plan`, what it acts on — Pro while a
+  trial runs on top of a plan below Pro. The trial is read with the user row by one `LEFT JOIN plan_trials` once
+  the table exists (probed in `sqlite_master`, cached per isolate), so sessions, API keys (`authenticateApiKey`),
+  the monitor sweep (`runWatch`), alert retries, queued captures and `/api/mobile/profile` all get the same plan;
+  retention and report branding use the same rule in SQL (`planSql`). Everything that reads `plan` follows: the
+  monthly quota, monitor limits and schedules, API access and its rate, PDF and custom sizes, the watermark,
+  history days, batch and hourly limits, and the white label. `users.plan` is never written by a trial.
+- **Billing keeps to the real plan.** The pricing page's "Current plan", the account screen's billing rows, the
+  upgrade page and the plan-change diagnosis read `ownPlan`, so a trialing Free account can still buy Lite, Plus
+  or Pro, and the Apple purchase check reads the database as before. A Stripe subscription to Pro or Business
+  closes a running trial without its ended email.
+- **Quota.** Pro's 2,000 for the month while the trial runs; when it ends mid-month the account's own allowance
+  applies for the rest of it, and what was already used still counts.
+- **Starting one.** `POST /api/trial` (same-origin, signed in) answers `201 {plan: "pro", ends_at}`, or
+  `409 trial_used`, `409 already_paid` (not Free or Lite, or an active Stripe subscription), `403
+  verification_required` (by the rule captures follow), `429 rate_limited` (5 an hour per account, 20 per address,
+  in KV) or `429 trial_limit` (3 trials per hashed address in 30 days, hashed like the signup address in
+  `lib/growth.ts`, checked in the same statement that inserts the row). A form post lands on the account screen.
+- **The end.** The hourly cron (`runTrialLifecycle`) emails a reminder three days before the end and a note once
+  it has ended, each claimed in `reminded_at` / `ended_at` before sending, so each goes at most once; both link
+  to Pro on the pricing page. The plan itself changes the moment `ends_at` passes. On their next check, monitors
+  beyond the own plan's limit pause ("Paused: your Pro trial ended; your plan includes 3 monitors.") and those on
+  schedules it lacks pause too; API keys are kept but answer `403 plan_required`, saying the trial ended.
+- **UI.** The pricing page's Pro card links to the trial under its orange button (signed out, to signup with
+  `ref=trial` and `next=/app/upgrade#trial`); `/app/upgrade` and the account screen offer "Start your 14-day Pro
+  trial" as their one orange action while it is on offer. During a trial the capture and account screens show
+  "Pro trial · 9 days left · Keep Pro"; for a month after it, a notice that can be closed on that device. The iOS
+  app offers nothing: `/api/mobile/profile` keeps `plan` as the plan acted on and adds an optional
+  `trial: {plan, ends_at}` while a trial is what that plan reflects.
+- **Owner dashboard.** `/app/growth` counts trials started and those now on a Stripe plan, by window.
+
+**Before the migration** nothing changes: no account has a trial, nothing offers one, `POST /api/trial` answers
+404 and the cron sends nothing. Apply it with `npm run db:migrate`, or paste `db/0019-upgrade.sql` into the D1
+console; it is picked up within a minute. Deleting an account deletes its trial row. `npm run trial:check` covers
+eligibility, the plan during and after a trial, quota, monitors, the API, checkout, both emails, paying during a
+trial, the iOS profile, deletion and the no-migration fallback against SQLite.

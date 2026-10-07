@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import AppShell from '../../layouts/AppShell.astro';
 import PasswordField from '../../components/PasswordField.astro';
+import TrialStatus from '../../components/TrialStatus.astro';
 import { getUsage } from '../../lib/captures';
 import { getPlan, PLANS, PLAN_ORDER } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription } from '../../lib/billing';
@@ -12,6 +13,10 @@ import { canSendEmail } from '../../lib/mailer';
 import { REFERRAL_BONUS, REFERRAL_CAP, referralSummary, referralUrl, rewardReferral } from '../../lib/growth';
 import { isOwner } from '../../lib/growth-report';
 import { webPushReady } from '../../lib/push';
+import { trialOfferFor } from '../../lib/trials';
+import { TRIAL_DAYS } from '../../lib/trial-plan';
+import { isVerified } from '../../lib/verification';
+import { formatDate } from '../../lib/dates';
 
 const user = Astro.locals.user!;
 // Catches a referral that became payable some other way (a password reset that
@@ -24,15 +29,17 @@ const inviteLink = referral ? referralUrl(Astro.url.origin, referral.code) : '';
 const owner = isOwner(user.email);
 // Change alerts in this browser exist once migration 0018 and the VAPID secrets do.
 const webPush = await webPushReady().catch(() => false);
-const plan = getPlan(user.plan);
+// What the account holds and pays for; a Pro trial lends it more for a while (`user.plan`).
+const plan = getPlan(user.ownPlan);
+const onTrial = Boolean(user.trial?.active && user.plan !== user.ownPlan);
+// Offered once, from Free or Lite, with no Stripe subscription (lib/trials.ts).
+const offerTrial = await trialOfferFor(user);
+const trialWaitsForEmail = offerTrial && !(await isVerified(user.id).catch(() => true));
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
 const renews = new Date(usage.renewsOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const longDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-
-const nextPlanId = PLAN_ORDER[PLAN_ORDER.indexOf(plan.id) + 1] ?? null;
-const nextPlan = nextPlanId ? PLANS[nextPlanId] : null;
 
 const checkout = billingEnabled();
 // The billing columns only exist once migration 0003 has been applied, and the
@@ -42,6 +49,11 @@ const hasCustomer = Boolean(billing?.stripe_customer_id);
 const subscribed = hasActiveSubscription(billing);
 const pastDue = billing?.plan_status === 'past_due';
 const paidThrough = billing?.plan_period_end ? longDate(billing.plan_period_end) : null;
+
+// The plan to buy next: the next one up, or during a trial with nothing to
+// switch from, the one being tried.
+const nextPlanId = PLAN_ORDER[PLAN_ORDER.indexOf(plan.id) + 1] ?? null;
+const nextPlan = onTrial && !subscribed ? PLANS[user.plan] : nextPlanId ? PLANS[nextPlanId] : null;
 
 // Apple bills iOS subscribers itself; nothing here can change or cancel that,
 // so the screen says where to go instead. The columns arrive with 0011.
@@ -72,6 +84,7 @@ const otherSessions = Math.max(0, sessions - 1);
 
 const params = Astro.url.searchParams;
 const justUpgraded = params.get('checkout') === 'success';
+const trialStarted = params.get('trial') === 'started' && onTrial;
 // A code, looked up in a fixed list: nothing from the URL is ever shown as text.
 const billingError = billingErrorMessage(params.get('billing_error'));
 const passwordNotice =
@@ -99,6 +112,17 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
         <p>Profile, plan, sign-in and billing in one place.</p>
       </div>
     </div>
+
+    <TrialStatus user={user} span />
+
+    {
+      trialStarted && user.trial && (
+        <div class="notice notice--ok" role="status">
+          Your {TRIAL_DAYS}-day Pro trial has started: everything Pro includes until {formatDate(user.trial.endsAt)}.
+          Then you go back to {plan.name} automatically, and nothing is charged.
+        </div>
+      )
+    }
 
     {
       justUpgraded && (
@@ -194,10 +218,17 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
 
     <section class="panel-dark">
       <div class="row-between">
-        <div style="font: 700 14px var(--display)">{plan.name} plan</div>
+        <div style="font: 700 14px var(--display)">{onTrial ? 'Pro trial' : `${plan.name} plan`}</div>
         <div class="mono" style="font-size: 11px; color: var(--lime)">quota resets {renews}</div>
       </div>
 
+      {
+        onTrial && user.trial && (
+          <div class="xs" style="color: var(--dim); margin-top: 4px">
+            Until {formatDate(user.trial.endsAt)}, then back to {plan.name}
+          </div>
+        )
+      }
       {
         paidThrough && (
           <div class="xs" style="color: var(--dim); margin-top: 4px">Paid through {paidThrough}</div>
@@ -245,16 +276,41 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
       </div>
 
       {
+        // The trial is the one orange action while it is on offer; buying stays
+        // a link beside it. Without a card, it is the smaller step to Pro.
+        offerTrial && (
+          <form method="post" action="/api/trial" class="trial-offer">
+            <button type="submit" class="btn btn--lime" disabled={trialWaitsForEmail}>
+              Start your {TRIAL_DAYS}-day Pro trial
+            </button>
+            <p class="xs trial-offer__note">
+              {trialWaitsForEmail
+                ? 'Confirm your email address first, then start it here.'
+                : `Everything Pro includes, no card. Back to ${plan.name} automatically after ${TRIAL_DAYS} days.`}
+            </p>
+            {nextPlan && !appleActive && (
+              <a class="trial-offer__buy" href="/pricing">
+                Or upgrade to {nextPlan.name} — ${nextPlan.priceMonthly}/mo
+              </a>
+            )}
+          </form>
+        )
+      }
+      {
         // An Apple subscription cannot be combined with a Stripe one, so the
         // upgrade offer would only end at a refusal.
-        nextPlan && !(appleActive && !subscribed) &&
+        !offerTrial && nextPlan && !(appleActive && !subscribed) &&
           (subscribed ? (
             <a class="btn btn--lime" href="/app/upgrade" style="margin-top: 16px; padding: 12px; font-size: 13px">
               Upgrade to {nextPlan.name}
             </a>
           ) : (
-            <a class="btn btn--lime" href="/pricing" style="margin-top: 16px; padding: 12px; font-size: 13px">
-              Upgrade to {nextPlan.name} — ${nextPlan.priceMonthly}/mo
+            <a
+              class="btn btn--lime"
+              href={onTrial ? `/pricing#plan-${nextPlan.id}` : '/pricing'}
+              style="margin-top: 16px; padding: 12px; font-size: 13px"
+            >
+              {onTrial ? 'Keep' : 'Upgrade to'} {nextPlan.name} — ${nextPlan.priceMonthly}/mo
             </a>
           ))
       }
@@ -515,6 +571,29 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
 </AppShell>
 
 <style>
+  .trial-offer {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .trial-offer .btn {
+    padding: 12px;
+    font-size: 13px;
+  }
+  .trial-offer__note {
+    color: var(--dim);
+  }
+  /* Buying is still one tap away, as a link that does not compete with the trial. */
+  .trial-offer__buy {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--paper);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
   .invite {
     scroll-margin-top: 16px;
   }

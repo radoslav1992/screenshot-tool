@@ -7,6 +7,7 @@ import { signoffsReady } from './signoff';
 import { captureJobsReady } from './capture-jobs';
 import { growthCleanup } from './growth';
 import { webPushTablesReady } from './push';
+import { trialCleanup } from './trials';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -128,8 +129,11 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
     : [];
   // Signup source, referral code, bonus and referrals (lib/growth.ts).
   const growthRows = await growthCleanup(userId);
+  // The Pro trial record, once migration 0019 exists.
+  const trialRows = await trialCleanup(userId);
   await env.DB.batch([
     ...growthRows,
+    ...trialRows,
     ...collaborationCleanup,
     ...signoffCleanup,
     ...brandingCleanup,

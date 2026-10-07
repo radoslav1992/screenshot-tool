@@ -11,6 +11,7 @@ import { PASSWORD_MIN_LENGTH, countSessions } from '../../lib/auth';
 import { canSendEmail } from '../../lib/mailer';
 import { REFERRAL_BONUS, REFERRAL_CAP, referralSummary, referralUrl, rewardReferral } from '../../lib/growth';
 import { isOwner } from '../../lib/growth-report';
+import { webPushReady } from '../../lib/push';
 
 const user = Astro.locals.user!;
 // Catches a referral that became payable some other way (a password reset that
@@ -21,6 +22,8 @@ const usage = await getUsage(user);
 const referral = await referralSummary(user.id).catch(() => null);
 const inviteLink = referral ? referralUrl(Astro.url.origin, referral.code) : '';
 const owner = isOwner(user.email);
+// Change alerts in this browser exist once migration 0018 and the VAPID secrets do.
+const webPush = await webPushReady().catch(() => false);
 const plan = getPlan(user.plan);
 const initials = (user.name || user.email).trim().charAt(0).toUpperCase();
 const pct = usage.quota ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
@@ -293,6 +296,33 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
       )
     }
 
+    {
+      webPush && (
+        <section
+          class="card card--pad stack gap-12 device-alerts"
+          id="device-alerts"
+          aria-labelledby="device-alerts-title"
+          data-device-alerts
+        >
+          <div class="row-between">
+            <h2 id="device-alerts-title" class="device-alerts__title">Change alerts on this device</h2>
+            <span class="device-alerts__label" data-alerts-label>[ CHECKING ]</span>
+          </div>
+          <p class="xs muted" data-alerts-text>
+            A notification on this device when a monitored page changes, alongside your email and webhook alerts.
+          </p>
+          <div class="device-alerts__actions">
+            <button type="button" class="rr-btn-classic" data-alerts-on hidden>
+              Turn on <span aria-hidden="true">→</span>
+            </button>
+            <button type="button" class="btn btn--outline" data-alerts-test hidden>Send a test alert</button>
+            <button type="button" class="btn btn--outline" data-alerts-off hidden>Turn off</button>
+          </div>
+          <p class="xs muted-2" role="status" aria-live="polite" data-alerts-status></p>
+        </section>
+      )
+    }
+
     </div>
 
     <div class="app-col">
@@ -488,12 +518,29 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
   .invite {
     scroll-margin-top: 16px;
   }
-  .invite__title {
+  .invite__title,
+  .device-alerts__title {
     font: 700 14px var(--display);
   }
-  .invite__label {
+  .invite__label,
+  .device-alerts__label {
     font: 10px/1.5 var(--mono);
     color: var(--muted);
+  }
+  .device-alerts {
+    scroll-margin-top: 16px;
+  }
+  .device-alerts__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .device-alerts__actions:not(:has(> :not([hidden]))) {
+    display: none;
+  }
+  .device-alerts__actions .btn {
+    width: auto;
+    min-height: 44px;
   }
   .invite__link {
     display: flex;
@@ -537,7 +584,17 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
 
 <script>
   import { wirePasswordToggles } from '../../scripts/auth';
-  import { installEnvironment, installHint, promptInstall, watchInstall } from '../../scripts/install';
+  import { installEnvironment, installHint, isIOS, isStandalone, promptInstall, watchInstall } from '../../scripts/install';
+  import {
+    browserSubscription,
+    pushAlertState,
+    pushSupported,
+    sendTest,
+    serverStatus,
+    turnOff,
+    turnOn,
+    type PushAlertState,
+  } from '../../scripts/push-alerts';
 
 
   wirePasswordToggles();
@@ -695,4 +752,94 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
     if (installRow) installRow.hidden = installHint(installEnvironment({ ignoreDismissed: true })) !== 'prompt';
   });
   installRow?.addEventListener('click', () => void promptInstall());
+
+  // Change alerts on this device: the card is only rendered when the server
+  // can send them; what it says depends on this browser.
+  const alerts = document.querySelector<HTMLElement>('[data-device-alerts]');
+  if (alerts) {
+    const part = <T extends HTMLElement>(name: string) => alerts.querySelector<T>(`[data-alerts-${name}]`)!;
+    const label = part('label'), text = part('text'), status = part('status');
+    const on = part<HTMLButtonElement>('on'), test = part<HTMLButtonElement>('test'), off = part<HTMLButtonElement>('off');
+    const COPY: Record<PushAlertState, [string, string]> = {
+      unsupported: ['UNAVAILABLE', 'This browser cannot show push alerts. Email and webhook alerts arrive as usual.'],
+      install: [
+        'INSTALL FIRST',
+        'On iPhone and iPad, alerts need the app on your Home Screen: tap Share, then Add to Home Screen, and open Easy Capture from there. Needs iOS 16.4 or later.',
+      ],
+      blocked: ['BLOCKED', 'Notifications are blocked for this site. Allow them in your browser’s site settings, then reload this page.'],
+      off: ['OFF', 'Get a notification on this device when a monitored page changes. It says only that a page changed, never which one.'],
+      on: ['ON', 'This device gets a notification when a monitored page changes. Signing out turns it off.'],
+    };
+    let publicKey: string | null = null;
+
+    const refresh = async () => {
+      const environment = {
+        supported: pushSupported(),
+        ios: isIOS(navigator.userAgent, navigator.maxTouchPoints),
+        standalone: isStandalone(),
+        permission: 'Notification' in window ? Notification.permission : ('default' as NotificationPermission),
+        subscribed: false,
+      };
+      if (environment.supported && !(environment.ios && !environment.standalone)) {
+        const [server, subscription] = await Promise.all([serverStatus().catch(() => null), browserSubscription()]);
+        if (server && !server.available) {
+          alerts.hidden = true;
+          return;
+        }
+        publicKey = server?.publicKey ?? null;
+        environment.subscribed = Boolean(server?.subscribed && subscription);
+      }
+      const state = pushAlertState(environment);
+      [label.textContent, text.textContent] = [`[ ${COPY[state][0]} ]`, COPY[state][1]];
+      on.hidden = state !== 'off';
+      test.hidden = off.hidden = state !== 'on';
+    };
+
+    const act = async (button: HTMLButtonElement, work: () => Promise<string>) => {
+      for (const b of [on, test, off]) b.disabled = true;
+      status.textContent = '';
+      try {
+        status.textContent = await work();
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Something went wrong. Try again.';
+      } finally {
+        for (const b of [on, test, off]) b.disabled = false;
+        await refresh().catch(() => {});
+        if (!button.hidden) button.focus();
+      }
+    };
+
+    on.addEventListener('click', () => {
+      // Asked here, inside the click, and never on load: Safari only shows the
+      // question to a page the person just tapped.
+      const permission = new Promise<NotificationPermission>((resolve) => {
+        const asked = Notification.requestPermission(resolve);
+        if (asked) asked.then(resolve, () => resolve('default'));
+      });
+      void act(on, async () => {
+        if (!publicKey) throw new Error('Push alerts are not available right now. Reload the page and try again.');
+        const answer = await turnOn(publicKey, permission);
+        return answer === 'granted' ? 'Alerts are on for this device.' : answer === 'denied' ? '' : 'Notifications were not allowed.';
+      });
+    });
+    test.addEventListener('click', () =>
+      void act(test, async () => {
+        const result = await sendTest();
+        return result.sent
+          ? 'Test alert sent. It should arrive in a few seconds.'
+          : result.removed
+            ? 'The push service no longer knows this device. Turn alerts on again.'
+            : 'The push service did not take the test alert. Try again later.';
+      }),
+    );
+    off.addEventListener('click', () =>
+      void act(off, async () => {
+        await turnOff();
+        return 'Alerts are off for this device.';
+      }),
+    );
+    void refresh().catch(() => {
+      label.textContent = '[ UNAVAILABLE ]';
+    });
+  }
 </script>

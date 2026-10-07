@@ -130,6 +130,12 @@ export const MIGRATIONS: MigrationManifest[] = [
     tables: ['web_push_subscriptions', 'web_push_deliveries'],
     indexes: ['web_push_subscriptions_user', 'web_push_subscriptions_session', 'web_push_deliveries_due'],
   },
+  {
+    name: '0019_plan_trials.sql',
+    optional: true,
+    tables: ['plan_trials'],
+    indexes: ['plan_trials_open', 'plan_trials_ip', 'plan_trials_started'],
+  },
 ];
 
 /** The tables `/api/health` has always required. */

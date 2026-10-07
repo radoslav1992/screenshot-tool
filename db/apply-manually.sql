@@ -425,6 +425,33 @@ CREATE TABLE IF NOT EXISTS bonus_usage (
   PRIMARY KEY (user_id, period)
 );
 
+CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  endpoint        TEXT NOT NULL UNIQUE,
+  p256dh          TEXT NOT NULL,
+  auth            TEXT NOT NULL,
+  user_agent      TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL,
+  last_success_at TEXT
+);
+CREATE INDEX IF NOT EXISTS web_push_subscriptions_user ON web_push_subscriptions(user_id, created_at);
+CREATE INDEX IF NOT EXISTS web_push_subscriptions_session ON web_push_subscriptions(session_id);
+CREATE TABLE IF NOT EXISTS web_push_deliveries (
+  run_id          TEXT NOT NULL REFERENCES watch_runs(id) ON DELETE CASCADE,
+  device_id       TEXT NOT NULL REFERENCES web_push_subscriptions(id) ON DELETE CASCADE,
+  session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL,
+  expires_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  reason          TEXT,
+  PRIMARY KEY(run_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS web_push_deliveries_due ON web_push_deliveries(status, next_attempt_at);
+
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -448,3 +475,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0014_pinned_baseline.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0015_report_signoff_branding.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0016_watch_fast_checks.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0017_growth.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0018_web_push.sql');

@@ -62,6 +62,7 @@ const { list: sections, byId: s } = docSections(toc);
           <li><b>Free tools:</b> the page address you enter, used only to answer that request, and a hashed form of your IP address used to count requests for rate limiting. See <a href="#free-tools">The free tools</a>.</li>
           <li><b>Signup source:</b> when you sign up, where you came from, if you came from somewhere: {attributionCookie ? `the first time in the previous ${ATTRIBUTION_DAYS} days,` : 'carried in the links you followed to the signup page, not in a cookie:'} the <span class="mono">ref</span>, <span class="mono">utm_source</span>, <span class="mono">utm_medium</span> and <span class="mono">utm_campaign</span> values of the link, the page you landed on (without its query string), the host name of the site that linked to us (never the full address) and when that was. A signup from the iOS app is recorded as coming from the app. We also keep a shortened one-way hash of the IP address you signed up from, used only to stop people rewarding themselves through their own referral link.</li>
           <li><b>Referrals:</b> your referral code; for each account created through your link, its status (pending, rewarded or not rewarded, and why) and the dates; and the {REFERRAL_BONUS} bonus screenshots each side receives. The person who invited you can see how many people signed up through their link and how many were rewarded, never who they are.</li>
+          <li><b>Pro trial:</b> if you start a trial of Pro, when it started and when it ends, when we emailed you about it ending, and a shortened one-way hash of the IP address you started it from, used only to limit how many trials can be started from one network. We use it to give you Pro for the trial, to send those two emails and to refuse a second trial on the same account.</li>
           <li><b>Report sign-offs:</b> when someone approves or requests changes on a report shared with them, the name they type, their decision, an optional note and the time. The report's owner and everyone with the link can see them; no account or email address is collected.</li>
           <li><b>Report branding:</b> the logo, accent colour and footer line you set for a project.</li>
           <li><b>Mobile notifications:</b> if enabled, your APNs device token, notification environment, account/session association, registration time, and delivery status for monitor alerts.</li>
@@ -99,6 +100,14 @@ const { list: sections, byId: s } = docSections(toc);
           </div>
           <div class="deflist__row">
             <span class="deflist__label">Count where signups come from, run the referral programme and stop referral abuse</span>
+            <span class="deflist__value">Legitimate interests</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Run a Pro trial you start and its two emails</span>
+            <span class="deflist__value">Contract</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Limit trials to one per account and a few per network</span>
             <span class="deflist__value">Legitimate interests</span>
           </div>
           <div class="deflist__row">
@@ -195,6 +204,10 @@ const { list: sections, byId: s } = docSections(toc);
             <span class="deflist__label">Signup source, referral records and bonus balance</span>
             <span class="deflist__value">While the account exists</span>
           </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Pro trial record: its dates and the hashed IP address</span>
+            <span class="deflist__value">While the account exists, so a trial is offered only once</span>
+          </div>
           {
             attributionCookie && (
               <div class="deflist__row">
@@ -210,8 +223,8 @@ const { list: sections, byId: s } = docSections(toc);
         </div>
         <p>
           An hourly job deletes captures past their plan's retention window in bounded batches, files included. Current monitor baselines are retained for comparisons until replaced or their monitor is deleted. Deleting your account
-          removes your captures, sessions, API keys and push subscriptions with it, and your signup source, referral code, bonus balance and
-          the referrals you sent; billing records that we are obliged to keep remain in Stripe and in our accounts. If
+          removes your captures, sessions, API keys and push subscriptions with it, and your signup source, referral code, bonus balance,
+          Pro trial record and the referrals you sent; billing records that we are obliged to keep remain in Stripe and in our accounts. If
           you joined through someone's referral link, their record of that referral stays with their account, without
           anything that points to you.
         </p>

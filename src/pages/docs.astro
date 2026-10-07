@@ -9,8 +9,11 @@ import Icon from '../components/Icon.astro';
 import { DEVICE_LIST, FRAME_LIST, LIMITS } from '../lib/capture-options';
 import { API_RATE_LIMIT, MAX_BACKGROUND_BATCH, PLANS, batchLimit } from '../lib/plans';
 import { docSections } from '../lib/doc-sections';
+import { TRIAL_DAYS, trialsAvailable } from '../lib/trial-plan';
 
 const user = Astro.locals.user;
+// The Pro trial is only mentioned once migration 0019 makes it real.
+const trials = await trialsAvailable();
 const origin = Astro.url.origin;
 
 const quickstart = `curl ${origin}/v1/capture \\
@@ -234,7 +237,10 @@ const errors = [
   { code: '400 invalid_request', desc: 'A parameter is missing or out of range. `param` names the field.' },
   { code: '401 invalid_api_key', desc: 'Missing, unknown or revoked key.' },
   { code: '402 quota_exceeded', desc: 'Monthly screenshot quota is used up.' },
-  { code: '403 plan_required', desc: 'The feature needs a higher plan (API access, PDF, custom viewports).' },
+  {
+    code: '403 plan_required',
+    desc: `The feature needs a higher plan (API access, PDF, custom viewports).${trials ? ' Keys of an account whose Pro trial has ended get this too, and the message says so.' : ''}`,
+  },
   { code: '404 not_found', desc: 'No capture with that id belongs to this key.' },
   { code: '429 rate_limited', desc: 'Too many requests this minute. See the x-ratelimit-* headers.' },
   { code: '502 render_failed', desc: 'The page could not be rendered.' },
@@ -302,6 +308,8 @@ const { list: sections, byId: s } = docSections(toc);
         <p class="ai-note">
           API access is included on {PLANS.pro.name} and {PLANS.business.name}. Rate limits:
           {PLANS.pro.name} {API_RATE_LIMIT.pro} req/min, {PLANS.business.name} {API_RATE_LIMIT.business} req/min.
+          {trials &&
+            ` A ${TRIAL_DAYS}-day ${PLANS.pro.name} trial includes the API at ${PLANS.pro.name}'s rate. When it ends, keys made during it are kept but answer 403 plan_required until the account is on ${PLANS.pro.name} or ${PLANS.business.name}.`}
         </p>
       </DocSection>
 

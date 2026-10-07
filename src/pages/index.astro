@@ -8,6 +8,7 @@ import ConceptArt from "../components/ConceptArt.astro";
 import CodeBlock from "../components/CodeBlock.astro";
 import { FRAME_LIST, MODES } from "../lib/capture-options";
 import { PLANS, WATCH_LIMIT } from "../lib/plans";
+import { TRIAL_DAYS, trialsAvailable } from "../lib/trial-plan";
 import "../styles/adon/ai-source.css";
 import "../styles/adon/previews.css";
 import "../styles/adon/ai-landing.css";
@@ -54,11 +55,21 @@ const projects = [
     href: "#sizes",
   },
 ] as const;
+// Only said once migration 0019 makes the trial real.
+const trials = await trialsAvailable();
 const faqs = [
   {
     q: "Can I start without a subscription?",
     a: `Yes. Create a free account with ${PLANS.free.quota} screenshots per calendar month. No credit card is needed. You can upgrade when your workflow grows.`,
   },
+  ...(trials
+    ? [
+        {
+          q: "Can I try Pro before paying?",
+          a: `Yes. A Free or Lite account can try Pro free for ${TRIAL_DAYS} days, once, with no card: ${PLANS.pro.quota.toLocaleString("en-US")} screenshots a month, API access and ${WATCH_LIMIT.pro} monitors. When the trial ends you go back to your own plan automatically and nothing is charged.`,
+        },
+      ]
+    : []),
   {
     q: "How does website monitoring work?",
     a: `Save a page, choose a device and a schedule, then set your change threshold. We compare new captures with the previous capture and send alerts when it is met. Free includes ${WATCH_LIMIT.free} monitors checked weekly, and Plus ${WATCH_LIMIT.plus}; scheduled checks use your screenshot allowance.`,

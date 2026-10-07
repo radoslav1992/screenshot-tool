@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { trialsAvailable } from './trial-plan';
 
 /**
  * The owner's growth dashboard (/app/growth): where signups come from, what
@@ -53,6 +54,8 @@ export interface GrowthReport {
   paidByChannel: PaidRow[];
   referrals: { invited: Counts; pending: Counts; rewarded: Counts; rejected: Counts };
   rejections: CountRow[];
+  /** Pro trials by the day they started; null before migration 0019. */
+  trials: { started: Counts; converted: Counts } | null;
 }
 
 const ROWS = 25;
@@ -91,6 +94,13 @@ const ACTIVE = `(EXISTS (SELECT 1 FROM captures k WHERE k.user_id = s.user_id AN
 /** On a paid plan now, through Stripe or Apple. */
 const PAID = `(u.plan <> 'free' OR COALESCE(u.apple_expires_at, '') > ?4)`;
 
+/**
+ * A trial that turned into a Stripe subscription. No trial starts with one
+ * (lib/trials.ts), so any paid Stripe plan now came after. An Apple Lite
+ * subscriber who tried Pro already paid Apple, so Apple is not counted.
+ */
+const CONVERTED = `u.plan <> 'free'`;
+
 export async function growthReport(now = new Date()): Promise<GrowthReport> {
   const cutoff = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
   const windows = [cutoff(7), cutoff(30), cutoff(90)];
@@ -104,7 +114,8 @@ export async function growthReport(now = new Date()): Promise<GrowthReport> {
       .bind(...windows)
       .all<Record<string, unknown>>();
 
-  const [overview, refs, campaigns, sites, paid, referrals, rejections] = await Promise.all([
+  const trialsOn = await trialsAvailable();
+  const [overview, refs, campaigns, sites, paid, referrals, rejections, trials] = await Promise.all([
     env.DB.prepare(
       `SELECT ${windowed('signups', '1')},
               ${windowed('report', `s.ref = 'report'`)},
@@ -149,6 +160,15 @@ export async function growthReport(now = new Date()): Promise<GrowthReport> {
     )
       .bind(...windows)
       .all<Record<string, unknown>>(),
+    trialsOn
+      ? env.DB.prepare(
+          `SELECT ${windowed('started', '1', 't.started_at')},
+                  ${windowed('converted', CONVERTED, 't.started_at')}
+           FROM plan_trials t JOIN users u ON u.id = t.user_id WHERE t.started_at >= ?3`,
+        )
+          .bind(...windows)
+          .first<Record<string, unknown>>()
+      : null,
   ]);
 
   const rows = (result: { results?: Record<string, unknown>[] }): CountRow[] =>
@@ -180,5 +200,6 @@ export async function growthReport(now = new Date()): Promise<GrowthReport> {
       rejected: counts(referrals, 'rejected'),
     },
     rejections: rows(rejections),
+    trials: trialsOn ? { started: counts(trials, 'started'), converted: counts(trials, 'converted') } : null,
   };
 }

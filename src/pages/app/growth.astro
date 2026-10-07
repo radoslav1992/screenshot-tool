@@ -3,6 +3,7 @@ import AppShell from '../../layouts/AppShell.astro';
 import { growthAvailable, REFERRAL_BONUS, REFERRAL_CAP } from '../../lib/growth';
 import { growthReport, isOwner, WINDOWS, type Counts, type CountRow } from '../../lib/growth-report';
 import { formatDateTime } from '../../lib/dates';
+import { TRIAL_DAYS } from '../../lib/trial-plan';
 
 const user = Astro.locals.user!;
 // Not "forbidden": for everyone but the owner there is no such page.
@@ -59,7 +60,7 @@ const tables: Array<{ id: string; title: string; note: string; rows: CountRow[] 
       <div>
         <span class="eyebrow">OWNER / GROWTH</span>
         <h1>Where signups come from.</h1>
-        <p>Signups, referrals, activation and paid plans over the last 7, 30 and 90 days. Generated {generated}.</p>
+        <p>Signups, referrals, trials, activation and paid plans over the last 7, 30 and 90 days. Generated {generated}.</p>
       </div>
     </div>
 
@@ -139,6 +140,44 @@ const tables: Array<{ id: string; title: string; note: string; rows: CountRow[] 
               </table>
             </div>
           </section>
+
+          {report.trials && (
+            <section class="growth-block" aria-labelledby="trials-title">
+              <div class="growth-head">
+                <h2 id="trials-title">Pro trials</h2>
+                <span>[ BY DATE STARTED ]</span>
+              </div>
+              <p class="xs muted">
+                {TRIAL_DAYS}-day Pro trials started in the window, and those whose account is on a Stripe plan now. No
+                trial starts with one, so that is a conversion; Apple purchases are not counted.
+              </p>
+              <div class="growth-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Trials</th>
+                      {WINDOWS.map((days) => <th scope="col">{days} days</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">Started</th>
+                      {report.trials.started.map((count) => <td>{count.toLocaleString()}</td>)}
+                    </tr>
+                    <tr>
+                      <th scope="row">Converted to paid</th>
+                      {report.trials.converted.map((count, index) => (
+                        <td>
+                          {count.toLocaleString()}
+                          <small>{pct(count, report.trials!.started[index]!)}</small>
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <section class="growth-block" aria-labelledby="paid-title">
             <div class="growth-head">

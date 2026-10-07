@@ -1,4 +1,4 @@
-import { drainPush, pushQueueStatement } from './push';
+import { drainPush, pushQueueStatements } from './push';
 import { getMonitorRule, ruleKinds, saveMonitorRule, workflowsReady } from './monitor-rule-store';
 import { evaluateRule, type MonitorRule } from './monitor-rules';
 import {
@@ -1062,7 +1062,7 @@ async function fullCheck(run: RunContext, rule: MonitorRule, extras: FullCheckEx
   const runId = prefixedId('wrn', 10);
   const alerting = changed && Boolean(baseline);
   const retries = alerting && (await workflowsReady());
-  const push = alerting ? await pushQueueStatement(runId, watch.user_id).catch(() => null) : null;
+  const push = alerting ? await pushQueueStatements(runId, watch.user_id).catch(() => []) : [];
   const delivery: Delivery = changed
     ? { email: watch.notify_email ? 'pending' : 'disabled', webhook: watch.webhook_url ? 'pending' : 'disabled' }
     : { email: 'not_needed', webhook: 'not_needed' };
@@ -1120,7 +1120,7 @@ async function fullCheck(run: RunContext, rule: MonitorRule, extras: FullCheckEx
           ).bind(runId, new Date(hourTick(Date.now() + HOUR_MS)).toISOString(), now.toISOString(), runId),
         ]
       : []),
-    ...(push ? [push] : []),
+    ...push,
   ]);
   if (!moved?.meta.changes) return { status: 'skipped', changed: false, detail: 'the monitor was deleted during the check' };
   extras.capture = capture;
@@ -1128,7 +1128,7 @@ async function fullCheck(run: RunContext, rule: MonitorRule, extras: FullCheckEx
 
   if (alerting && baseline) {
     // A push outage must not mark a successful comparison failed or block email.
-    if (push) {
+    if (push.length) {
       try { await drainPush(runId); }
       catch { console.error('[push] delivery failed'); }
     }

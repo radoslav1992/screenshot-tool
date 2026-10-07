@@ -19,6 +19,16 @@ declare namespace Cloudflare {
     APNS_TEAM_ID?: string;
     APNS_PRIVATE_KEY?: string;
     APNS_BUNDLE_ID?: string;
+    /**
+     * Web Push (VAPID). Optional; with all three set and migration 0018 applied,
+     * browsers and installed web apps can turn on change alerts. The public key
+     * is a base64url uncompressed P-256 point; the private key its base64url
+     * scalar or a PKCS8 PEM; the subject a `mailto:` or `https:` contact.
+     * `npm run vapid:keys` makes a pair.
+     */
+    VAPID_PUBLIC_KEY?: string;
+    VAPID_PRIVATE_KEY?: string;
+    VAPID_SUBJECT?: string;
     PUBLIC_SITE_URL: string;
     CAPTURE_HOST_DENYLIST?: string;
 

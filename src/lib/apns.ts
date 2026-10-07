@@ -1,17 +1,24 @@
 export interface APNsConfig { APNS_KEY_ID?: string; APNS_TEAM_ID?: string; APNS_PRIVATE_KEY?: string; APNS_BUNDLE_ID?: string }
 export function pushConfigured(c: APNsConfig) { return Boolean(c.APNS_KEY_ID && c.APNS_TEAM_ID && c.APNS_PRIVATE_KEY && c.APNS_BUNDLE_ID); }
-function base64url(bytes: Uint8Array): string { return btoa(String.fromCharCode(...bytes)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_'); }
+export function base64url(bytes: Uint8Array): string { return btoa(String.fromCharCode(...bytes)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_'); }
 const encode = (v: unknown) => base64url(new TextEncoder().encode(JSON.stringify(v)));
+/** The DER inside a PKCS8 PEM, as pasted into a secret: escaped newlines and all. */
+export function pemBytes(pem: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(pem.replace(/\\n/g, '\n').replace(/-----[^-]+-----/g, '').replace(/\s/g, '')), c => c.charCodeAt(0));
+}
+/** A compact ES256 JWS. WebCrypto's ECDSA signature is already the raw r‖s that JWS wants. */
+export async function signES256(key: CryptoKey, header: object, claims: object): Promise<string> {
+  const unsigned = `${encode(header)}.${encode(claims)}`;
+  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsigned));
+  return `${unsigned}.${base64url(new Uint8Array(signature))}`;
+}
 let cached: { config: string; token: string; expires: number } | undefined;
 export async function providerToken(c: APNsConfig, now = Date.now()): Promise<string> {
   if (!pushConfigured(c)) throw new Error('APNs is not configured');
   const config = `${c.APNS_KEY_ID}:${c.APNS_TEAM_ID}:${c.APNS_PRIVATE_KEY}`;
   if (cached?.config === config && cached.expires > now) return cached.token;
-  const pem = c.APNS_PRIVATE_KEY!.replace(/\\n/g, '\n').replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
-  const key = await crypto.subtle.importKey('pkcs8', Uint8Array.from(atob(pem), c => c.charCodeAt(0)), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
-  const unsigned = `${encode({ alg: 'ES256', kid: c.APNS_KEY_ID })}.${encode({ iss: c.APNS_TEAM_ID, iat: Math.floor(now / 1000) })}`;
-  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsigned));
-  const token = `${unsigned}.${base64url(new Uint8Array(signature))}`;
+  const key = await crypto.subtle.importKey('pkcs8', pemBytes(c.APNS_PRIVATE_KEY!), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const token = await signES256(key, { alg: 'ES256', kid: c.APNS_KEY_ID }, { iss: c.APNS_TEAM_ID, iat: Math.floor(now / 1000) });
   cached = { config, token, expires: now + 50 * 60 * 1000 };
   return token;
 }

@@ -101,6 +101,13 @@
   //   OWNER_EMAILS          - comma-separated account emails that may open the
   //                           growth dashboard at /app/growth; unset, nobody can open it.
   //
+  // Web Push. Change alerts in browsers stay hidden until all three are set and
+  // migration 0018 is applied. `npm run vapid:keys` makes a pair and prints the
+  // commands; keep it once in use, since subscriptions are tied to the key.
+  //   VAPID_PUBLIC_KEY      - base64url uncompressed P-256 public key
+  //   VAPID_PRIVATE_KEY     - base64url private key, or a PKCS8 PEM
+  //   VAPID_SUBJECT         - mailto: or https: contact for the push services
+  //
   // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
   // do not render and /api/billing/* answers 503.
   //   STRIPE_SECRET_KEY     - sk_live_… / sk_test_…

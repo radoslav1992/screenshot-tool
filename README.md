@@ -74,7 +74,7 @@ CI=1 npm run dev
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
 SEO rules, retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1
-schema files, signup attribution and referrals) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+schema files, signup attribution and referrals, web push and the install hint) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
 Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
@@ -133,6 +133,7 @@ npx wrangler kv namespace create RATE
    | `db/0015-upgrade.sql` | report sign-off and branding |
    | `db/0016-upgrade.sql` | smart checks for rule-based monitors |
    | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
+   | `db/0018-upgrade.sql` | web push for browsers and the installed app |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -228,7 +229,12 @@ Full reference: `/docs`.
   `share_target` so sharing a URL to Easy Screen Capture opens the capture form pre-filled.
 - `public/sw.js` — cache-first for fonts/icons/hashed assets, network-first for documents with an
   offline fallback. API responses and rendered files are never cached.
-- Install prompt is surfaced as a row on the Account screen.
+- Installing: Chromium's install prompt is a row on the Account screen, and a one-line hint on the capture
+  screen (`/app`) and Monitors (`/app/watches`) offers the same prompt, or the Share → Add to Home Screen steps in
+  iOS Safari. It is hidden in the installed app, in browsers that cannot install, and once closed on that device
+  (remembered in `localStorage`). The logic is shared in `src/scripts/install.ts`; never on marketing pages.
+- Change alerts as notifications: `sw.js` shows Web Push alerts and opens the monitor on a click — see *Web Push
+  for browsers and the installed app* below.
 - Fonts (Sora, IBM Plex Sans/Mono) are self-hosted latin subsets, so the shell renders offline and
   no third-party request is made.
 
@@ -918,3 +924,46 @@ the D1 console; it is picked up within a minute. `npm run growth:check` covers a
 ### iOS push notifications
 
 Native push support uses APNs and authenticated per-session device registrations. Apply `migrations/0010_mobile_push.sql` and configure `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID` as Worker secrets. Setup and separate console SQL blocks: https://github.com/radoslav1992/screenshot-tool-ios/blob/main/PUSH_SETUP.md . Run `npm run push:check` for mocked-delivery and SQLite integration checks. No secrets means push stays dormant; email continues independently.
+
+### Web Push for browsers and the installed app (0018)
+
+The same monitor change alerts the iOS app gets, in Chrome, Edge, Firefox, Safari on macOS and, from iOS 16.4,
+web apps added to the Home Screen. Standard Web Push, written on WebCrypto with no dependency
+(`src/lib/web-push.ts`): a VAPID ES256 JWT per push service (RFC 8292) and the alert encrypted to the browser's
+keys with `aes128gcm` (RFC 8291, RFC 8188). The alert carries the APNs wording, never the monitored URL, label or
+page content: `{title, body, url: "/app/watches/<id>", watch_id, run_id}`.
+
+- **Queue** (`src/lib/push.ts`). `web_push_deliveries` has `push_deliveries`' columns, so one queue serves both: a
+  changed run commits one insert per kind of device in the same batch as the run, then is drained; the hourly
+  cron sweeps retries. Claims stop double sends, three attempts at most, retries on the next hour, a day to
+  deliver (`TTL` to match, `Urgency: normal`), and an unknown transport outcome is never resent. Push service
+  answers: 201/202 delivered, 404/410 deletes the subscription, 429/5xx retried, anything else (413 included)
+  failed and kept. `/api/mobile/push` and everything the iOS app uses are unchanged.
+- **Subscriptions.** One per signed-in browser, tied to its session, so signing out removes it. Endpoints must be
+  https on `fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.notify.windows.com` or `*.push.apple.com` (the
+  server POSTs there); `p256dh` must be a 65-byte P-256 point on the curve and `auth` 16 bytes. Subscribing again
+  re-binds the endpoint to whoever is signed in; past ten per account the oldest goes.
+- **API** (same-origin, signed in): `GET /api/push/web` → `{available, publicKey, subscribed}`;
+  `POST /api/push/web` with `PushSubscription.toJSON()`; `DELETE /api/push/web` with `{endpoint}`;
+  `POST /api/push/web/test` sends a test alert to this browser, five an hour per account.
+- **UI.** *Change alerts on this device* on the Account screen says whether this browser can't, needs the app
+  installed first (iOS), is blocked in its settings, is off or on. Permission is asked only when *Turn on* is
+  clicked. The monitor page's *Where alerts go* links to it.
+
+**Turning it on.** Generate a key pair locally and set the three secrets (the script prints the commands, and
+`.dev.vars` lines for local development):
+
+```bash
+npm run vapid:keys -- mailto:you@example.com
+printf '%s' '<public>'  | npx wrangler secret put VAPID_PUBLIC_KEY   # base64url uncompressed P-256 point
+printf '%s' '<private>' | npx wrangler secret put VAPID_PRIVATE_KEY  # base64url scalar, or a PKCS8 PEM
+printf '%s' 'mailto:you@example.com' | npx wrangler secret put VAPID_SUBJECT
+```
+
+Then apply `npm run db:migrate`, or paste `db/0018-upgrade.sql` into the D1 console; it is picked up within a
+minute. **Without the migration or any of the three secrets** nothing changes: the Account card and the monitor
+page note are not rendered, `/api/push/web` reports `available: false` and refuses to subscribe, and nothing is
+queued; APNs and email alerts carry on as before. Keep the key pair once it is in use: every subscription is tied
+to the public key it was made with, so a new pair stops alerts to every browser until each turns them on again.
+`npm run webpush:check` covers the RFC 8291 test vector, VAPID, subscriptions, delivery beside APNs, the test-alert
+limit, dormancy and account deletion against SQLite with a mocked `fetch`.

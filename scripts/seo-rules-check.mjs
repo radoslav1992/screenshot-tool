@@ -453,7 +453,7 @@ const watches = await load('lib/watches.ts', {
     'export const diffAvailable = () => true; export async function compareImages(){const s=globalThis.__seoFixture.state;return {changedPct:s.changedPct,changedPixels:s.changedPixels,sharedPct:s.changedPct,resized:false}}',
   mailer: 'export const canSendEmail = () => true; export async function sendMail(mail){globalThis.__seoFixture.state.emails.push(mail);return true}',
   summarise: 'export async function summariseChange(){return {sentence:"",detail:"",source:"plain"}}',
-  push: 'export async function pushQueueStatement(runId){globalThis.__seoFixture.state.pushes.push(runId);return null} export async function drainPush(){}',
+  push: 'export async function pushQueueStatements(runId){globalThis.__seoFixture.state.pushes.push(runId);return []} export async function drainPush(){}',
 });
 const engineModule = await load('lib/capture-engine.ts');
 const { decodeRunDetail } = await load('lib/monitor-health.ts');

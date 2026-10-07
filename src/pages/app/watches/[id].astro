@@ -22,6 +22,7 @@ import { env } from 'cloudflare:workers';
 import ChangeFrame from '../../../components/ChangeFrame.astro';
 import { PINNED_ALERTS, pinReady } from '../../../lib/baseline-pin';
 import { changedAreas, highlightUrl } from '../../../lib/change-highlights';
+import { webPushReady } from '../../../lib/push';
 
 const user = Astro.locals.user!;
 const watch = await getWatch(Astro.params.id ?? '');
@@ -62,6 +63,8 @@ const latestAlert = health.alerts.get(watch.id);
 const name = watch.label || displayUrl(watch.url);
 const active = watch.status === 'active';
 const emailReady = canSendEmail();
+// Push alerts in the browser exist once migration 0018 and the VAPID secrets do.
+const webPush = await webPushReady().catch(() => false);
 
 /*
  * Why the last check did not produce a comparison, in the terms that matter:
@@ -348,6 +351,12 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
           Slack, Discord, Microsoft Teams and Google Chat webhooks get a formatted message; any other HTTPS address
           gets JSON. Leave it empty to stop webhook alerts. A test uses the saved settings.
         </p>
+        {webPush && (
+          <p class="xs muted">
+            This device can also get a push alert whenever any of your monitors changes.{' '}
+            <a href="/app/account#device-alerts">Turn on change alerts on this device →</a>
+          </p>
+        )}
         <div class="alert-actions">
           <button class="btn btn--ink" type="submit">Save alert channels</button>
           <button type="button" class="btn btn--outline" id="test-notification" data-watch={watch.id}>

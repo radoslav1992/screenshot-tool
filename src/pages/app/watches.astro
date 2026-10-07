@@ -4,6 +4,7 @@ import { monitorDashboard } from '../../lib/monitor-dashboard';
 import { forecast, runLabel, deliveryLabel } from '../../lib/monitor-health';
 import AppShell from '../../layouts/AppShell.astro';
 import Icon from '../../components/Icon.astro';
+import InstallHint from '../../components/InstallHint.astro';
 import { getUsage } from '../../lib/captures';
 import { formatRelative } from '../../lib/captures';
 import { DEVICE_LIST } from '../../lib/capture-options';
@@ -54,6 +55,7 @@ const plural = (count: number, word: string) => `${count.toLocaleString()} ${wor
   </header>
 
   <div class="app-wrap stack gap-20">
+    <InstallHint />
     <div class="workspace-intro">
       <div>
         <span class="eyebrow">WEBSITE MONITORING</span>

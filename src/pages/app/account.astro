@@ -537,6 +537,7 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
 
 <script>
   import { wirePasswordToggles } from '../../scripts/auth';
+  import { installEnvironment, installHint, promptInstall, watchInstall } from '../../scripts/install';
 
 
   wirePasswordToggles();
@@ -687,20 +688,11 @@ const passwordError = takeFlash(Astro.cookies, Astro.url.pathname);
     }
   });
 
-  // Offer the PWA install prompt when the browser makes one available.
+  // Offer the PWA install prompt when the browser makes one available. This
+  // row stays whether or not the workspace's install hint was dismissed.
   const installRow = document.getElementById('install-app') as HTMLButtonElement | null;
-  const showInstall = () => {
-    if (installRow && (window as any).__escInstallPrompt) installRow.hidden = false;
-  };
-  document.addEventListener('esc:installable', showInstall);
-  showInstall();
-
-  installRow?.addEventListener('click', async () => {
-    const prompt = (window as any).__escInstallPrompt;
-    if (!prompt) return;
-    prompt.prompt();
-    await prompt.userChoice;
-    (window as any).__escInstallPrompt = null;
-    installRow.hidden = true;
+  watchInstall(() => {
+    if (installRow) installRow.hidden = installHint(installEnvironment({ ignoreDismissed: true })) !== 'prompt';
   });
+  installRow?.addEventListener('click', () => void promptInstall());
 </script>

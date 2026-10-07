@@ -125,12 +125,16 @@ const fullTitle =
         });
       }
 
-      // Remember the install prompt so the Account screen can offer it.
+      // Remember the install prompt so the app can offer it (scripts/install.ts).
       window.__escInstallPrompt = null;
       window.addEventListener("beforeinstallprompt", (event) => {
         event.preventDefault();
         window.__escInstallPrompt = event;
         document.dispatchEvent(new CustomEvent("esc:installable"));
+      });
+      // Installed from the browser's own menu, the kept prompt is spent too.
+      window.addEventListener("appinstalled", () => {
+        window.__escInstallPrompt = null;
       });
     </script>
     <script>

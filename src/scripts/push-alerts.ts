@@ -77,14 +77,22 @@ export async function turnOn(publicKey: string, permission: Promise<Notification
   const answer = await permission;
   if (answer !== 'granted') return answer;
   const key = keyBytes(publicKey);
-  const worker = await registration();
+  const worker = await within(registration(), 15_000, 'The app is still starting up. Reload the page and try again.');
   let subscription = await worker.pushManager.getSubscription();
   const current = subscription?.options.applicationServerKey;
   if (subscription && current && !sameBytes(new Uint8Array(current), key)) {
     await subscription.unsubscribe().catch(() => false);
     subscription = null;
   }
-  subscription ??= await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  // The browser registers with its vendor's push service here, which can fail
+  // (private windows refuse it) or never answer.
+  subscription ??= await within(
+    worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }).catch(() => {
+      throw new Error('This browser could not set up push alerts. In a private window, try a normal one.');
+    }),
+    30_000,
+    'Your browser’s push service did not answer. Try again in a moment.',
+  );
   await api('/api/push/web', 'POST', subscription.toJSON());
   return answer;
 }
@@ -97,6 +105,23 @@ export async function turnOff(): Promise<void> {
 }
 
 export const sendTest = () => api<{ sent: number; removed: number; failed: number }>('/api/push/web/test', 'POST');
+
+/** Rejects after `ms`, so a step that never settles cannot leave the buttons waiting for good. */
+function within<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);

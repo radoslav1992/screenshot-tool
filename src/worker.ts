@@ -7,6 +7,7 @@ import { runDueWatches, retryAlerts, type WatchSweepResult } from './lib/watches
 import { runProjectDigests } from './lib/digests';
 import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
 import { RULE_ONLY_FREQUENCY } from './lib/plans';
+import { runWatchdog } from './lib/ops-watchdog';
 
 /**
  * Worker entrypoint.
@@ -75,7 +76,7 @@ async function runJobs(now: Date): Promise<void> {
   }
 }
 
-/** Watches and bounded retention batches share the hourly trigger. */
+/** Watches, bounded retention batches and the self-check share the hourly trigger. */
 function hourly(event: ScheduledController, ctx: ExecutionContext): void {
   const now = new Date(event.scheduledTime);
 
@@ -130,6 +131,15 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
         if (result.jobs || result.batches) console.log(`[jobs] pruned jobs=${result.jobs} batches=${result.batches}`);
       })
       .catch((error) => console.error('[jobs] prune failed', error)),
+  );
+
+  // The service checking its own background work, and telling the owners when that changes.
+  ctx.waitUntil(
+    runWatchdog(siteOrigin(), now.getTime())
+      .then((result) => {
+        if (result.sent) console.log(`[watchdog] sent=${result.sent} to=${result.recipients} failing=${result.failing.join(',') || 'none'}`);
+      })
+      .catch((error) => console.error('[watchdog] run failed', error)),
   );
 }
 

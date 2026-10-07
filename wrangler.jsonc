@@ -96,7 +96,10 @@
   //                           browser tools off). A plain number, not a secret,
   //                           but set in the dashboard so a deploy keeps it.
   //   OWNER_EMAILS          - comma-separated account emails that may open the
-  //                           growth dashboard at /app/growth; unset, nobody can open it.
+  //                           growth dashboard at /app/growth, and that the hourly
+  //                           self-check emails when background work breaks
+  //                           (src/lib/ops-watchdog.ts); unset, nobody can open it
+  //                           and problems are only logged.
   //
   // Web Push. Change alerts in browsers stay hidden until all three are set and
   // migration 0018 is applied. `npm run vapid:keys` makes a pair and prints the

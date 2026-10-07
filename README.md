@@ -190,6 +190,31 @@ npx wrangler secret put CF_ACCOUNT_ID
 npx wrangler secret put CF_API_TOKEN
 ```
 
+### Checks before a deploy, and watching after it
+
+Every push to `main` deploys straight to production, so `.github/workflows/ci.yml` runs what a contributor
+runs — `npx astro check`, `npm test` (with the Chromium that matches `playwright-core`, through `CHROME_PATH`)
+and `npm run build` — on every pull request and every push to `main`. To make a merge wait for it, add a
+rule in **Settings → Rules → Rulesets** (or **Branches**) for `main` that requires the status check
+**Typecheck, test and build**.
+
+Once it is live, the service is watched from both sides:
+
+- **From outside**, `.github/workflows/uptime.yml` runs every 30 minutes: the home page must answer `200`
+  and `/api/health` must be `ok`, with the hourly sweep's heartbeat fresh. Three failures a minute apart fail
+  the run, and GitHub emails whoever last changed its `cron:` line (**Settings → Notifications → Actions**
+  decides how). If those emails do not arrive, edit that line once in GitHub's web editor to take them over.
+- **From inside**, the hourly cron runs a self-check (`src/lib/ops-watchdog.ts`) that nobody's page view
+  would catch: monitors more than two hours late, a capture queue that has stopped moving, most recent
+  monitor checks failing on our side (browser limits, rate limits, an unreachable renderer), a required
+  migration missing, or D1, R2 or KV unreachable. It emails each address in `OWNER_EMAILS` when that changes,
+  again once a day while it stays broken, and once when it is all clear. With `OWNER_EMAILS` unset it only
+  logs `[watchdog] …` lines.
+
+The self-check leaves its time in KV, and `/api/health` reports it as `checks.scheduler`: stale after
+2¼ hours means the cron itself has stopped, the one failure the self-check cannot email about. It is kept
+out of the top-level `ok`, which stays about serving requests; the uptime workflow checks both.
+
 ---
 
 ## API
@@ -350,10 +375,12 @@ matter are the ones protecting the render pool and storage rather than the month
   With no AI binding, or on any model failure, the alert falls back to the plain list of added and removed
   lines: an alert that arrives plain beats one that does not arrive.
 
-  The `ai` binding ships **commented out** in `wrangler.jsonc`. An AI binding has no local implementation —
-  the adapter proxies it to the real service — so `astro build` and `astro dev` fail with *user auth missing
-  api token* on any machine not logged into Cloudflare. Uncomment it when you want the summaries and every
-  build runs authenticated.
+  The `ai` binding is on in `wrangler.jsonc`; it uses the account's Workers AI, with nothing to create. An AI
+  binding has no local implementation — with remote bindings on, the adapter proxies it to the real service and
+  `astro build` and `astro dev` fail with *user auth missing api token* on any machine not logged into
+  Cloudflare. So `astro.config.mjs` keeps remote bindings off unless `CLOUDFLARE_REMOTE_BINDINGS=1`: builds, dev
+  servers and CI need no login, production gets the real binding at deploy time, and alerts made locally fall
+  back to the plain list.
 
 - **Compare two pages.** `POST /v1/compare` (and `/api/compare`) captures two URLs and measures how much of the
   picture differs, reusing the watch diff engine. Each side takes the usual capture parameters prefixed `a_` and

@@ -804,6 +804,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     './lib/watches': `${record('runDueWatches')}\n${record('retryAlerts')}`,
     './lib/digests': record('runProjectDigests'),
     './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,
+    './lib/ops-watchdog': record('runWatchdog'),
   });
   cc.results = {
     runCaptureJobs: { due: 0, recovered: 0, expired: 0 },
@@ -812,6 +813,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     sweepExpiredCaptures: { scanned: 0, deleted: 0, filesDeleted: 0, bytesFreed: 0, tokensPurged: 0, failed: 0, truncated: false },
     pruneCaptureJobs: { jobs: 0, batches: 0 },
     pruneQuietRuns: 0,
+    runWatchdog: { sent: null, failing: [] },
   };
   const fire = async (cron) => {
     cc.calls.length = 0;
@@ -831,6 +833,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     'retryAlerts',
     'runDueWatches',
     'runProjectDigests',
+    'runWatchdog',
     'sweepExpiredCaptures',
   ];
   assert.deepEqual(await fire('* * * * *'), ['runCaptureJobs']);

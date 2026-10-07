@@ -6,6 +6,7 @@ import { automaticTaxEnabled, billingEnabled, priceIdFor, webhookConfigured } fr
 import { PAID_PLANS } from '../../lib/plans';
 import { mailTransport, sender, type MailTransport } from '../../lib/mailer';
 import { CORE_TABLES, migrationStatus, type MigrationStatus } from '../../lib/schema-manifest';
+import { HEARTBEAT_STALE_MS, lastWatchdogRun } from '../../lib/ops-watchdog';
 
 export const prerender = false;
 
@@ -202,16 +203,38 @@ function checkBilling(): CheckResult & {
 }
 
 /**
+ * The hourly cron leaves its self-check's time in KV (lib/ops-watchdog.ts).
+ * Stale means the scheduled work stopped, which the site itself would never
+ * show: pages keep loading while monitors quietly stop. It is reported on its
+ * own and kept out of the top-level `ok`, which stays about serving requests;
+ * the uptime workflow checks both. Never written means no sweep has run yet,
+ * as on a dev server or a new deployment, and is not a failure.
+ */
+async function checkScheduler(now = Date.now()): Promise<CheckResult & { lastRunAt: string | null }> {
+  const lastRunAt = await lastWatchdogRun().catch(() => null);
+  if (!lastRunAt) return { ok: true, lastRunAt: null, detail: 'No hourly sweep recorded yet.' };
+  if (now - Date.parse(lastRunAt) > HEARTBEAT_STALE_MS) {
+    return {
+      ok: false,
+      lastRunAt,
+      detail: 'The hourly sweep has not run for over two hours: check the cron triggers in the Cloudflare dashboard.',
+    };
+  }
+  return { ok: true, lastRunAt };
+}
+
+/**
  * GET /api/health — reports whether each Cloudflare binding is wired up and
  * whether the D1 schema has been applied, migration by migration. Returns only
  * booleans, schema object names and setup hints: no data, no credentials.
  */
 export const GET: APIRoute = async () => {
-  const [database, storage, kv, cryptoCheck] = await Promise.all([
+  const [database, storage, kv, cryptoCheck, scheduler] = await Promise.all([
     checkDatabase(),
     checkStorage(),
     checkKv(),
     checkCrypto(),
+    checkScheduler(),
   ]);
   const renderer = checkRenderer();
   const billing = checkBilling();
@@ -223,7 +246,7 @@ export const GET: APIRoute = async () => {
   return json(
     {
       ok,
-      checks: { database: databaseCheck, storage, kv, crypto: cryptoCheck, renderer, billing, mailer },
+      checks: { database: databaseCheck, storage, kv, crypto: cryptoCheck, renderer, billing, mailer, scheduler },
       migrations,
     },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },

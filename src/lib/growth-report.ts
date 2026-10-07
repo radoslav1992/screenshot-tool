@@ -11,13 +11,21 @@ import { env } from 'cloudflare:workers';
  */
 
 /** OWNER_EMAILS: a comma-separated list, compared without regard to case. Unset means nobody. */
+export function ownerEmails(): string[] {
+  return [
+    ...new Set(
+      (env.OWNER_EMAILS ?? '')
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export function isOwner(email: string | null | undefined): boolean {
   const mine = (email ?? '').trim().toLowerCase();
   if (!mine) return false;
-  return (env.OWNER_EMAILS ?? '')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .includes(mine);
+  return ownerEmails().includes(mine);
 }
 
 export const WINDOWS = [7, 30, 90] as const;

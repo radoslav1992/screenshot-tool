@@ -957,11 +957,12 @@ try {
       './lib/watches': `${record('runDueWatches')}\n${record('retryAlerts')}`,
       './lib/digests': record('runProjectDigests'),
       './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,
+      './lib/ops-watchdog': record('runWatchdog'),
     };
     const exact = {
       name: 'worker-stubs',
       setup(b) {
-        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
+        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
         b.onLoad({ filter: /.*/, namespace: 'worker' }, (args) => ({ contents: workerStubs[args.path], loader: 'js' }));
       },
     };

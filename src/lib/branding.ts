@@ -13,6 +13,7 @@ import {
   type ReportBranding,
 } from './branding-rules';
 import type { Project } from './projects';
+import { planSql, trialsAvailable } from './trial-plan';
 
 /**
  * Per-project report branding: a logo in R2, an accent colour, a footer line
@@ -54,11 +55,12 @@ export async function brandingRow(projectId: string): Promise<BrandingRow | null
  */
 export async function projectBranding(project: Pick<Project, 'id' | 'user_id'>): Promise<ReportBranding | null> {
   if (!(await brandingReady())) return null;
+  // The plan the owner acts on: a white label kept during a Pro trial goes when it ends.
   const row = await env.DB.prepare(
-    `SELECT u.plan,b.logo_key,b.logo_type,b.logo_width,b.logo_height,b.accent,b.footer,b.hide_attribution
-     FROM users u LEFT JOIN project_branding b ON b.project_id=? WHERE u.id=?`,
+    `SELECT ${planSql('u', '?3', await trialsAvailable())} AS plan,b.logo_key,b.logo_type,b.logo_width,b.logo_height,b.accent,b.footer,b.hide_attribution
+     FROM users u LEFT JOIN project_branding b ON b.project_id=?1 WHERE u.id=?2`,
   )
-    .bind(project.id, project.user_id)
+    .bind(project.id, project.user_id, new Date().toISOString())
     .first<BrandingRow & { plan: string }>();
   // No branding row yet reads as all-null columns from the LEFT JOIN.
   return resolveBranding(row && row.accent !== null ? row : null, row?.plan);
@@ -147,7 +149,9 @@ export async function brandingAction(
   const footer = parseFooter(field('footer'));
   const hide = field('hide_attribution') === '1';
   if (hide) {
-    const owner = await env.DB.prepare('SELECT plan FROM users WHERE id=?').bind(project.user_id).first<{ plan: string }>();
+    const owner = await env.DB.prepare(`SELECT ${planSql('u', '?2', await trialsAvailable())} AS plan FROM users u WHERE u.id=?1`)
+      .bind(project.user_id, new Date().toISOString())
+      .first<{ plan: string }>();
     if (!canHideAttribution(owner?.plan))
       throw new HttpError(403, 'plan_required', `Hiding the attribution is included on ${whiteLabelPlans()}.`);
   }

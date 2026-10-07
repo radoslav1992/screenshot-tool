@@ -28,8 +28,9 @@ export const GET: APIRoute = async ({ request, locals, url }) => {
       throw new HttpError(503, 'billing_unavailable', 'Payments are not configured on this deployment.');
     }
 
-    // Default to the upgrade the account screen offers: the next plan up.
-    const current = getPlan(user.plan);
+    // Default to the upgrade the account screen offers: the next plan up from
+    // the one it pays for, whatever a Pro trial lends it.
+    const current = getPlan(user.ownPlan);
     const fallback = PLAN_ORDER[PLAN_ORDER.indexOf(current.id) + 1] ?? 'pro';
     const asked = url.searchParams.get('plan') as PlanId | null;
     const plan = asked && PAID_PLANS.includes(asked) ? asked : (fallback as PlanId);

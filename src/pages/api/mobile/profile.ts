@@ -1,5 +1,5 @@
 import { refreshAppleUser } from '../../../lib/apple-billing';
-import { toSessionUser, type UserRow } from '../../../lib/auth';
+import { loadSessionUser } from '../../../lib/auth';
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getUsage } from '../../../lib/captures';
@@ -17,9 +17,8 @@ export const GET: APIRoute = async ({ locals, url }) => {
   try {
     try { await refreshAppleUser(locals.user.id); }
     catch { console.error('[apple] profile refresh failed; using recorded expiry'); }
-    const current = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(locals.user.id).first<UserRow>();
-    if (!current) throw new HttpError(401, 'unauthorized', 'Sign in first.');
-    const user = toSessionUser(current);
+    const user = await loadSessionUser(locals.user.id);
+    if (!user) throw new HttpError(401, 'unauthorized', 'Sign in first.');
     const row = await env.DB.prepare('SELECT email_verified_at FROM users WHERE id = ?')
       .bind(user.id).first<{ email_verified_at: string | null }>();
     // Additive and optional: absent until migration 0017, or if the code cannot be read.
@@ -34,6 +33,11 @@ export const GET: APIRoute = async ({ locals, url }) => {
       // The app creates only visual monitors, so it is never offered the 15-minute schedule.
       frequencies: visualFrequencies(user.plan),
       ...(code ? { referral_url: referralUrl(url.origin, code) } : {}),
+      // Additive and optional: only while a Pro trial (migration 0019) is what `plan` reflects.
+      // The app shows the allowances; it never offers a trial.
+      ...(user.trial?.active && user.plan !== user.ownPlan
+        ? { trial: { plan: user.trial.plan, ends_at: user.trial.endsAt } }
+        : {}),
     }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return toHttpError(error, 'mobile.profile', 'Could not load your account.').toResponse();

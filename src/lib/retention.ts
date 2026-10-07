@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { safeParseFiles, type CaptureRow } from './captures';
 import { highlightFile } from './change-highlights';
 import { PLAN_ORDER, getPlan } from './plans';
+import { planSql, trialsAvailable } from './trial-plan';
 
 export interface SweepResult {
   scanned: number;
@@ -74,9 +75,10 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
   };
 
   const alerted = await alertCaptures();
+  // The plan each account acts on: a Pro trial keeps Pro's history while it runs, and no longer.
+  const plan = planSql('u', '?1', await trialsAvailable());
   for (const planId of PLAN_ORDER) {
-    const plan = getPlan(planId);
-    const cutoff = cutoffFor(plan.historyDays, now);
+    const cutoff = cutoffFor(getPlan(planId).historyDays, now);
 
     /*
      * A watch's baseline is exempt. It is the only thing the next run has to
@@ -86,11 +88,11 @@ export async function sweepExpiredCaptures(now = Date.now()): Promise<SweepResul
     const { results } = await env.DB.prepare(
       `SELECT c.* FROM captures c
        JOIN users u ON u.id = c.user_id
-       WHERE (CASE WHEN u.plan = 'free' AND u.apple_expires_at > ? THEN 'lite' ELSE u.plan END) = ? AND c.created_at < ?
+       WHERE ${plan} = ?2 AND c.created_at < ?3
          AND c.id NOT IN (SELECT baseline_capture_id FROM watches WHERE baseline_capture_id IS NOT NULL)
          ${alerted}
        ORDER BY c.created_at ASC
-       LIMIT ?`,
+       LIMIT ?4`,
     )
       .bind(new Date(now).toISOString(), planId, cutoff, MAX_PER_PLAN)
       .all<CaptureRow>();

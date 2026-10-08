@@ -208,7 +208,7 @@ const linkWords = (r: (typeof list)[number]) =>
         <p class="small muted">
           On the 1st at 09:00 in the project’s timezone, last month’s report is made and emailed to your client, each
           address with its own link, once.
-          {settings.enabled && settings.next_run_at && <> Next: {formatDayTime(settings.next_run_at, settings.timezone)} ({settings.timezone}).</>}
+          {Boolean(settings.enabled) && settings.next_run_at && <> Next: {formatDayTime(settings.next_run_at, settings.timezone)} ({settings.timezone}).</>}
         </p>
         {
           emails && !confirmed && (

@@ -308,7 +308,7 @@ const health = s.health as CareHealth[];
                       </strong>
                       <span>
                         {site.links
-                          ? `${n(site.links.checked)} links on ${n(site.links.pages)} pages · ${n(site.links.fixed)} fixed`
+                          ? `${n(site.links.checked)} ${site.links.checked === 1 ? 'link' : 'links'} on ${n(site.links.pages)} ${site.links.pages === 1 ? 'page' : 'pages'} · ${n(site.links.fixed)} fixed`
                           : 'Not checked'}
                       </span>
                     </dd>

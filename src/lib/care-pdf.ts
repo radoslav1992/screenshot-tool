@@ -89,7 +89,7 @@ export function careReportHtml(s: CareSnapshot, branding: ReportBranding | null,
               ['Uptime', site.uptime ? `${uptimeText(site.uptime.pct)} · ${n(site.uptime.checks)} checks · ${site.uptime.incidents.length + (site.incidentsMore ?? 0)} incidents` : 'Not checked'],
               ['SSL', site.ssl ? `${SSL_WORDS[site.ssl.status] ?? site.ssl.status}${site.ssl.validTo ? ` · valid to ${formatDay(site.ssl.validTo, tz)}` : ''}${site.ssl.issuer ? ` · ${site.ssl.issuer}` : ''}` : 'Not checked'],
               ['Domain', site.domain ? `${DOMAIN_WORDS[site.domain.status] ?? site.domain.status} · ${site.domain.domain}${site.domain.expiresAt ? ` · renews by ${formatDay(site.domain.expiresAt, tz)}` : ''}` : 'Not checked'],
-              ['Links', site.links ? `${n(site.links.broken.length + (site.brokenMore ?? 0))} broken · ${n(site.links.fixed)} fixed · ${n(site.links.checked)} checked on ${n(site.links.pages)} pages` : 'Not checked'],
+              ['Links', site.links ? `${n(site.links.broken.length + (site.brokenMore ?? 0))} broken · ${n(site.links.fixed)} fixed · ${n(site.links.checked)} checked on ${n(site.links.pages)} ${site.links.pages === 1 ? 'page' : 'pages'}` : 'Not checked'],
             ];
             const incidents = site.uptime?.incidents.length
               ? `<h3>Incidents</h3><ul>${site.uptime.incidents.map((i) => `<li>${e(formatDayTime(i.startedAt, tz))} · ${i.endedAt ? `down ${n(i.minutes)} min` : 'still down'}${i.detail ? ` · ${e(i.detail)}` : ''}</li>`).join('')}</ul>`

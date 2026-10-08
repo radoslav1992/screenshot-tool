@@ -4,6 +4,10 @@
  * with the link, then a plain form that posts and redirects back, so it works
  * without JavaScript. The script only makes the note required when the client
  * asks for changes, which the server checks either way.
+ *
+ * When approving would pin monitor baselines (approval-baseline.ts), one
+ * neutral line beside Approve says so. It names no monitor: the client sees
+ * only that approved screenshots become the reference for later checks.
  */
 import { formatDateTime } from '../lib/dates';
 import {
@@ -18,8 +22,10 @@ interface Props {
   signoff: SignoffView;
   /** The `?signoff=` code the route redirected with; only known codes show anything. */
   status?: string | null;
+  /** Approving would make at least one monitor compare against these screenshots. */
+  baselines?: boolean;
 }
-const { token, signoff, status } = Astro.props;
+const { token, signoff, status, baselines = false } = Astro.props;
 const message = signoffStatus(status);
 const decided = signoff.state !== 'awaiting';
 ---
@@ -50,13 +56,26 @@ const decided = signoff.state !== 'awaiting';
       <fieldset>
         <legend>{decided ? 'Record a new decision' : 'Your decision'}</legend>
         <label class="ai-signoff-choice">
-          <input type="radio" name="decision" value="approved" required />
+          <input
+            type="radio"
+            name="decision"
+            value="approved"
+            required
+            aria-describedby={baselines ? 'signoff-baseline-note' : undefined}
+          />
           Approve
         </label>
         <label class="ai-signoff-choice">
           <input type="radio" name="decision" value="changes" />
           Request changes
         </label>
+        {
+          baselines && (
+            <p class="ai-signoff-fine ai-signoff-baseline" id="signoff-baseline-note" data-baseline-note>
+              Approving makes these screenshots the reference that future checks compare against.
+            </p>
+          )
+        }
       </fieldset>
       <label>
         Your name

@@ -340,6 +340,11 @@
   line-height: 1.6;
   color: var(--muted);
 }
+/* Beside Approve, on a row of its own under the two choices. */
+.ai-signoff-baseline {
+  flex: 1 0 100%;
+  margin: 0;
+}
 @media (max-width: 1100px) {
   .ai-report-compare {
     grid-template-columns: 1fr;

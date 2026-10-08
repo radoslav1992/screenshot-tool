@@ -170,6 +170,27 @@ form.project-item__remove {
 .signoff-history li > span {
   font: 500 11px/1.4 var(--mono);
 }
+/* Monitors a client's approval pinned: one link per row, each at least 44px tall. */
+.approval-baselines {
+  display: grid;
+  gap: 4px;
+}
+.approval-baselines ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.approval-baselines li + li {
+  border-top: 1px solid var(--line-2, #e3e2dc);
+}
+.approval-baselines a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 /* Report branding: a small stand-in for the report, coloured as it will be. */
 .brand-preview {
   display: grid;

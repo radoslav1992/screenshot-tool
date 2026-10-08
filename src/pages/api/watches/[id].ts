@@ -18,6 +18,7 @@ import {
 } from '../../../lib/watches';
 import { pinBaseline, unpinBaseline } from '../../../lib/baseline-pin';
 import { withHighlightUrls } from '../../../lib/change-highlights';
+import { approvalProvenance, provenanceDTO } from '../../../lib/approval-baseline';
 
 export const prerender = false;
 
@@ -43,8 +44,15 @@ export const GET: APIRoute = async ({ params, locals, url }) => {
 
   try {
     const watch = await owned(params.id, user.id);
-    // Each run also carries `regions` and `highlight_url`, both additive.
-    return json({ ...(await watchDTO(watch)), runs: await withHighlightUrls(await listRuns(watch.id), user.id, url.origin) });
+    // Each run also carries `regions` and `highlight_url`, both additive. So is
+    // `pinned_by_approval`, present only while a client's approval made the
+    // pinned baseline and nobody has pinned or unpinned since.
+    const [dto, runs, approval] = await Promise.all([
+      watchDTO(watch),
+      listRuns(watch.id).then((rows) => withHighlightUrls(rows, user.id, url.origin)),
+      approvalProvenance(watch),
+    ]);
+    return json({ ...dto, ...(approval ? { pinned_by_approval: provenanceDTO(approval) } : {}), runs });
   } catch (error) {
     return toHttpError(error, 'watches.get', 'Could not load that watch.').toResponse();
   }

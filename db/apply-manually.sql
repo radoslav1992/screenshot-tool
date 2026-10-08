@@ -465,6 +465,16 @@ CREATE INDEX IF NOT EXISTS plan_trials_open ON plan_trials(ended_at, ends_at);
 CREATE INDEX IF NOT EXISTS plan_trials_ip ON plan_trials(ip_hash, started_at);
 CREATE INDEX IF NOT EXISTS plan_trials_started ON plan_trials(started_at);
 
+CREATE TABLE IF NOT EXISTS baseline_approvals (
+  id         TEXT PRIMARY KEY,
+  watch_id   TEXT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  capture_id TEXT NOT NULL,
+  report_id  TEXT NOT NULL REFERENCES review_reports(id) ON DELETE CASCADE,
+  signoff_id TEXT NOT NULL REFERENCES report_signoffs(id) ON DELETE CASCADE,
+  pinned_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS baseline_approvals_watch ON baseline_approvals(watch_id, pinned_at);
+
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -490,3 +500,4 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0016_watch_fast_checks.sql')
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0017_growth.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0018_web_push.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0019_plan_trials.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0022_baseline_approvals.sql');

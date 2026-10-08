@@ -10,7 +10,7 @@
     "preview": "astro preview",
     "deploy": "astro build && wrangler deploy",
     "check": "astro check",
-    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s seo:check && npm run -s monitor:check && npm run -s highlights:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check && npm run -s capture:check && npm run -s auth:check && npm run -s billing-errors:check && npm run -s schema:check && npm run -s signoff:check && npm run -s branding:check && npm run -s jobs:check && npm run -s fast:check && npm run -s tools:check && npm run -s growth:check && npm run -s webpush:check && npm run -s ops:check && npm run -s trial:check",
+    "test": "npm run -s diff:check && npm run -s facts:check && npm run -s redact:check && npm run -s projects:check && npm run -s library:check && npm run -s workflows:check && npm run -s seo:check && npm run -s monitor:check && npm run -s highlights:check && npm run -s files:check && npm run -s consent:check && npm run -s fullpage:check && npm run -s commerce:check && npm run -s push:check && npm run -s apple:check && npm run -s retention:check && npm run -s capture:check && npm run -s auth:check && npm run -s billing-errors:check && npm run -s schema:check && npm run -s signoff:check && npm run -s branding:check && npm run -s jobs:check && npm run -s fast:check && npm run -s tools:check && npm run -s growth:check && npm run -s webpush:check && npm run -s ops:check && npm run -s trial:check && npm run -s health:check",
     "db:migrate:local": "wrangler d1 migrations apply screenify-data --local",
     "db:migrate": "wrangler d1 migrations apply screenify-data --remote",
     "stripe:setup": "node scripts/stripe-setup.mjs",
@@ -47,7 +47,8 @@
     "growth:check": "node scripts/growth-check.mjs",
     "webpush:check": "node scripts/web-push-check.mjs",
     "ops:check": "node scripts/ops-watchdog-check.mjs",
-    "trial:check": "node scripts/trial-check.mjs"
+    "trial:check": "node scripts/trial-check.mjs",
+    "health:check": "node scripts/site-health-check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.3",

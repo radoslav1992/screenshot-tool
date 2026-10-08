@@ -8,6 +8,7 @@ import { captureJobsReady } from './capture-jobs';
 import { growthCleanup } from './growth';
 import { webPushTablesReady } from './push';
 import { trialCleanup } from './trials';
+import { siteHealthCleanup } from './site-health-summary';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -131,9 +132,12 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
   const growthRows = await growthCleanup(userId);
   // The Pro trial record, once migration 0019 exists.
   const trialRows = await trialCleanup(userId);
+  // Site health results (migration 0020): before the monitors their link checks belong to.
+  const siteHealthRows = await siteHealthCleanup(userId);
   await env.DB.batch([
     ...growthRows,
     ...trialRows,
+    ...siteHealthRows,
     ...collaborationCleanup,
     ...signoffCleanup,
     ...brandingCleanup,

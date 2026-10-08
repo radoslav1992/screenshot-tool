@@ -460,6 +460,16 @@ try {
     for (const zone of ['Europe/Sofia', 'UTC', 'America/Argentina/Buenos_Aires', 'Etc/GMT+5']) assert.equal(p.validTimezone(zone), zone);
     for (const zone of ['', 'Mars/Base', '+02:00', 'Europe/Sofia; DROP', 'x'.repeat(65)]) assert.equal(p.validTimezone(zone), null, zone);
     assert.equal(p.formatDayTime('2026-09-30T21:30:00Z', 'Europe/Sofia'), '1 Oct 2026, 00:30');
+    // Quiet monitor runs are pruned hourly; in every timezone, a 31-day month's first quiet check is still
+    // there when its report is made on the 1st at 09:00, so "checks run" counts the whole month.
+    const keep = Number(/const QUIET_RUN_DAYS = (\d+);/.exec(readFileSync(join(root, 'src/lib/retention.ts'), 'utf8'))[1]);
+    for (const zone of Intl.supportedValuesOf('timeZone')) {
+      for (const month of ['2026-10', '2026-12', '2027-01']) {
+        const whole = p.monthPeriod(zone, month);
+        const reportAt = Date.parse(p.nextCareRun(zone, new Date(Date.parse(whole.to) - 1)));
+        assert.ok(reportAt - Date.parse(whole.from) < keep * DAY, `${zone} ${month}: the report reads before the prune`);
+      }
+    }
   });
 
   /* ------------------------------------------------------------------------ */

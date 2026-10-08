@@ -17,7 +17,7 @@ const attributionCookie = attributionCookieEnabled();
 const user = Astro.locals.user;
 
 /** Fixed on purpose — see the note in terms.astro. */
-const updated = '7 October 2026';
+const updated = '8 October 2026';
 
 const toc = [
   { id: 'responsible', title: 'Who is responsible' },
@@ -65,6 +65,7 @@ const { list: sections, byId: s } = docSections(toc);
           <li><b>Pro trial:</b> if you start a trial of Pro, when it started and when it ends, when we emailed you about it ending, and a shortened one-way hash of the IP address you started it from, used only to limit how many trials can be started from one network. We use it to give you Pro for the trial, to send those two emails and to refuse a second trial on the same account.</li>
           <li><b>Report sign-offs:</b> when someone approves or requests changes on a report shared with them, the name they type, their decision, an optional note and the time. The report's owner and everyone with the link can see them; no account or email address is collected.</li>
           <li><b>Report branding:</b> the logo, accent colour and footer line you set for a project.</li>
+          <li><b>Site health:</b> for the sites behind your monitors, we check their availability, SSL certificates, domain registration (in the registry's public RDAP service) and the links on monitored pages, from Cloudflare's network, and store the results with your account: response times and outages, certificate and registration dates, and broken links with when they were found and fixed.</li>
           <li><b>Mobile notifications:</b> if enabled, your APNs device token, notification environment, account/session association, registration time, and delivery status for monitor alerts.</li>
           <li><b>Browser notifications:</b> if you turn on change alerts in a browser or the installed web app, the push subscription your browser gives us — the push service address it is reached at (the endpoint) and the public key and secret used to encrypt alerts to it — a shortened copy of the browser's user-agent string, which signed-in session it belongs to, when it was set up and last delivered, and the delivery status of each alert.</li>
           <li><b>Billing:</b> if you subscribe, your Stripe customer and subscription identifiers, plan, status, billing interval and paid-through date. For Apple purchases, we store a random account-linking token, transaction-chain identifier, product, environment and expiry to verify access, renewals and refunds. Payment details go directly to Stripe or Apple and never reach our servers.</li>
@@ -193,6 +194,10 @@ const { list: sections, byId: s } = docSections(toc);
             <span class="deflist__value">A day to deliver, then removed within seven days of expiring</span>
           </div>
           <div class="deflist__row">
+            <span class="deflist__label">Site health results: outages, hourly uptime, fixed broken links</span>
+            <span class="deflist__value">13 months, or until the monitor or account is deleted</span>
+          </div>
+          <div class="deflist__row">
             <span class="deflist__label">Report sign-offs and branding</span>
             <span class="deflist__value">While the report or project exists</span>
           </div>
@@ -223,7 +228,7 @@ const { list: sections, byId: s } = docSections(toc);
         </div>
         <p>
           An hourly job deletes captures past their plan's retention window in bounded batches, files included. Current monitor baselines are retained for comparisons until replaced or their monitor is deleted. Deleting your account
-          removes your captures, sessions, API keys and push subscriptions with it, and your signup source, referral code, bonus balance,
+          removes your captures, sessions, API keys, push subscriptions and site health results with it, and your signup source, referral code, bonus balance,
           Pro trial record and the referrals you sent; billing records that we are obliged to keep remain in Stripe and in our accounts. If
           you joined through someone's referral link, their record of that referral stays with their account, without
           anything that points to you.

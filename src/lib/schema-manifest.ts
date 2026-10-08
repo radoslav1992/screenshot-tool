@@ -136,6 +136,12 @@ export const MIGRATIONS: MigrationManifest[] = [
     tables: ['plan_trials'],
     indexes: ['plan_trials_open', 'plan_trials_ip', 'plan_trials_started'],
   },
+  {
+    name: '0021_care_reports.sql',
+    optional: true,
+    tables: ['care_report_settings', 'care_reports', 'care_report_deliveries'],
+    indexes: ['care_report_settings_due', 'care_reports_user', 'review_reports_project'],
+  },
 ];
 
 /** The tables `/api/health` has always required. */

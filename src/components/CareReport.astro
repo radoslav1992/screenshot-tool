@@ -1,0 +1,401 @@
+---
+import { accentStyle, type ReportBranding } from '../lib/branding-rules';
+import { formatDay, formatDayTime, formatShortDay } from '../lib/care-period';
+import {
+  DOMAIN_WORDS,
+  KIND_LABELS,
+  SSL_WORDS,
+  NOTHING_NEEDED,
+  headlineFigures,
+  uptimeText,
+  type CareHealth,
+  type CareSnapshot,
+} from '../lib/care-rules';
+import { displayUrl } from '../lib/capture-options';
+import '../styles/adon/ai-report.css';
+import '../styles/adon/ai-care.css';
+interface Props {
+  snapshot: CareSnapshot;
+  /** The project's branding as review links apply it; null renders the default look. */
+  branding?: ReportBranding | null;
+  /**
+   * `owner` adds links to the owner's own monitor pages and highlight images,
+   * which sit behind sign-in; the client's view carries no capture URL at all.
+   */
+  mode: 'client' | 'owner';
+  reportId?: string;
+}
+const { snapshot: s, branding, mode, reportId } = Astro.props;
+const tz = s.period.timezone;
+const brand = s.project.brand || s.project.name;
+const figures = headlineFigures(s);
+const n = (value: number) => value.toLocaleString('en-US');
+let section = 0;
+const label = (name: string) => `[ ${String(++section).padStart(2, '0')} / ${name} ]`;
+const good = (status: string | undefined) => status === 'ok';
+const pathOf = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.pathname}${parsed.search}` || '/';
+  } catch {
+    return url;
+  }
+};
+const periodText = s.period.partial
+  ? `${formatDay(s.period.from, tz)} – ${formatDay(s.generatedAt, tz)}`
+  : s.period.label;
+const health = s.health as CareHealth[];
+---
+
+<article class="ai-report care-report" style={accentStyle(branding) || undefined}>
+  <div class="ai-report-label">
+    <span>[ WEBSITE CARE REPORT ]</span>
+    <span>{s.period.label.toUpperCase()}{s.period.partial ? ' / MONTH SO FAR' : ''}</span>
+  </div>
+  <header class="ai-report-head">
+    {
+      branding?.logoUrl && (
+        <img
+          class="ai-report-logo"
+          src={branding.logoUrl}
+          alt={`${brand} logo`}
+          width={branding.logoWidth || undefined}
+          height={branding.logoHeight || undefined}
+          decoding="async"
+        />
+      )
+    }
+    <span class="ai-report-eyebrow">{brand} · MONTHLY WEBSITE CARE</span>
+    <h1 class="ai-report-title">{s.project.name}</h1>
+    <p class="care-period">{s.period.partial ? `${s.period.label} so far` : s.period.label}</p>
+  </header>
+  <dl class="ai-report-facts">
+    <div>
+      <dt>PERIOD</dt>
+      <dd>{periodText}</dd>
+    </div>
+    <div>
+      <dt>GENERATED</dt>
+      <dd>{formatDay(s.generatedAt, tz)}</dd>
+    </div>
+    <div>
+      <dt>TIMEZONE</dt>
+      <dd>{tz}</dd>
+    </div>
+  </dl>
+  {Astro.slots.has('actions') && (
+    <div class="care-actions">
+      <slot name="actions" />
+    </div>
+  )}
+
+  <section class="care-section care-glance" aria-labelledby="care-glance">
+    <span>{label('AT A GLANCE')}</span>
+    <div>
+      <h2 id="care-glance">At a glance</h2>
+      <dl class="care-figures">
+        {
+          figures.map((figure) => (
+            <div class:list={['care-figure', { 'care-figure--attention': figure.attention }]}>
+              <dt>[ {figure.label} ]</dt>
+              <dd>
+                <strong>{figure.value}</strong>
+                {figure.note && <span>{figure.note}</span>}
+              </dd>
+            </div>
+          ))
+        }
+      </dl>
+      <p class="care-summary">{s.summary.text}</p>
+    </div>
+  </section>
+
+  <section class="care-section" aria-labelledby="care-changes">
+    <span>{label('CHANGES')}</span>
+    <div>
+      <h2 id="care-changes">Changes this month</h2>
+      {!s.monitors.length && <p class="care-empty">No pages of this website were monitored in this period.</p>}
+      <div class="care-monitors">
+        {
+          s.monitors.map((m) => (
+            <article class="care-monitor">
+              <header>
+                <h3>
+                  {mode === 'owner' ? <a href={`/app/watches/${m.id}`}>{m.label}</a> : m.label}
+                </h3>
+                <p class="care-url">{displayUrl(m.url)}</p>
+                <p class="care-stats">
+                  <span>[ {KIND_LABELS[m.kind] ?? m.kind} ]</span>
+                  <span>{n(m.checks)} check{m.checks === 1 ? '' : 's'}</span>
+                  <span class:list={{ 'care-stat--hot': m.changes > 0 }}>
+                    {n(m.changes)} change{m.changes === 1 ? '' : 's'}
+                  </span>
+                  {m.failed > 0 && <span>{n(m.failed)} failed</span>}
+                </p>
+              </header>
+              {m.baselineApprovedAt && (
+                <p class="care-note">Baseline updated after approval on {formatShortDay(m.baselineApprovedAt, tz)}.</p>
+              )}
+              {m.kind === 'visual' && m.changed.length > 0 && (
+                <ol class="care-changes">
+                  {m.changed.map((c) => (
+                    <li>
+                      <time datetime={c.at}>{formatDayTime(c.at, tz)}</time>
+                      <span class="care-change">
+                        {c.pct !== null && <strong>{c.pct < 0.01 ? '<0.01' : c.pct}% changed</strong>}
+                        {c.areas > 0 && <span> · {c.areas} changed {c.areas === 1 ? 'area' : 'areas'}</span>}
+                        {c.summary && !/^[\d.<]+% changed$/.test(c.summary) && (
+                          <span class="care-change__text">{c.summary.replace(/^[\d.<]+% changed\s*·?\s*/, '')}</span>
+                        )}
+                      </span>
+                      {mode === 'owner' && c.highlight && reportId && (
+                        <a class="care-owner-link" href={`/api/care/${reportId}/highlight?run=${encodeURIComponent(c.runId)}`}>
+                          Highlight ↗
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {m.more > 0 && <p class="care-more">and {n(m.more)} more change{m.more === 1 ? '' : 's'}</p>}
+              {m.kind !== 'visual' && m.changes > 0 && <p class="care-more">Findings are listed under SEO and content checks.</p>}
+              {m.changes === 0 && m.checks > 0 && <p class="care-more">No changes found.</p>}
+            </article>
+          ))
+        }
+      </div>
+      {s.monitorsMore > 0 && <p class="care-more">and {n(s.monitorsMore)} more monitored page{s.monitorsMore === 1 ? '' : 's'}</p>}
+    </div>
+  </section>
+
+  {
+    s.signoffs && (
+      <section class="care-section" aria-labelledby="care-signoffs">
+        <span>{label('SIGN-OFFS')}</span>
+        <div>
+          <h2 id="care-signoffs">Client sign-offs</h2>
+          {!s.signoffs.decided.length && !s.signoffs.awaiting.length && (
+            <p class="care-empty">No review reports were decided or waiting in this period.</p>
+          )}
+          {s.signoffs.decided.length > 0 && (
+            <ul class="care-rows">
+              {s.signoffs.decided.map((d) => (
+                <li>
+                  <span class:list={['care-tag', `care-tag--${d.state}`]}>
+                    [ {d.state === 'approved' ? 'APPROVED' : 'CHANGES REQUESTED'} ]
+                  </span>
+                  <span class="care-rows__main">{d.title}</span>
+                  <span class="care-rows__meta">
+                    {d.name ? `by ${d.name} · ` : ''}
+                    {formatShortDay(d.at, tz)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {s.signoffs.awaiting.length > 0 && (
+            <>
+              <h3 class="care-subhead">Waiting for sign-off</h3>
+              <ul class="care-rows">
+                {s.signoffs.awaiting.map((a) => (
+                  <li>
+                    <span class="care-tag care-tag--awaiting">[ AWAITING ]</span>
+                    <span class="care-rows__main">{a.title}</span>
+                    <span class="care-rows__meta">shared {formatShortDay(a.createdAt, tz)}</span>
+                  </li>
+                ))}
+              </ul>
+              {s.signoffs.awaitingMore > 0 && <p class="care-more">and {n(s.signoffs.awaitingMore)} more</p>}
+            </>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  {
+    s.seo.length > 0 && (
+      <section class="care-section" aria-labelledby="care-seo">
+        <span>{label('SEO & CONTENT')}</span>
+        <div>
+          <h2 id="care-seo">SEO and content checks</h2>
+          <div class="care-monitors">
+            {s.seo.map((m) => (
+              <article class="care-monitor">
+                <header>
+                  <h3>{mode === 'owner' ? <a href={`/app/watches/${m.id}`}>{m.label}</a> : m.label}</h3>
+                  <p class="care-url">{displayUrl(m.url)}</p>
+                  <p class="care-stats">
+                    <span>[ {KIND_LABELS[m.kind] ?? m.kind} ]</span>
+                    <span>{n(m.checks)} check{m.checks === 1 ? '' : 's'}</span>
+                    <span class:list={{ 'care-stat--hot': m.flagged > 0 }}>{n(m.flagged)} flagged</span>
+                  </p>
+                </header>
+                {m.findings.length > 0 ? (
+                  <ol class="care-changes">
+                    {m.findings.map((f) => (
+                      <li>
+                        <time datetime={f.at}>{formatDayTime(f.at, tz)}</time>
+                        <span class="care-change">
+                          {f.lines.map((line) => (
+                            <span class="care-change__line">{line}</span>
+                          ))}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p class="care-more">Nothing was flagged.</p>
+                )}
+                {m.more > 0 && <p class="care-more">and {n(m.more)} more finding{m.more === 1 ? '' : 's'}</p>}
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  {
+    health.length > 0 && (
+      <section class="care-section" aria-labelledby="care-health">
+        <span>{label('SITE HEALTH')}</span>
+        <div>
+          <h2 id="care-health">Site health</h2>
+          <div class="care-sites">
+            {health.map((site) => (
+              <article class="care-site">
+                <h3>{displayUrl(site.origin)}</h3>
+                <dl class="care-health">
+                  <div class:list={{ 'care-health--bad': site.uptime && site.uptime.pct !== null && site.uptime.pct < 99.5 }}>
+                    <dt>[ UPTIME ]</dt>
+                    <dd>
+                      <strong>{site.uptime ? uptimeText(site.uptime.pct) : '—'}</strong>
+                      <span>
+                        {site.uptime
+                          ? `${n(site.uptime.checks)} checks · ${site.uptime.incidents.length + (site.incidentsMore ?? 0)} incident${site.uptime.incidents.length + (site.incidentsMore ?? 0) === 1 ? '' : 's'}`
+                          : 'Not checked'}
+                      </span>
+                    </dd>
+                  </div>
+                  <div class:list={{ 'care-health--bad': site.ssl && !good(site.ssl.status) && site.ssl.status !== 'unknown' }}>
+                    <dt>[ SSL ]</dt>
+                    <dd>
+                      <strong>{site.ssl ? SSL_WORDS[site.ssl.status] : '—'}</strong>
+                      <span>
+                        {site.ssl?.validTo ? `Valid to ${formatDay(site.ssl.validTo, tz)}` : site.ssl?.detail || 'Not checked'}
+                        {site.ssl?.issuer && ` · ${site.ssl.issuer}`}
+                      </span>
+                    </dd>
+                  </div>
+                  <div class:list={{ 'care-health--bad': site.domain && !good(site.domain.status) && site.domain.status !== 'unknown' }}>
+                    <dt>[ DOMAIN ]</dt>
+                    <dd>
+                      <strong>{site.domain ? DOMAIN_WORDS[site.domain.status] : '—'}</strong>
+                      <span>
+                        {site.domain?.expiresAt
+                          ? `${site.domain.domain} · renews by ${formatDay(site.domain.expiresAt, tz)}`
+                          : site.domain?.detail || 'Not checked'}
+                        {site.domain?.registrar && ` · ${site.domain.registrar}`}
+                      </span>
+                    </dd>
+                  </div>
+                  <div class:list={{ 'care-health--bad': site.links && site.links.broken.length > 0 }}>
+                    <dt>[ LINKS ]</dt>
+                    <dd>
+                      <strong>
+                        {site.links ? `${n(site.links.broken.length + (site.brokenMore ?? 0))} broken` : '—'}
+                      </strong>
+                      <span>
+                        {site.links
+                          ? `${n(site.links.checked)} links on ${n(site.links.pages)} pages · ${n(site.links.fixed)} fixed`
+                          : 'Not checked'}
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
+                {site.uptime && site.uptime.incidents.length > 0 && (
+                  <>
+                    <h4 class="care-subhead">Incidents</h4>
+                    <ul class="care-rows">
+                      {site.uptime.incidents.map((incident) => (
+                        <li>
+                          <span class:list={['care-tag', incident.endedAt ? 'care-tag--resolved' : 'care-tag--changes']}>
+                            [ {incident.endedAt ? 'RESOLVED' : 'ONGOING'} ]
+                          </span>
+                          <span class="care-rows__main">
+                            {formatDayTime(incident.startedAt, tz)}
+                            {incident.endedAt ? ` · down ${n(incident.minutes)} min` : ' · still down'}
+                          </span>
+                          {incident.detail && <span class="care-rows__meta">{incident.detail}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                    {(site.incidentsMore ?? 0) > 0 && <p class="care-more">and {n(site.incidentsMore!)} more</p>}
+                  </>
+                )}
+                {site.links && site.links.broken.length > 0 && (
+                  <>
+                    <h4 class="care-subhead">Broken links to fix</h4>
+                    <ul class="care-rows care-rows--links">
+                      {site.links.broken.map((link) => (
+                        <li>
+                          <span class="care-tag care-tag--changes">[ {link.status ?? 'ERROR'} ]</span>
+                          <span class="care-rows__main">{link.url}</span>
+                          <span class="care-rows__meta">
+                            on {pathOf(link.page)}
+                            {link.reason && ` · ${link.reason}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {(site.brokenMore ?? 0) > 0 && <p class="care-more">and {n(site.brokenMore!)} more</p>}
+                  </>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  <section class="care-section care-next" aria-labelledby="care-next">
+    <span>{label('NEXT STEPS')}</span>
+    <div>
+      <h2 id="care-next">Next steps</h2>
+      {
+        s.nextSteps.length ? (
+          <ol class="care-steps">
+            {s.nextSteps.map((step, i) => (
+              <li>
+                <span aria-hidden="true">[ {String(i + 1).padStart(2, '0')} ]</span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p class="care-clear">
+            <span class="ai-dot" aria-hidden="true" /> {NOTHING_NEEDED}
+          </p>
+        )
+      }
+    </div>
+  </section>
+
+  <footer class="ai-report-foot">
+    {branding?.footer && <p class="ai-report-foot-line">{branding.footer}</p>}
+    Figures cover {s.period.partial ? 'the month so far' : s.period.label} in {tz}, as recorded when this report was generated on{' '}
+    {formatDayTime(s.generatedAt, tz)}. A check that did not run is not evidence that a page was unchanged.
+    {
+      branding?.attribution !== false && (
+        <p class="ai-report-attribution">
+          Shared with{' '}
+          <a href="/client-sign-off?ref=care-report" rel="noreferrer">
+            Easy Screen Capture
+          </a>
+        </p>
+      )
+    }
+  </footer>
+</article>

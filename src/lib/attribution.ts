@@ -93,7 +93,7 @@ function isExternal(host: string, own: string): boolean {
  * one-time links carry tokens or belong to someone signed in; /join keeps its
  * own cookie.
  */
-const NOT_LANDINGS = /^\/(?:app|api|v1|f|r|brand|join|verify|reset-password|_astro|_image)(?:\/|$)/;
+const NOT_LANDINGS = /^\/(?:app|api|v1|f|r|care|brand|join|verify|reset-password|_astro|_image)(?:\/|$)/;
 
 export function isLandingPath(path: string): boolean {
   // A dot in the last segment is a file (sw.js, manifest.webmanifest, icons).

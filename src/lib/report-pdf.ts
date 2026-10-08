@@ -52,6 +52,16 @@ export async function reportPdf(project: Project, report: Report): Promise<Uint8
     : '';
   const footer = branding?.footer ? `<footer>${escapeHtml(branding.footer)}</footer>` : '';
   const html = `<!doctype html><meta charset="utf-8"><style>@page{size:A4;margin:16mm}body{font:14px Arial,sans-serif;color:#20251e}header{border-bottom:3px solid ${accent};padding-bottom:20px}h1{font-size:34px}p{overflow-wrap:anywhere;white-space:pre-wrap}section.capture{break-before:page}section.capture p{font-size:11px}img{width:100%;height:220mm;object-fit:contain;object-position:top left}img.logo{display:block;width:auto;height:auto;max-width:60mm;max-height:16mm;margin-bottom:8mm}section.signoff{break-inside:avoid}footer{margin-top:10mm;font-size:11px;color:#555}</style><header>${logo ? `<img class="logo" src="${logo}" alt="">` : ''}<p>${escapeHtml(project.brand || project.name)} · WEBSITE REVIEW</p><h1>${escapeHtml(report.title)}</h1><p>${escapeHtml(project.name)} · ${escapeHtml(report.created_at)}</p></header>${signoffHtml}<h2>Review notes</h2><p>${escapeHtml(report.notes)}</p>${parts.join('')}${footer}`;
+  return printPdf(html);
+}
+
+/**
+ * Prints a self-contained HTML document to an A4 PDF in the browser: no
+ * script, and nothing loaded but data: URIs, so everything the page shows has
+ * to be in it. Review reports and care reports (lib/care-pdf.ts) both print
+ * through here.
+ */
+export async function printPdf(html: string): Promise<Uint8Array> {
   const puppeteer = (await import('@cloudflare/puppeteer')).default;
   const lease = await acquireBrowser(puppeteer);
   let success = false;

@@ -1,7 +1,7 @@
 import { logoDataUri, projectBranding } from './branding';
 import { escapeHtml, printPdf } from './report-pdf';
 import { displayUrl } from './capture-options';
-import { formatDay, formatDayTime, formatShortDay } from './care-period';
+import { formatDay, formatDayTime, formatShortDay, periodRange } from './care-period';
 import {
   DOMAIN_WORDS,
   KIND_LABELS,
@@ -24,6 +24,7 @@ import type { Project } from './projects';
 
 const e = (value: string | number | null | undefined) => escapeHtml(String(value ?? ''));
 const n = (value: number) => value.toLocaleString('en-US');
+const count = (value: number, word: string) => `${n(value)} ${word}${value === 1 ? '' : 's'}`;
 
 export function careReportHtml(s: CareSnapshot, branding: ReportBranding | null, logo: string | null): string {
   const tz = s.period.timezone;
@@ -49,7 +50,7 @@ export function careReportHtml(s: CareSnapshot, branding: ReportBranding | null,
           : '';
       const more = m.more ? `<p class="muted">and ${n(m.more)} more</p>` : '';
       const approved = m.baselineApprovedAt ? `<p>Baseline updated after approval on ${e(formatShortDay(m.baselineApprovedAt, tz))}.</p>` : '';
-      return `<div class="item"><h3>${e(m.label)}</h3><p class="muted">${e(displayUrl(m.url))} · ${e(KIND_LABELS[m.kind] ?? m.kind)} · ${n(m.checks)} checks · ${n(m.changes)} changes${m.failed ? ` · ${n(m.failed)} failed` : ''}</p>${approved}${changes}${more}</div>`;
+      return `<div class="item"><h3>${e(m.label)}</h3><p class="muted">${e(displayUrl(m.url))} · ${e(KIND_LABELS[m.kind] ?? m.kind)} · ${count(m.checks, 'check')} · ${count(m.changes, 'change')}${m.failed ? ` · ${n(m.failed)} failed` : ''}</p>${approved}${changes}${more}</div>`;
     })
     .join('');
   const signoffs = s.signoffs
@@ -70,7 +71,7 @@ export function careReportHtml(s: CareSnapshot, branding: ReportBranding | null,
         s.seo
           .map(
             (m) =>
-              `<div class="item"><h3>${e(m.label)}</h3><p class="muted">${e(displayUrl(m.url))} · ${e(KIND_LABELS[m.kind] ?? m.kind)} · ${n(m.checks)} checks · ${n(m.flagged)} flagged</p>${
+              `<div class="item"><h3>${e(m.label)}</h3><p class="muted">${e(displayUrl(m.url))} · ${e(KIND_LABELS[m.kind] ?? m.kind)} · ${count(m.checks, 'check')} · ${n(m.flagged)} flagged</p>${
                 m.findings.length
                   ? `<ol>${m.findings.map((f) => `<li><time>${e(formatDayTime(f.at, tz))}</time><br>${f.lines.map(e).join('<br>')}</li>`).join('')}</ol>`
                   : '<p class="muted">Nothing was flagged.</p>'
@@ -108,7 +109,7 @@ export function careReportHtml(s: CareSnapshot, branding: ReportBranding | null,
 header{border-bottom:3px solid ${accent};padding-bottom:14px;margin-bottom:14px}
 img.logo{display:block;max-width:60mm;max-height:16mm;margin-bottom:6mm}
 .eyebrow{font:10px monospace;letter-spacing:.06em;text-transform:uppercase;color:#555}
-h1{font-size:28px;margin:6px 0 2px}h2{font-size:17px;margin:18px 0 8px;padding-top:8px;border-top:1px solid #ccc}h3{font-size:13px;margin:8px 0 2px}
+h1{font-size:28px;margin:6px 0 2px}h2{font-size:17px;margin:18px 0 8px;padding-top:8px;border-top:1px solid #ccc;break-after:avoid}h3{font-size:13px;margin:8px 0 2px;break-after:avoid}
 p{margin:4px 0;overflow-wrap:anywhere}.muted{color:#555}
 .figures{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #ccc;border-left:1px solid #ccc}
 .figure{border-right:1px solid #ccc;border-bottom:1px solid #ccc;padding:8px 10px}.figure span{display:block;font:9px monospace}
@@ -120,7 +121,7 @@ ol,ul{margin:4px 0;padding-left:18px}li{margin:3px 0;overflow-wrap:anywhere}time
 table{border-collapse:collapse;width:100%;margin-top:4px}th,td{text-align:left;padding:3px 6px;border-bottom:1px solid #eee;vertical-align:top}th{width:22mm;font-weight:600}
 .steps li{font-size:13px;margin:6px 0}section{break-inside:auto}
 footer{margin-top:12mm;font-size:10px;color:#555}
-</style><header>${logo ? `<img class="logo" src="${logo}" alt="">` : ''}<p class="eyebrow">${e(brand)} · Website care report</p><h1>${e(s.project.name)}</h1><p>${e(s.period.partial ? `${s.period.label} so far` : s.period.label)} · generated ${e(formatDay(s.generatedAt, tz))} · ${e(tz)}</p></header>
+</style><header>${logo ? `<img class="logo" src="${logo}" alt="">` : ''}<p class="eyebrow">${e(brand)} · Website care report</p><h1>${e(s.project.name)}</h1><p>${e(s.period.partial ? `${s.period.label} so far` : s.period.label)} (${e(periodRange(s.period, s.generatedAt))}) · generated ${e(formatDay(s.generatedAt, tz))} · ${e(tz)}</p></header>
 ${section('At a glance', `<div class="figures">${figures}</div><p class="summary">${e(s.summary.text)}</p>`)}
 ${section('Changes this month', (monitors || '<p class="muted">No pages of this website were monitored in this period.</p>') + (s.monitorsMore ? `<p class="muted">and ${n(s.monitorsMore)} more monitored pages</p>` : ''))}
 ${signoffs}${seo}${health}${section('Next steps', steps)}<footer>${footer}</footer>`;

@@ -130,6 +130,17 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* Text links that must still be 44 px to tap: the hit area grows, the line does not. */
+.care-monitor h3 a,
+.care-report .ai-report-attribution a {
+  display: inline-block;
+  padding-block: 12px;
+  margin-block: -12px;
+}
+.care-report .ai-report-attribution a {
+  padding-block: 16px;
+  margin-block: -16px;
+}
 .care-url {
   font-size: 13px;
   color: var(--muted);
@@ -142,9 +153,10 @@
   margin-top: 4px;
   font: 11px/1.5 var(--mono);
 }
+/* Ink, not orange: on a branded report the accent underlines what changed. */
 .care-stat--hot {
-  color: var(--theme-text-sm);
   font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--report-accent, var(--theme));
 }
 .care-changes {
   display: grid;
@@ -315,6 +327,10 @@
   }
 }
 @media (max-width: 767px) {
+  /* Two facts a row: the third takes the whole row rather than leave a hole. */
+  .care-report .ai-report-facts > div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
   .care-section {
     grid-template-columns: 1fr;
   }
@@ -358,10 +374,23 @@
 }
 /* On paper: no notice bar or actions, nothing filled but the accent rules,
  * and no section split across a page break where it can be helped. */
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
 @media print {
+  .care-section > span,
+  .care-section h2,
+  .care-subhead {
+    break-after: avoid;
+  }
   .care-actions,
   .care-owner-link {
     display: none !important;
+  }
+  .care-report,
+  .care-report .ai-report-facts {
+    background: none;
   }
   .care-report .ai-report-head {
     padding: 0 0 18px;

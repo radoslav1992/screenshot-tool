@@ -211,6 +211,18 @@ export function formatShortDay(value: string | null | undefined, timezone: strin
   return `${p.day} ${MONTHS[p.month - 1]}`;
 }
 
+/**
+ * The days a period covers on the client's calendar: "1–30 Sep 2026" for a
+ * month, "1–8 Oct 2026" for the month so far.
+ */
+export function periodRange(period: Pick<CarePeriod, 'from' | 'to' | 'timezone' | 'partial'>, generatedAt: string): string {
+  const first = localParts(period.timezone, new Date(period.from));
+  const last = localParts(period.timezone, new Date(period.partial ? generatedAt : Date.parse(period.to) - 1));
+  if (first.year === last.year && first.month === last.month)
+    return `${first.day}–${last.day} ${MONTHS[last.month - 1]} ${last.year}`;
+  return `${first.day} ${MONTHS[first.month - 1]} – ${last.day} ${MONTHS[last.month - 1]} ${last.year}`;
+}
+
 /** "12 Sep 2026, 14:05" in a timezone. */
 export function formatDayTime(value: string | null | undefined, timezone: string, fallback = '—'): string {
   const at = value ? new Date(value) : null;

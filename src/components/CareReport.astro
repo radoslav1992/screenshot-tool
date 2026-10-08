@@ -1,6 +1,6 @@
 ---
 import { accentStyle, type ReportBranding } from '../lib/branding-rules';
-import { formatDay, formatDayTime, formatShortDay } from '../lib/care-period';
+import { formatDay, formatDayTime, formatShortDay, periodRange } from '../lib/care-period';
 import {
   DOMAIN_WORDS,
   KIND_LABELS,
@@ -41,9 +41,7 @@ const pathOf = (url: string) => {
     return url;
   }
 };
-const periodText = s.period.partial
-  ? `${formatDay(s.period.from, tz)} – ${formatDay(s.generatedAt, tz)}`
-  : s.period.label;
+const periodText = periodRange(s.period, s.generatedAt);
 const health = s.health as CareHealth[];
 ---
 
@@ -142,8 +140,10 @@ const health = s.health as CareHealth[];
                     <li>
                       <time datetime={c.at}>{formatDayTime(c.at, tz)}</time>
                       <span class="care-change">
-                        {c.pct !== null && <strong>{c.pct < 0.01 ? '<0.01' : c.pct}% changed</strong>}
-                        {c.areas > 0 && <span> · {c.areas} changed {c.areas === 1 ? 'area' : 'areas'}</span>}
+                        <span>
+                          {c.pct !== null && <strong>{c.pct < 0.01 ? '<0.01' : c.pct}% changed</strong>}
+                          {c.areas > 0 && <> · {c.areas} changed {c.areas === 1 ? 'area' : 'areas'}</>}
+                        </span>
                         {c.summary && !/^[\d.<]+% changed$/.test(c.summary) && (
                           <span class="care-change__text">{c.summary.replace(/^[\d.<]+% changed\s*·?\s*/, '')}</span>
                         )}

@@ -460,6 +460,9 @@ try {
     for (const zone of ['Europe/Sofia', 'UTC', 'America/Argentina/Buenos_Aires', 'Etc/GMT+5']) assert.equal(p.validTimezone(zone), zone);
     for (const zone of ['', 'Mars/Base', '+02:00', 'Europe/Sofia; DROP', 'x'.repeat(65)]) assert.equal(p.validTimezone(zone), null, zone);
     assert.equal(p.formatDayTime('2026-09-30T21:30:00Z', 'Europe/Sofia'), '1 Oct 2026, 00:30');
+    assert.equal(p.periodRange(p.monthPeriod('Europe/Sofia', '2026-09'), NOW.toISOString()), '1–30 Sep 2026');
+    assert.equal(p.periodRange(soFar, NOW.toISOString()), '1–8 Oct 2026', 'the month so far ends today');
+    assert.equal(p.periodRange(p.monthPeriod('Pacific/Kiritimati', '2026-12'), NOW.toISOString()), '1–31 Dec 2026');
     // Quiet monitor runs are pruned hourly; in every timezone, a 31-day month's first quiet check is still
     // there when its report is made on the 1st at 09:00, so "checks run" counts the whole month.
     const keep = Number(/const QUIET_RUN_DAYS = (\d+);/.exec(readFileSync(join(root, 'src/lib/retention.ts'), 'utf8'))[1]);

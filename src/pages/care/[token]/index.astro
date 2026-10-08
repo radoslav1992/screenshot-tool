@@ -111,6 +111,9 @@ const title = !s ? 'Report unavailable' : whiteLabel ? `${brand} · Website care
     }
   }
   @media print {
+    :global(body.care-body) {
+      background: #fff;
+    }
     .care-shared {
       padding: 0;
       width: auto;

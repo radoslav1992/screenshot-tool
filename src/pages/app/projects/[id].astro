@@ -367,9 +367,9 @@ const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c
                 </div>
                 <p role="status"></p>
               </form>
-              <p class="small">
+              <nav class="link-row" aria-label="Care reports">
                 <a href={`/app/projects/${project.id}/care`}>Reports, links and the monthly email →</a>
-              </p>
+              </nav>
             </>
           ) : (
             <>

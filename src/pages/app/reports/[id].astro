@@ -6,6 +6,7 @@ import ReviewReport from '../../../components/ReviewReport.astro';
 import { projectsReady, ownReport, reportCaptures } from '../../../lib/projects';
 import { projectBranding } from '../../../lib/branding';
 import { SIGNOFF_LABELS, currentSignoff, signoffHistory, signoffsReady } from '../../../lib/signoff';
+import { reportBaselines } from '../../../lib/approval-baseline';
 import { getPlan } from '../../../lib/plans';
 import { canSendEmail } from '../../../lib/mailer';
 import { formatDateTime } from '../../../lib/dates';
@@ -19,7 +20,7 @@ try {
 }
 const { project, report } = data;
 const signoffs = await signoffsReady();
-const [captures, link, comments, branding, signoff, history] = await Promise.all([
+const [captures, link, comments, branding, signoff, history, baselines] = await Promise.all([
   reportCaptures(report, project.user_id),
   env.DB.prepare('SELECT expires_at,access_count,last_access_at FROM report_links WHERE report_id=?')
     .bind(report.id)
@@ -30,6 +31,13 @@ const [captures, link, comments, branding, signoff, history] = await Promise.all
   projectBranding(project),
   signoffs ? currentSignoff(report.id) : undefined,
   signoffs ? signoffHistory(report.id) : [],
+  // What an approval pins on the owner's monitors. An extra: the page opens without it.
+  signoffs
+    ? reportBaselines(report, project).catch((error) => {
+        console.error('[report] monitor baselines unavailable', error);
+        return null;
+      })
+    : null,
 ]);
 Astro.response.headers.set('cache-control', 'private, no-store');
 const fields = { project_id: project.id, report_id: report.id };
@@ -38,6 +46,10 @@ const expired = !!link && Date.parse(link.expires_at) < Date.now();
 const replaceWarning =
   'Replace the review link? The link you already sent will stop working, and its view count restarts.';
 const views = link ?`${link.access_count.toLocaleString()} page view${link.access_count === 1 ? '' : 's'}` : '';
+// Monitors now compared against this report's approved screenshots, once it has been approved.
+const pinnedBy = baselines && history.some((h) => h.decision === 'approved') ? baselines.pinned : [];
+const baselineNote = Boolean(baselines?.pinnable) && pinnedBy.length === 0;
+const notPinned = baselines && signoff?.state === 'approved' ? baselines.skipped : [];
 ---
 
 <AppShell title={report.title} tab="projects">
@@ -173,6 +185,31 @@ const views = link ?`${link.access_count.toLocaleString()} page view${link.acces
             )}
           </p>
           {signoff.note && <p class="report-notes">{signoff.note}</p>}
+          {pinnedBy.length > 0 && (
+            <div class="approval-baselines">
+              <p class="small">
+                <strong>
+                  Pinned as the baseline on {pinnedBy.length} monitor{pinnedBy.length === 1 ? '' : 's'}
+                </strong>{' '}
+                · future checks compare against the approved screenshots. Unpin on the monitor page to undo.
+              </p>
+              <ul>
+                {pinnedBy.map((monitor) => (
+                  <li>
+                    <a href={`/app/watches/${monitor.watchId}`}>{monitor.name}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {notPinned.length > 0 && (
+            <p class="small muted">
+              Not pinned: {notPinned.map((skipped) => `${skipped.name}, ${skipped.why}`).join('; ')}.
+            </p>
+          )}
+          {baselineNote && (
+            <p class="small muted">Approving makes these screenshots the reference that future checks compare against.</p>
+          )}
           {history.length > 0 && (
             <details>
               <summary>History · {history.length === 50 ? 'latest 50' : history.length}</summary>

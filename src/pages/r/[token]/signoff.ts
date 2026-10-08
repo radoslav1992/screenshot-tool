@@ -4,6 +4,7 @@ import { toHttpError } from '../../../lib/errors';
 import { clientIp } from '../../../lib/auth-throttle';
 import { afterResponse } from '../../../lib/background';
 import { notifySignoff, signoffStatus, signoffView, submitSignoff } from '../../../lib/signoff';
+import { pinApprovedCaptures } from '../../../lib/approval-baseline';
 export const prerender = false;
 /**
  * POST /r/:token/signoff — a client's decision on a shared report. No account:
@@ -12,6 +13,11 @@ export const prerender = false;
  * A plain form post, so it works without JavaScript. It redirects back to the
  * report with a fixed status code that the page turns into a fixed message;
  * nothing from the request is echoed. `Accept: application/json` gets JSON.
+ *
+ * An approval also pins the report's monitor captures as their monitors'
+ * baselines (approval-baseline.ts). That runs once the decision is saved and
+ * never throws, so the decision stands whatever happens to the pins; what was
+ * pinned and what was not goes to the owner, never back to the client.
  */
 export const POST: APIRoute = async ({ params, request, locals }) => {
   const token = params.token ?? '';
@@ -31,9 +37,10 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   try {
     assertSameOrigin(request);
     const { report, project, signoff } = await submitSignoff(token, await readBody(request), clientIp(request));
+    const pins = await pinApprovedCaptures(report, project, signoff);
     await afterResponse(
       locals,
-      notifySignoff(report, project, signoff, new URL(request.url).origin).catch((error) =>
+      notifySignoff(report, project, signoff, new URL(request.url).origin, pins).catch((error) =>
         console.error('[signoff] owner notification failed', error),
       ),
     );

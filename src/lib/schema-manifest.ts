@@ -136,6 +136,12 @@ export const MIGRATIONS: MigrationManifest[] = [
     tables: ['plan_trials'],
     indexes: ['plan_trials_open', 'plan_trials_ip', 'plan_trials_started'],
   },
+  {
+    name: '0022_baseline_approvals.sql',
+    optional: true,
+    tables: ['baseline_approvals'],
+    indexes: ['baseline_approvals_watch'],
+  },
 ];
 
 /** The tables `/api/health` has always required. */

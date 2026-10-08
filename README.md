@@ -135,6 +135,7 @@ npx wrangler kv namespace create RATE
    | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
    | `db/0018-upgrade.sql` | web push for browsers and the installed app |
    | `db/0019-upgrade.sql` | 14-day Pro trials |
+   | `db/0022-upgrade.sql` | which client approval pinned a monitor baseline |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -741,6 +742,47 @@ applied the column is probed and pinning stays hidden (`pin`/`unpin` answer `503
 checks run exactly as before. Apply it with `npm run db:migrate`, or paste `db/0014-upgrade.sql` into
 the D1 console. `npm run highlights:check` covers the clustering in Chromium and the check flow with and
 without the column.
+
+### Client approval pins the baseline (0022)
+
+When a client approves a shared review report, every capture in it that one of the report owner's monitors
+took becomes that monitor's pinned baseline, so later checks compare against exactly what was approved
+(`pinApprovedCaptures` in `lib/approval-baseline.ts`, called by `POST /r/:token/signoff` once the decision
+is saved).
+
+- **Which monitor.** A capture is a monitor's when that monitor's check took it (`watch_runs.capture_id`) or
+  it is or was its baseline (`watches.baseline_capture_id`, `watch_runs.baseline_capture_id`) — the test
+  `pinBaseline` applies. Only monitors, runs and captures of the project's owner are read or written, so
+  someone else's capture or monitor is never touched, even where a run names it.
+- **Several from one monitor** (a before/after pair): the newest by `captures.created_at` is pinned, since
+  approving accepts the "after". A monitor whose only capture is the "before" of a newer screenshot from
+  elsewhere is not pinned: that would compare every check against the version the client moved away from.
+- **Never fails a sign-off.** The decision is recorded first, and `pinBaseline`'s rules (`pinRefusal` in
+  `lib/baseline-pin.ts`) skip a capture instead of throwing: its files are gone, it predates a capture engine
+  update, its monitor was deleted, pinning is not set up (no 0014), or the write failed. Each skip has a reason.
+- **Only `approved` pins.** Requesting changes and the owner's reset change nothing; an approval's pin stays until
+  the owner unpins it, and a later approval of another report pins again. The same approval twice writes
+  nothing the second time (the update is conditional), so the pinned-check alerting is not restarted.
+- **Provenance.** Each pin an approval writes adds a `baseline_approvals` row (watch, capture, report, sign-off
+  and `pinned_at`, exactly the `baseline_pinned_at` it wrote). The monitor page says "Pinned by client approval:
+  Jane Doe approved “Homepage refresh” on 8 Oct 2026", with a link to the report, only while the baseline is
+  still that capture with that pin time: a manual pin, an unpin or an engine refresh ends it.
+  `GET /api/watches/:id` adds an optional `pinned_by_approval: {name, report_id, report_title, approved_at}` on
+  the same rule; nothing else in the monitor JSON changes, so the iOS app decodes it as before.
+- **Owner email.** On approval it lists each monitor whose baseline was pinned, with a link, says "Unpin it on
+  the monitor page" to undo it, and lists any skipped and why. Plain text, as all mail here is.
+- **Screens.** The shared page adds one neutral line beside Approve — "Approving makes these screenshots the
+  reference that future checks compare against." — only when approving would pin at least one monitor; it names
+  none. The owner's report page shows the same note, then "Pinned as the baseline on N monitors" linking to them
+  (monitors now pinned to the capture the approval pins, whoever pinned it), and "Not pinned: …" while approved.
+
+Migration `0022_baseline_approvals.sql` is optional. Without it an approval still pins (that needs only 0014),
+and the monitor page and API just do not name the approval; without 0014 nothing is pinned and the shared page
+says nothing about it. Apply it with `npm run db:migrate`, or paste `db/0022-upgrade.sql` into the D1 console.
+Its rows go with their monitor, report or sign-off (`ON DELETE CASCADE`), and account deletion removes them by
+name. `npm run approval:check` covers the mapping, newest-wins, owner isolation, every skip, idempotency,
+provenance and what supersedes it, the email, the three pages rendered from their sources, account deletion,
+and both no-migration fallbacks against SQLite.
 
 ### Accounts: password reset and confirmation emails
 

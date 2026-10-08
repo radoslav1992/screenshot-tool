@@ -8,6 +8,7 @@ import { captureJobsReady } from './capture-jobs';
 import { growthCleanup } from './growth';
 import { webPushTablesReady } from './push';
 import { trialCleanup } from './trials';
+import { approvalsReady } from './approval-baseline';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -104,6 +105,15 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
         ).bind(userId),
       ]
     : [];
+  // Which client approval pinned which baseline (migration 0022), before the
+  // sign-offs, reports and monitors its rows point at.
+  const approvalCleanup = (await approvalsReady())
+    ? [
+        env.DB.prepare(
+          'DELETE FROM baseline_approvals WHERE watch_id IN(SELECT id FROM watches WHERE user_id=?) OR report_id IN(SELECT r.id FROM review_reports r JOIN projects p ON p.id=r.project_id WHERE p.user_id=?)',
+        ).bind(userId, userId),
+      ]
+    : [];
   // Jobs before batches: a job points at its batch.
   const jobCleanup = (await captureJobsReady())
     ? [
@@ -135,6 +145,7 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
     ...growthRows,
     ...trialRows,
     ...collaborationCleanup,
+    ...approvalCleanup,
     ...signoffCleanup,
     ...brandingCleanup,
     ...noiseCleanup,

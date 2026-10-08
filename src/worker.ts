@@ -10,6 +10,7 @@ import { RULE_ONLY_FREQUENCY } from './lib/plans';
 import { runWatchdog } from './lib/ops-watchdog';
 import { runTrialLifecycle } from './lib/trials';
 import { runSiteHealthSweep, runUptimeChecks } from './lib/site-health';
+import { runCareReports } from './lib/care-reports';
 
 /**
  * Worker entrypoint.
@@ -123,6 +124,17 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
   ctx.waitUntil(retryAlerts(siteOrigin()).catch(error => console.error('[alerts] retry sweep failed', error)));
 
   ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
+
+  // Monthly care reports: on the 1st at 09:00 in each project's timezone, last month's, emailed to the client.
+  ctx.waitUntil(
+    runCareReports(siteOrigin(), now)
+      .then((result) => {
+        if (result.due) {
+          console.log(`[care] due=${result.due} generated=${result.generated} emailed=${result.attempted} skipped=${result.skipped}`);
+        }
+      })
+      .catch((error) => console.error('[care] sweep failed', error)),
+  );
 
   // Pro trials: the reminder three days out and the note once one has ended.
   ctx.waitUntil(

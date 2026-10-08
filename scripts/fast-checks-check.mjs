@@ -965,11 +965,12 @@ try {
       './lib/ops-watchdog': record('runWatchdog'),
       './lib/trials': record('runTrialLifecycle'),
       './lib/site-health': `${record('runUptimeChecks')}\n${record('runSiteHealthSweep')}`,
+      './lib/care-reports': record('runCareReports'),
     };
     const exact = {
       name: 'worker-stubs',
       setup(b) {
-        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog|trials|site-health))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
+        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog|trials|site-health|care-reports))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
         b.onLoad({ filter: /.*/, namespace: 'worker' }, (args) => ({ contents: workerStubs[args.path], loader: 'js' }));
       },
     };

@@ -136,6 +136,7 @@ npx wrangler kv namespace create RATE
    | `db/0018-upgrade.sql` | web push for browsers and the installed app |
    | `db/0019-upgrade.sql` | 14-day Pro trials |
    | `db/0020-upgrade.sql` | site health: uptime, SSL, domain and broken-link checks |
+   | `db/0021-upgrade.sql` | monthly website care reports for client projects |
    | `db/0022-upgrade.sql` | which client approval pinned a monitor baseline |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
@@ -949,7 +950,7 @@ Growth built into the product, for the freelancers and small agencies who look a
   field. A cookie that is not strictly necessary needs consent under the EU's ePrivacy rules and the site asks
   for none, so a visitor who leaves and comes back later is not remembered. Set `ATTRIBUTION_COOKIE=1` to keep
   the first touch in a 30-day first-party cookie, `sf_src`, as well — only once the site asks for consent; the
-  privacy page follows the setting. The app, the APIs, files, share links (`/r/…`), `/verify` and
+  privacy page follows the setting. The app, the APIs, files, share links (`/r/…`, `/care/…`), `/verify` and
   `/reset-password` are never landings. The iOS app signs up with JSON, no Origin and nothing carried: that is
   recorded as `source = 'ios'`, and the response is unchanged. Each signup also keeps a shortened SHA-256 of its
   IP address, used only by the referral rules below. No third-party analytics.
@@ -1156,3 +1157,61 @@ a minute, and the first checks run within the hour. `npm run health:check` cover
 handshake against a `node:tls` server with certificates built in the test (and a TLS 1.3-only one), corrupted and
 truncated certificates, RDAP, uptime and incidents, links, alerts, the summary, pruning, deletion and dormancy against
 SQLite with a mocked network.
+
+### Monthly care reports (0021)
+
+Every month, each client project gets a care report: a branded, client-facing summary the agency shares by link
+and, on Pro and Business, has emailed to the client on the 1st.
+
+- **What it says** (`lib/care-reports.ts`, `lib/care-rules.ts`). The project's month in its own timezone
+  (`lib/care-period.ts`; Intl handles DST and half-hour zones): a header with the project's branding, name, period and
+  generation date; 4–6 headline figures (checks run, changes found, review reports the client approved, and with site
+  health uptime, SSL and domain, broken links); one paragraph for the client; per monitor its checks, changes and the
+  newest ten changed checks (date, change %, the run's stored summary, "and N more"); review reports decided in the
+  month and those still awaiting sign-off, plus "baseline updated after approval" once migration 0022's
+  `baseline_approvals` exists; SEO and rule-monitor findings (left out when the project has none); site health from
+  `siteHealthForWatches` (hidden when it returns nothing); and short next steps ("Renew the SSL certificate for
+  example.com before 12 Oct.", "2 review reports are waiting for sign-off.", or "Nothing needs attention.").
+- **Frozen.** Everything is read once and stored as one JSON snapshot (capped at 256 KB by listing less, never by
+  refusing), so retention, renamed projects, removed monitors and reset sign-offs never change a report already
+  sent. Only presentation follows the project, as review links do: logo, accent, footer, and "Shared with Easy Screen
+  Capture" unless the owner's current plan white-labels it (`REPORT_WHITE_LABEL`). Every read is index-backed;
+  `review_reports_project` is added for the sign-off read.
+- **The paragraph** (`lib/care-summary.ts`) is written by Workers AI, as alert summaries are, from the snapshot's
+  counts and the monitors' names only, and used only if every number in it is one of those facts; otherwise, or with
+  no binding, a deterministic plain paragraph.
+- **Links.** Hashed like review links, 90 days, extendable and revocable. The owner's link is shown once when it is
+  made; each client gets their own link in their email, so a new owner link never breaks one already sent, and
+  revoking stops them all. Bad, unknown, expired and revoked links are the same neutral 404. Views are counted on the
+  report and a client's first open on their delivery. The client page (`/care/<token>`) is `noindex`, `no-store`,
+  prints cleanly and offers a PDF; it never links to a capture. The owner's view (`/app/care/<id>`) links changed
+  checks to their highlight through `/api/care/<id>/highlight`, behind sign-in.
+- **Schedule** (`runCareReports`, hourly cron). For enabled projects whose `next_run_at` has come — the 1st at 09:00
+  local — the slot is moved to next month by a write only one sweep can win, last month's report is made once
+  (`UNIQUE(project_id, period, kind)`), and each recipient is claimed in `care_report_deliveries` before their email
+  goes, so a report reaches an address at most once and an unknown outcome is never resent. Twenty projects a sweep,
+  oldest due first, within five minutes. "Generate this month so far" and any of the last twelve months make a
+  manual report; generating a month again replaces that manual snapshot and keeps its link. Scheduled ones are never
+  replaced.
+- **Email.** Plain text: the project and month in the subject, the headline figures, the next steps, the link and
+  "Sent by <owner> using Easy Screen Capture" (no product name when white-labelled), with `Reply-To` the owner's
+  address — `lib/mailer.ts` takes an optional `replyTo` for both the `EMAIL` binding and Resend, one plain address
+  or nothing. The owner's optional copy links to the report in the app.
+- **Gating and abuse limits** (`CARE_REPORTS`, `CARE_REPORT_EMAILS` in `lib/plans.ts`). Generating, viewing, links
+  and PDFs on Plus, Pro and Business; client emails on Pro and Business, a Pro trial included. Free and Lite see an
+  upsell ("Try Pro free for 14 days" while the trial is on offer). Client emails only from confirmed owners, to at
+  most five validated, lower-cased addresses per project (never the owner's own), one scheduled send a month,
+  "Send now" three a day per project and ten per account (KV), generating twenty an hour, PDFs six an hour for the
+  owner and, per client link, five an hour (ten per address).
+- **API** (same-origin, signed in, `{error:{type,message}}`): `POST /api/care` with `action` `settings`,
+  `generate`, `link`, `extend`, `revoke`, `send` or `delete`; `POST /api/care/<id>/pdf`;
+  `GET /api/care/<id>/highlight?run=`. Public: `GET /care/<token>` and `GET /care/<token>/pdf`.
+- **Site health** comes from `lib/site-health-summary.ts`. This branch ships a stub that reports nothing; the real
+  one arrives with migration 0020 and replaces it, and the section appears on its own.
+
+**Before the migration** the panels are not rendered, every care route answers 404 and the cron sends nothing.
+Apply it with `npm run db:migrate`, or paste `db/0021-upgrade.sql` into the D1 console; it is picked up within a
+minute. Deleting an account deletes its care reports, deliveries and settings, and deleting a project takes its
+own. `npm run care:check` covers periods across DST, the snapshot, site health, next steps, freezing, the schedule
+and deliveries, gating with a trial, recipients, throttles, links, ownership, white-label, the AI fallback,
+deletion, Reply-To, query plans and the no-migration fallback against SQLite.

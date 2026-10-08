@@ -11,6 +11,12 @@ import { listCaptures, safeParseFiles, type CaptureRow } from '../../../lib/capt
 import { displayUrl } from '../../../lib/capture-options';
 import { listWatches } from '../../../lib/watches';
 import { formatDateTime } from '../../../lib/dates';
+import { careReportsAvailable } from '../../../lib/care-store';
+import { CARE_EMAIL_PLANS, CARE_REPORT_PLANS, careSettings, listCareReports } from '../../../lib/care-reports';
+import { formatDayTime, monthOf, periodLabel } from '../../../lib/care-period';
+import { careReportsIncluded } from '../../../lib/plans';
+import { trialOfferFor } from '../../../lib/trials';
+import { TRIAL_DAYS } from '../../../lib/trial-plan';
 import '../../../styles/projects.css';
 const user = Astro.locals.user!;
 if (!(await projectsReady())) return Astro.redirect('/app/projects');
@@ -20,7 +26,7 @@ try {
 } catch {
   return new Response('Project not found', { status: 404 });
 }
-const [branding, signoffs] = await Promise.all([brandingReady(), signoffsReady()]);
+const [branding, signoffs, care] = await Promise.all([brandingReady(), signoffsReady(), careReportsAvailable()]);
 const [attached, available, watches, monitors, presets, reports, signoffStates, brandingSaved] = await Promise.all([
   env.DB.prepare(
     'SELECT c.*,pc.review_status FROM captures c JOIN project_captures pc ON pc.capture_id=c.id WHERE pc.project_id=? AND c.user_id=? ORDER BY c.created_at DESC LIMIT 200',
@@ -53,6 +59,15 @@ const thumb = (c: CaptureRow) => {
   return file ? `/f/${c.id}/${file.name}?t=${c.share_token}` : null;
 };
 const approved = attached.results.filter((c) => c.review_status === 'approved').length;
+// Care reports (migration 0021): the latest few here, everything else on /app/projects/:id/care.
+const careIncluded = careReportsIncluded(user.plan);
+const [careSaved, careLatest, careTrial] = care
+  ? await Promise.all([
+      careSettings(project.id),
+      careIncluded ? listCareReports(project.id, 3) : Promise.resolve([]),
+      careIncluded ? Promise.resolve(false) : trialOfferFor(user),
+    ])
+  : [null, [], false];
 const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c.device} · ${displayUrl(c.url)}`;
 ---
 
@@ -76,6 +91,7 @@ const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c
       <a href={`/app/batch?project=${project.id}&launch=1`}>Desktop + mobile launch check →</a>
       <a href={`/app/watches/setup`}>New monitor →</a>
       <a href={`/app/team/${project.id}`}>Team &amp; weekly digest →</a>
+      {care && <a href={`/app/projects/${project.id}/care`}>Care reports →</a>}
       <a href={`/app/start?project=${project.id}`}>Setup progress →</a>
     </nav>
     <div class="project-grid">
@@ -317,6 +333,59 @@ const captureOption = (c: CaptureRow) => `${formatDateTime(c.created_at)} · ${c
           number="07"
           owner
         />
+      )}
+      {care && careSaved && (
+        <section class="project-panel" aria-labelledby="care-heading">
+          <h2 class="section-heading" id="care-heading"><span>[ 08 ]</span> Care reports</h2>
+          {careIncluded ? (
+            <>
+              <p class="small muted">
+                {careSaved.enabled && careSaved.next_run_at
+                  ? `Next report emailed ${formatDayTime(careSaved.next_run_at, careSaved.timezone)} (${careSaved.timezone}).`
+                  : 'A monthly summary for your client, shared by link. Not emailed on a schedule.'}
+              </p>
+              <div class="project-items">
+                {careLatest.map((r) => (
+                  <a class="project-item project-item--report" href={`/app/care/${r.id}`}>
+                    <span>
+                      {periodLabel(r.period)}
+                      {r.partial ? ' so far' : ''} →
+                    </span>
+                    <span class="signoff-tag">[ {r.kind === 'scheduled' ? 'SCHEDULED' : 'MANUAL'} ]</span>
+                  </a>
+                ))}
+              </div>
+              {!careLatest.length && <p class="small muted">No care reports yet.</p>}
+              <form data-project-form data-endpoint="/api/care" data-pending="Generating…">
+                <input type="hidden" name="action" value="generate" />
+                <input type="hidden" name="project_id" value={project.id} />
+                <input type="hidden" name="period" value={monthOf(careSaved.timezone, new Date())} />
+                <div class="btn-row">
+                  <button type="submit" class="btn btn--outline-ink">
+                    Generate this month so far
+                  </button>
+                </div>
+                <p role="status"></p>
+              </form>
+              <nav class="link-row" aria-label="Care reports">
+                <a href={`/app/projects/${project.id}/care`}>Reports, links and the monthly email →</a>
+              </nav>
+            </>
+          ) : (
+            <>
+              <p class="small muted">
+                A branded monthly summary for your client: checks and changes, sign-offs, SEO findings, site health and
+                next steps, shared by link. Included on {CARE_REPORT_PLANS}; emailed to your client on the 1st on{' '}
+                {CARE_EMAIL_PLANS}.
+              </p>
+              <div class="btn-row">
+                <a class="btn btn--outline-ink" href={careTrial ? '/app/upgrade#trial' : '/app/upgrade'}>
+                  {careTrial ? `Try Pro free for ${TRIAL_DAYS} days` : 'Upgrade'}
+                </a>
+              </div>
+            </>
+          )}
+        </section>
       )}
       <section class="project-panel">
         <details>

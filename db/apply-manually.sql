@@ -551,6 +551,45 @@ CREATE TABLE IF NOT EXISTS site_broken_links (
 );
 CREATE INDEX IF NOT EXISTS site_broken_links_fixed ON site_broken_links(fixed_at);
 
+CREATE TABLE IF NOT EXISTS care_report_settings (
+  project_id  TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  enabled     INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+  timezone    TEXT NOT NULL DEFAULT 'UTC',
+  recipients  TEXT NOT NULL DEFAULT '[]',
+  owner_copy  INTEGER NOT NULL DEFAULT 1 CHECK(owner_copy IN (0,1)),
+  next_run_at TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS care_report_settings_due ON care_report_settings(enabled, next_run_at);
+CREATE TABLE IF NOT EXISTS care_reports (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period         TEXT NOT NULL CHECK(length(period) = 7),
+  kind           TEXT NOT NULL CHECK(kind IN ('scheduled','manual')),
+  generated_at   TEXT NOT NULL,
+  snapshot       TEXT NOT NULL CHECK(length(snapshot) <= 262144),
+  token_hash     TEXT UNIQUE,
+  expires_at     TEXT NOT NULL,
+  revoked_at     TEXT,
+  access_count   INTEGER NOT NULL DEFAULT 0,
+  last_access_at TEXT,
+  UNIQUE(project_id, period, kind)
+);
+CREATE INDEX IF NOT EXISTS care_reports_user ON care_reports(user_id, generated_at);
+CREATE TABLE IF NOT EXISTS care_report_deliveries (
+  report_id  TEXT NOT NULL REFERENCES care_reports(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  role       TEXT NOT NULL CHECK(role IN ('client','owner')),
+  token_hash TEXT UNIQUE,
+  status     TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  opened_at  TEXT,
+  PRIMARY KEY(report_id, email)
+);
+CREATE INDEX IF NOT EXISTS review_reports_project ON review_reports(project_id, created_at);
+
 CREATE TABLE IF NOT EXISTS baseline_approvals (
   id         TEXT PRIMARY KEY,
   watch_id   TEXT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
@@ -587,4 +626,5 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0017_growth.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0018_web_push.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0019_plan_trials.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0020_site_health.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0021_care_reports.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0022_baseline_approvals.sql');

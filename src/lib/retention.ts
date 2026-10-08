@@ -173,8 +173,12 @@ export async function failStrandedCaptures(now = Date.now()): Promise<number> {
  * How long a quiet monitor run is kept: a check that read the page, found
  * nothing new and took no screenshot. A 15-minute monitor writes 96 of them a
  * day, and after a month they say nothing the monitor's status does not.
+ *
+ * A little over a month, because the monthly care report (lib/care-reports.ts)
+ * counts last month's checks on the 1st at 09:00 in the project's timezone:
+ * 31 days, the widest timezone offset and the morning still fit inside 35.
  */
-const QUIET_RUN_DAYS = 30;
+const QUIET_RUN_DAYS = 35;
 const QUIET_RUN_BATCH = 1000;
 
 /**

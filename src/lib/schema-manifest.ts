@@ -150,6 +150,12 @@ export const MIGRATIONS: MigrationManifest[] = [
     ],
   },
   {
+    name: '0021_care_reports.sql',
+    optional: true,
+    tables: ['care_report_settings', 'care_reports', 'care_report_deliveries'],
+    indexes: ['care_report_settings_due', 'care_reports_user', 'review_reports_project'],
+  },
+  {
     name: '0022_baseline_approvals.sql',
     optional: true,
     tables: ['baseline_approvals'],

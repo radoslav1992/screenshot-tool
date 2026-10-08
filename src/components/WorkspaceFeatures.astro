@@ -1,14 +1,32 @@
 ---
-import { LINKS_PER_PAGE, PLANS, PLAN_ORDER, RULE_ONLY_FREQUENCY, UPTIME_MINUTES, WATCH_FREQUENCIES, batchLimit, watchLimit } from '../lib/plans';
+import {
+  CARE_REPORTS,
+  CARE_REPORT_EMAILS,
+  LINKS_PER_PAGE,
+  PLANS,
+  PLAN_ORDER,
+  RULE_ONLY_FREQUENCY,
+  UPTIME_MINUTES,
+  WATCH_FREQUENCIES,
+  batchLimit,
+  watchLimit,
+} from '../lib/plans';
 import { captureJobsAvailable } from '../lib/capture-jobs';
 import { fastChecksReady } from '../lib/fast-checks';
 import { siteHealthAvailable } from '../lib/site-health-summary';
+import { careReportsAvailable } from '../lib/care-store';
 
-// Background batches arrive with migration 0013, smart checks with 0016 and
-// site health with 0020; until then a batch is the synchronous 25-screenshot
-// queue, every monitor check is a screenshot and sites are not checked, and
-// the copy says so.
-const [background, smart, health] = await Promise.all([captureJobsAvailable(), fastChecksReady(), siteHealthAvailable()]);
+// Background batches arrive with migration 0013, smart checks with 0016,
+// site health with 0020 and care reports with 0021; until then a batch is the
+// synchronous 25-screenshot queue, every monitor check is a screenshot, sites
+// are not checked and the table does not mention care reports, and the copy
+// says so.
+const [background, smart, health, care] = await Promise.all([
+  captureJobsAvailable(),
+  fastChecksReady(),
+  siteHealthAvailable(),
+  careReportsAvailable(),
+]);
 
 /** A plan's monitor schedules, shortest first, as the table shows them. */
 const SCHEDULE_WORDS: Record<string, string> = { [RULE_ONLY_FREQUENCY]: '15 min (rules)', hourly: 'hourly', daily: 'daily', weekly: 'weekly' };
@@ -31,7 +49,11 @@ const notes = [
   },
   {
     title: 'Reports and sharing',
-    text: 'Web reports reuse existing captures without using screenshot quota. Paid PDF report exports allow six exports/hour and up to 16 MB of source images. Review links expire after 1, 7 or 30 days and can be revoked. Downloaded copies cannot be recalled.',
+    text:
+      'Web reports reuse existing captures without using screenshot quota. Paid PDF report exports allow six exports/hour and up to 16 MB of source images. Review links expire after 1, 7 or 30 days and can be revoked. Downloaded copies cannot be recalled.' +
+      (care
+        ? ` Monthly care reports summarise a project’s checks, changes, sign-offs, SEO findings and site health for your client; ${PLAN_ORDER.filter((id) => CARE_REPORT_EMAILS[id]).map((id) => PLANS[id].name).join(' and ')} email them to up to five client addresses on the 1st.`
+        : ''),
   },
   {
     title: 'Retention and teams',
@@ -95,6 +117,14 @@ const notes = [
             <td>{PLANS[id].formats.includes('pdf') ? 'Included' : '—'}</td>
           ))}
         </tr>
+        {care && (
+          <tr>
+            <th scope="row">Monthly client care reports</th>
+            {PLAN_ORDER.map((id) => (
+              <td>{CARE_REPORT_EMAILS[id] ? 'Emailed to clients' : CARE_REPORTS[id] ? 'Shared by link' : '—'}</td>
+            ))}
+          </tr>
+        )}
         <tr>
           <th scope="row">Monitor slots</th>
           {PLAN_ORDER.map((id) => (

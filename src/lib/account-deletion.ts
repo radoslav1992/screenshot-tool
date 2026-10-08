@@ -10,6 +10,7 @@ import { webPushTablesReady } from './push';
 import { trialCleanup } from './trials';
 import { approvalsReady } from './approval-baseline';
 import { siteHealthCleanup } from './site-health-summary';
+import { careCleanup } from './care-store';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -144,10 +145,13 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
   const trialRows = await trialCleanup(userId);
   // Site health results (migration 0020): before the monitors their link checks belong to.
   const siteHealthRows = await siteHealthCleanup(userId);
+  // Care reports, their deliveries and each project's settings, once migration 0021 exists; ahead of the projects.
+  const careRows = await careCleanup(userId);
   await env.DB.batch([
     ...growthRows,
     ...trialRows,
     ...siteHealthRows,
+    ...careRows,
     ...collaborationCleanup,
     ...approvalCleanup,
     ...signoffCleanup,

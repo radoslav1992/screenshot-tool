@@ -46,6 +46,8 @@ const fx = (globalThis.__approval = { env: {}, mails: [], fail: null });
 const STUBS = {
   'cloudflare:workers': 'export const env = globalThis.__approval.env;',
   '@cloudflare/puppeteer': 'export default {};',
+  // The monitor page's site health panel reaches the certificate probe; nothing here opens a socket.
+  'cloudflare:sockets': 'export function connect() { throw new Error("no sockets here"); }',
   '/lib/mailer.ts':
     'export const canSendEmail = () => true; export async function sendMail(mail) { globalThis.__approval.mails.push(mail); return true; }',
   '/lib/renderer.ts': 'export async function render() { throw new Error("no rendering here"); }',
@@ -54,7 +56,7 @@ const RUNTIME = 'astro/runtime/compiler/index.js';
 const plugin = {
   name: 'approval-stubs',
   setup(b) {
-    b.onResolve({ filter: /^(cloudflare:workers|@cloudflare\/puppeteer)$/ }, (args) => ({ path: args.path, namespace: 'stub' }));
+    b.onResolve({ filter: /^(cloudflare:workers|cloudflare:sockets|@cloudflare\/puppeteer)$/ }, (args) => ({ path: args.path, namespace: 'stub' }));
     b.onLoad({ filter: /.*/, namespace: 'stub' }, (args) => ({ contents: STUBS[args.path], loader: 'js' }));
     for (const [suffix, contents] of Object.entries(STUBS)) {
       if (!suffix.startsWith('/')) continue;

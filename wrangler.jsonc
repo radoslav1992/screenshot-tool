@@ -50,18 +50,15 @@
     "binding": "BROWSER"
   },
 
-  // Workers AI — one sentence saying what changed, on a watch alert.
-  //
-  // Left commented because an AI binding has no local implementation: the
-  // adapter proxies it to the real service, so `astro build` and `astro dev`
-  // fail with "user auth missing api token" on any machine not logged into
-  // Cloudflare. Uncomment when you want the summaries and are happy that every
-  // build runs authenticated; the alert falls back to a plain list of added and
-  // removed lines without it, so nothing breaks in the meantime.
-  //
-  // "ai": {
-  //   "binding": "AI"
-  // },
+  // Workers AI — one sentence saying what changed, on a watch alert
+  // (src/lib/summarise.ts). No resource to create: the account's Workers AI is
+  // used as it is. An AI binding has no local implementation, so astro.config
+  // keeps remote bindings off unless CLOUDFLARE_REMOTE_BINDINGS=1: builds, dev
+  // servers and CI run without a Cloudflare login, and alerts made there fall
+  // back to a plain list of added and removed lines.
+  "ai": {
+    "binding": "AI"
+  },
 
   // Outbound email for the onboarded easyscreencapture.com domain.
   "send_email": [
@@ -94,6 +91,22 @@
   //   CF_ACCOUNT_ID         - enables the REST Browser Rendering fallback
   //   CF_API_TOKEN          - token with "Browser Rendering: Edit" for that fallback
   //   RESEND_API_KEY        - enables sending confirmation emails via Resend
+  //   FREE_TOOLS_DAILY_RENDERS - renders a day across every visitor of the free
+  //                           tools under /tools (default 300; "0" turns the
+  //                           browser tools off). A plain number, not a secret,
+  //                           but set in the dashboard so a deploy keeps it.
+  //   OWNER_EMAILS          - comma-separated account emails that may open the
+  //                           growth dashboard at /app/growth, and that the hourly
+  //                           self-check emails when background work breaks
+  //                           (src/lib/ops-watchdog.ts); unset, nobody can open it
+  //                           and problems are only logged.
+  //
+  // Web Push. Change alerts in browsers stay hidden until all three are set and
+  // migration 0018 is applied. `npm run vapid:keys` makes a pair and prints the
+  // commands; keep it once in use, since subscriptions are tied to the key.
+  //   VAPID_PUBLIC_KEY      - base64url uncompressed P-256 public key
+  //   VAPID_PRIVATE_KEY     - base64url private key, or a PKCS8 PEM
+  //   VAPID_SUBJECT         - mailto: or https: contact for the push services
   //
   // Stripe. Billing is dormant until STRIPE_SECRET_KEY is set: the buy buttons
   // do not render and /api/billing/* answers 503.

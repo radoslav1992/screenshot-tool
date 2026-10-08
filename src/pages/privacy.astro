@@ -9,20 +9,26 @@ import { docSections } from '../lib/doc-sections';
 import { COMPANY } from '../lib/company';
 import { PLANS } from '../lib/plans';
 import { SESSION_COOKIE } from '../lib/auth';
+import { ATTRIBUTION_COOKIE, ATTRIBUTION_DAYS } from '../lib/attribution';
+import { REFERRAL_BONUS, attributionCookieEnabled } from '../lib/growth';
+// Where a visitor came from travels in the links unless the cookie is switched on (lib/attribution.ts).
+const attributionCookie = attributionCookieEnabled();
 
 const user = Astro.locals.user;
 
 /** Fixed on purpose — see the note in terms.astro. */
-const updated = '3 October 2026';
+const updated = '7 October 2026';
 
 const toc = [
   { id: 'responsible', title: 'Who is responsible' },
   { id: 'what-we-collect', title: 'What we collect' },
   { id: 'why-and-on-what-legal-basis', title: 'Why, and on what legal basis' },
   { id: 'pages-you-capture', title: 'Pages you capture' },
+  { id: 'free-tools', title: 'The free tools' },
   { id: 'how-long-we-keep-it', title: 'How long we keep it' },
   { id: 'who-processes-it-for-us', title: 'Who processes it for us' },
   { id: 'the-ios-companion-app', title: 'The iOS companion app' },
+  { id: 'alerts-in-your-browser', title: 'Alerts in your browser' },
   { id: 'cookies', title: 'Cookies' },
   { id: 'your-rights', title: 'Your rights' },
   { id: 'changes', title: 'Changes' },
@@ -52,10 +58,15 @@ const { list: sections, byId: s } = docSections(toc);
           <li><b>Sessions:</b> a SHA-256 hash of the session cookie, its creation and expiry time, and the browser's user-agent string.</li>
           <li><b>API keys:</b> a SHA-256 hash of each key with its visible prefix and last four characters, a label, and when it was last used. The key itself is shown once and never stored.</li>
           <li><b>Captures:</b> the URL and host you captured, the device, viewport, mode and format, status, duration, byte size, and the rendered image or PDF files.</li>
-          <li><b>Usage:</b> a monthly counter of captures made through the app and through the API, and short-lived per-minute rate-limit counters.</li>
+          <li><b>Usage:</b> a monthly counter of captures made through the app and through the API, your balance of bonus screenshots and how many of each month's screenshots came from it, and short-lived per-minute rate-limit counters.</li>
+          <li><b>Free tools:</b> the page address you enter, used only to answer that request, and a hashed form of your IP address used to count requests for rate limiting. See <a href="#free-tools">The free tools</a>.</li>
+          <li><b>Signup source:</b> when you sign up, where you came from, if you came from somewhere: {attributionCookie ? `the first time in the previous ${ATTRIBUTION_DAYS} days,` : 'carried in the links you followed to the signup page, not in a cookie:'} the <span class="mono">ref</span>, <span class="mono">utm_source</span>, <span class="mono">utm_medium</span> and <span class="mono">utm_campaign</span> values of the link, the page you landed on (without its query string), the host name of the site that linked to us (never the full address) and when that was. A signup from the iOS app is recorded as coming from the app. We also keep a shortened one-way hash of the IP address you signed up from, used only to stop people rewarding themselves through their own referral link.</li>
+          <li><b>Referrals:</b> your referral code; for each account created through your link, its status (pending, rewarded or not rewarded, and why) and the dates; and the {REFERRAL_BONUS} bonus screenshots each side receives. The person who invited you can see how many people signed up through their link and how many were rewarded, never who they are.</li>
+          <li><b>Pro trial:</b> if you start a trial of Pro, when it started and when it ends, when we emailed you about it ending, and a shortened one-way hash of the IP address you started it from, used only to limit how many trials can be started from one network. We use it to give you Pro for the trial, to send those two emails and to refuse a second trial on the same account.</li>
           <li><b>Report sign-offs:</b> when someone approves or requests changes on a report shared with them, the name they type, their decision, an optional note and the time. The report's owner and everyone with the link can see them; no account or email address is collected.</li>
           <li><b>Report branding:</b> the logo, accent colour and footer line you set for a project.</li>
           <li><b>Mobile notifications:</b> if enabled, your APNs device token, notification environment, account/session association, registration time, and delivery status for monitor alerts.</li>
+          <li><b>Browser notifications:</b> if you turn on change alerts in a browser or the installed web app, the push subscription your browser gives us — the push service address it is reached at (the endpoint) and the public key and secret used to encrypt alerts to it — a shortened copy of the browser's user-agent string, which signed-in session it belongs to, when it was set up and last delivered, and the delivery status of each alert.</li>
           <li><b>Billing:</b> if you subscribe, your Stripe customer and subscription identifiers, plan, status, billing interval and paid-through date. For Apple purchases, we store a random account-linking token, transaction-chain identifier, product, environment and expiry to verify access, renewals and refunds. Payment details go directly to Stripe or Apple and never reach our servers.</li>
         </ul>
         <p>
@@ -88,7 +99,23 @@ const { list: sections, byId: s } = docSections(toc);
             <span class="deflist__value">Legitimate interests (Art. 6(1)(f))</span>
           </div>
           <div class="deflist__row">
+            <span class="deflist__label">Count where signups come from, run the referral programme and stop referral abuse</span>
+            <span class="deflist__value">Legitimate interests</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Run a Pro trial you start and its two emails</span>
+            <span class="deflist__value">Contract</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Limit trials to one per account and a few per network</span>
+            <span class="deflist__value">Legitimate interests</span>
+          </div>
+          <div class="deflist__row">
             <span class="deflist__label">Service emails about your account</span>
+            <span class="deflist__value">Contract</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Monitor change alerts you turned on, by email, webhook or push</span>
             <span class="deflist__value">Contract</span>
           </div>
         </div>
@@ -109,6 +136,20 @@ const { list: sections, byId: s } = docSections(toc);
           Every capture carries a share token embedded in its file links. Anyone who holds a link can open that
           capture's files without signing in, so treat links as you would the files themselves. Deleting a capture
           removes the stored files and invalidates its links.
+        </p>
+      </DocSection>
+
+      <DocSection {...s['free-tools']}>
+        <p>
+          The tools under <a href="/tools">/tools</a> work without an account. To answer a request we process the page
+          address you enter: we load that page, take the screenshot or read its tags, and send the result straight back
+          to your browser. We do not store the images or the results, and we keep no log of who asked for which page.
+        </p>
+        <p>
+          To stop the tools being abused we count how many requests come from each visitor. The count is keyed by a
+          SHA-256 hash of your IP address (for IPv6, of its first half) combined with the date, so the key changes every
+          day and does not contain your address. The counters expire by themselves within two days. The legal basis is
+          our legitimate interest in keeping the service available (Art. 6(1)(f) GDPR).
         </p>
       </DocSection>
 
@@ -134,6 +175,24 @@ const { list: sections, byId: s } = docSections(toc);
             <span class="deflist__value">Minutes — they expire by themselves</span>
           </div>
           <div class="deflist__row">
+            <span class="deflist__label">Free tools: results and images</span>
+            <span class="deflist__value">Not stored — sent straight back to your browser</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Free tools: hashed-IP counters</span>
+            <span class="deflist__value">Up to two days — they expire by themselves</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Browser push subscriptions</span>
+            <span class="deflist__value">
+              Until you turn alerts off, sign out of that browser, or its push service says the subscription has expired
+            </span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Push delivery records</span>
+            <span class="deflist__value">A day to deliver, then removed within seven days of expiring</span>
+          </div>
+          <div class="deflist__row">
             <span class="deflist__label">Report sign-offs and branding</span>
             <span class="deflist__value">While the report or project exists</span>
           </div>
@@ -142,14 +201,32 @@ const { list: sections, byId: s } = docSections(toc);
             <span class="deflist__value">While the account exists</span>
           </div>
           <div class="deflist__row">
+            <span class="deflist__label">Signup source, referral records and bonus balance</span>
+            <span class="deflist__value">While the account exists</span>
+          </div>
+          <div class="deflist__row">
+            <span class="deflist__label">Pro trial record: its dates and the hashed IP address</span>
+            <span class="deflist__value">While the account exists, so a trial is offered only once</span>
+          </div>
+          {
+            attributionCookie && (
+              <div class="deflist__row">
+                <span class="deflist__label">The <span class="mono">{ATTRIBUTION_COOKIE}</span> cookie</span>
+                <span class="deflist__value">{ATTRIBUTION_DAYS} days, or until you sign up</span>
+              </div>
+            )
+          }
+          <div class="deflist__row">
             <span class="deflist__label">Invoices and accounting records</span>
             <span class="deflist__value">As Bulgarian law requires, currently 10 years</span>
           </div>
         </div>
         <p>
           An hourly job deletes captures past their plan's retention window in bounded batches, files included. Current monitor baselines are retained for comparisons until replaced or their monitor is deleted. Deleting your account
-          removes your captures, sessions and API keys with it; billing records that we are obliged to keep remain in
-          Stripe and in our accounts.
+          removes your captures, sessions, API keys and push subscriptions with it, and your signup source, referral code, bonus balance,
+          Pro trial record and the referrals you sent; billing records that we are obliged to keep remain in Stripe and in our accounts. If
+          you joined through someone's referral link, their record of that referral stays with their account, without
+          anything that points to you.
         </p>
       </DocSection>
 
@@ -175,6 +252,13 @@ const { list: sections, byId: s } = docSections(toc);
           disclose data to authorities only where the law requires it.
         </p>
         <p>Apple processes iOS subscription purchases and provides transaction status used to verify your plan. Apple also delivers optional iOS alerts through Apple Push Notification service, using the device token and notification payload described below.</p>
+        <p>
+          If you turn on change alerts in a browser, your browser's vendor delivers them through its push service:
+          Google for Chrome and most Chromium browsers, Mozilla for Firefox, Microsoft for Edge on Windows, and Apple
+          for Safari and web apps on your Home Screen. Your browser chooses the service, not us. It receives the
+          subscription endpoint and each alert, encrypted so that only your browser can read it, and processes them
+          under its own privacy terms. See <a href="#alerts-in-your-browser">Alerts in your browser</a>.
+        </p>
       </DocSection>
 
       <DocSection {...s['the-ios-companion-app']}>
@@ -199,14 +283,63 @@ const { list: sections, byId: s } = docSections(toc);
         </p>
       </DocSection>
 
-      <DocSection {...s['cookies']}>
+      <DocSection {...s['alerts-in-your-browser']}>
         <p>
-          One cookie, <span class="mono">{SESSION_COOKIE}</span>, keeps you signed in. It is strictly necessary,
-          HttpOnly, Secure and SameSite=Lax, and it is removed when you sign out. There are no analytics or
-          advertising cookies, which is why the site does not ask for cookie consent. The app also stores a small
-          offline cache in your browser so it works without a connection; you can clear it from your browser
-          settings.
+          Change alerts in a browser or in the installed web app are optional and off until you turn them on under
+          Account → Change alerts on this device. Your browser asks for permission only when you do. It then gives us a
+          push subscription: an address at your browser's push service and the keys to encrypt alerts to it. We keep
+          it with your signed-in session, with a shortened copy of the browser's user-agent string so the
+          subscription can be told apart, and record whether each alert was delivered.
         </p>
+        <p>
+          An alert says only that a monitored page changed, with the monitor's and check's identifiers so it can open
+          the right one; it never contains the monitored URL, page label or screenshot. It is encrypted before it
+          leaves our servers, so the push service passes it on without being able to read it. Opening the monitor
+          requires you to be signed in.
+        </p>
+        <p>
+          Turning alerts off, signing out of that browser or deleting your account removes the subscription. So does
+          the push service telling us it has expired, and an expired session is cleaned up on the next delivery run.
+          You can also block notifications for this site in your browser's settings. On iPhone and iPad, browser
+          alerts need the app added to your Home Screen. Email notification preferences are separate.
+        </p>
+      </DocSection>
+
+      <DocSection {...s['cookies']}>
+        {
+          attributionCookie ? (
+            <>
+              <p>
+                <span class="mono">{SESSION_COOKIE}</span> keeps you signed in. It is strictly necessary, HttpOnly, Secure
+                and SameSite=Lax, and it is removed when you sign out.
+              </p>
+              <p>
+                <span class="mono">{ATTRIBUTION_COOKIE}</span> remembers where you first came from, so that it can be saved
+                with your account if you sign up and a referral can be credited to the person who invited you. It is set
+                only when you arrive through a link carrying a <span class="mono">ref</span> or{' '}
+                <span class="mono">utm_</span> value, a referral link, or a link on another site, and only if there is not
+                one already. It holds the values listed under What we collect and nothing that identifies you, it is
+                first-party, HttpOnly, Secure and SameSite=Lax, it is read by nobody but us, and it expires after{' '}
+                {ATTRIBUTION_DAYS} days or is removed when you sign up.
+              </p>
+              <p>
+                There are no analytics, advertising or third-party cookies or trackers. The app also stores a small
+                offline cache in your browser so it works without a connection, and, if you close the hint offering
+                to install the app, a note that you did; you can clear them, and both cookies, from your browser
+                settings.
+              </p>
+            </>
+          ) : (
+            <p>
+              One cookie, <span class="mono">{SESSION_COOKIE}</span>, keeps you signed in. It is strictly necessary,
+              HttpOnly, Secure and SameSite=Lax, and it is removed when you sign out. Where you came from is carried in
+              the links you follow on this site, not in a cookie, and there are no analytics or advertising cookies,
+              which is why the site does not ask for cookie consent. The app also stores a small offline cache in your
+              browser so it works without a connection, and, if you close the hint offering to install the app, a note
+              that you did; you can clear them from your browser settings.
+            </p>
+          )
+        }
       </DocSection>
 
       <DocSection {...s['your-rights']}>

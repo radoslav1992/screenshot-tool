@@ -1,0 +1,582 @@
+---
+import Base from '../layouts/Base.astro';
+import AiPage from '../components/AiPage.astro';
+import AiPageHead from '../components/AiPageHead.astro';
+import ConceptArt from '../components/ConceptArt.astro';
+import {
+  PLANS,
+  REPORT_WHITE_LABEL,
+  WATCH_FREQUENCIES,
+  WATCH_LIMIT,
+  cheapestPlanWith,
+  runsPerMonth,
+} from '../lib/plans';
+
+const user = Astro.locals.user;
+
+/** Signups that start here are counted under this ref (lib/attribution.ts), unless they arrived with one already. */
+const REF = 'client-sign-off';
+const setup = '/app/watches/setup';
+const startHref = user ? setup : `/signup?ref=${REF}&next=${encodeURIComponent(setup)}`;
+const pricingHref = `/pricing?ref=${REF}`;
+
+// Every figure on the page comes from the plan table, so the copy cannot drift from it.
+const free = PLANS.free;
+const freeMonitors = WATCH_LIMIT.free;
+const freeSchedule = WATCH_FREQUENCIES.free.join(' or ');
+const freeChecks = freeMonitors * runsPerMonth('weekly');
+const dailyPlan = cheapestPlanWith((plan) => WATCH_FREQUENCIES[plan.id].includes('daily'));
+const pdfPlan = cheapestPlanWith((plan) => plan.formats.includes('pdf'));
+const whiteLabelPlan = cheapestPlanWith((plan) => REPORT_WHITE_LABEL[plan.id]);
+const longestHistory = PLANS.business.historyDays;
+
+const site = (Astro.site?.origin ?? Astro.url.origin).replace(/\/$/, '');
+const canonical = `${site}/client-sign-off`;
+const title = 'Client sign-off for website care';
+const description = `Prove your website care work and get client sign-off: monitor client pages, see what changed, send a branded before-and-after report and let the client approve it from a link. Watch your ${freeMonitors} most important client pages free, forever.`;
+
+const steps = [
+  {
+    title: 'Monitor client pages',
+    text: `Save the pages your client cares about — the homepage, pricing, the booking form. Each one is captured on schedule and compared with its baseline; you choose how big a change has to be before you hear about it.`,
+    art: 'capture',
+  },
+  {
+    title: 'See what changed, highlighted',
+    text: 'A change arrives as a before and an after, with the changed areas outlined on the new capture, so nobody has to spot the difference themselves.',
+    art: 'monitor',
+  },
+  {
+    title: 'Send a branded before/after report',
+    text: 'Put the pair in a project report with your notes, your logo, your accent colour and your footer line, and share it with an expiring link.',
+    art: 'report',
+  },
+  {
+    title: 'The client approves from the link',
+    text: 'Your client opens the link, no account needed, and approves the work or asks for changes, with their name and a note.',
+    art: 'stamp',
+  },
+  {
+    title: 'Keep the proof',
+    text: 'Every decision stays on the report with who made it, when and why, after any later decision too. That is the record of the care you delivered.',
+    art: 'log',
+  },
+] as const;
+
+const faqs = [
+  {
+    q: 'Is it really free forever?',
+    a: `Yes. The Free plan has no time limit and needs no card: ${freeMonitors} monitors checked ${freeSchedule}, and ${free.quota} screenshots a month. Free captures carry a small easyscreencapture.com mark. You pay only when you want more pages, more frequent checks, PDF exports or no mark.`,
+  },
+  {
+    q: 'Does my client need an account to approve?',
+    a: 'No. They open the review link you send and approve the report or request changes, typing their name and an optional note. Links expire after 1, 7 or 30 days, and you can revoke one at any time.',
+  },
+  {
+    q: 'What exactly is kept as proof?',
+    a: `Each decision is kept with the name typed, the time in UTC and the note, in order, for as long as the report exists — a later decision or your own reset adds to the history rather than replacing it. Screenshots follow your plan’s retention (${free.historyDays} days on Free, up to ${longestHistory} on ${PLANS.business.name}); PDF export, from ${pdfPlan.name}, keeps the images with the report in a file of your own.`,
+  },
+  {
+    q: 'Can the report carry my brand?',
+    a: `Your logo, accent colour and footer line work on every plan. Removing the “Shared with Easy Screen Capture” line is included from ${whiteLabelPlan.name}.`,
+  },
+  {
+    q: 'How much of the free allowance do the checks use?',
+    a: `A visual check is one screenshot. ${freeMonitors} monitors checked weekly use about ${freeChecks} of the ${free.quota} screenshots a month, which leaves room for a few captures of your own. Daily checks start on ${dailyPlan.name}.`,
+  },
+  {
+    q: 'Is this a replacement for testing?',
+    a: 'No. Screenshots show what a page looked like; they do not prove that a form submits or that a payment goes through. Use the report to agree on what changed, and test what matters before you sign off yourself.',
+  },
+];
+---
+
+<Base title={title} description={description}>
+  <Fragment slot="head">
+    <link rel="canonical" href={canonical} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="Easy Screen Capture" />
+    <meta property="og:image" content={`${site}/images/capture-camera.webp`} />
+    <meta property="og:image:alt" content="Easy Screen Capture" />
+  </Fragment>
+  <AiPage user={user}>
+    <AiPageHead
+      label="CLIENT SIGN-OFF"
+      meta="FOR FREELANCERS AND SMALL AGENCIES"
+      eyebrow="PROVE YOUR WEBSITE CARE WORK"
+      aside="Monitor · report · approve · archive"
+    >
+      <p class="ai-strip cso-offer" slot="notice">
+        <strong>Watch your {freeMonitors} most important client pages free, forever.</strong>
+        {' '}Checked {freeSchedule}, with {free.quota} screenshots a month. No card needed.
+      </p>
+      <Fragment slot="title">
+        Prove the work.
+        <br />
+        <span>Get it signed off.</span>
+      </Fragment>
+      <p>
+        You look after your clients’ websites. Easy Screen Capture watches the pages that matter, shows you what changed,
+        turns it into a branded before-and-after report and lets the client approve it from a link — so every piece of
+        care work ends with a decision you can point to.
+      </p>
+      <div class="ai-actions">
+        <a class="rr-btn-classic" href={startHref}>
+          Watch {freeMonitors} pages free <span aria-hidden="true">↗</span>
+        </a>
+        <a class="rr-btn-classic ai-btn-outline" href="/sample-report">
+          See a sample report <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </AiPageHead>
+
+    <section class="cso-steps" aria-labelledby="workflow-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 01 / THE WORKFLOW ]</span>
+        <div>
+          <h2 id="workflow-title" data-adon-title>
+            From a change
+            <br />
+            to a <span class="ai-orange-text">sign-off.</span>
+          </h2>
+          <p class="ai-section-lede">Five steps, one place. Nothing for your client to install or sign up for.</p>
+        </div>
+      </div>
+      <ol class="cso-step-list">
+        {
+          steps.map((step, index) => (
+            <li>
+              <span class="cso-step-num">[ 0{index + 1} ]</span>
+              <div class="cso-step-copy">
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
+              </div>
+              <div class="cso-step-art" aria-hidden="true">
+                {step.art === 'stamp' ? (
+                  <div class="cso-stamp">
+                    <span>[ APPROVED ]</span>
+                    <strong>Dana Smith</strong>
+                    <small>“Looks great — ship it.”</small>
+                  </div>
+                ) : step.art === 'log' ? (
+                  <ul class="cso-log">
+                    <li>
+                      <span>[ APPROVED ]</span> Homepage refresh
+                    </li>
+                    <li>
+                      <span>[ CHANGES ]</span> Pricing table
+                    </li>
+                    <li>
+                      <span>[ APPROVED ]</span> Booking form
+                    </li>
+                  </ul>
+                ) : (
+                  <ConceptArt variant={step.art} size={112} />
+                )}
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </section>
+
+    <section class="cso-demo" aria-labelledby="demo-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 02 / SEE IT FIRST ]</span>
+        <div>
+          <h2 id="demo-title" data-adon-title>
+            What your
+            <br />
+            client sees.
+          </h2>
+        </div>
+      </div>
+      <div class="cso-demo-grid">
+        <div class="cso-demo-copy">
+          <p>
+            The sample report is a fictional client review: the page before and after, what changed, the review notes
+            and where the sign-off stands. It is exactly the shape of the link your client receives.
+          </p>
+          <ul>
+            <li>Before and after, side by side, with the change outlined</li>
+            <li>Your notes on what to check before approving</li>
+            <li>Approve or request changes, with a name and a note</li>
+          </ul>
+          <a class="rr-btn-classic ai-btn-outline" href="/sample-report">
+            Open the sample report <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+        <a class="cso-demo-art" href="/sample-report" aria-label="Open the sample report">
+          <ConceptArt variant="report" size={150} />
+          <span>[ SAMPLE REPORT / ILLUSTRATIVE ]</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="cso-free" aria-labelledby="free-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ 03 / FREE, FOREVER ]</span>
+        <div>
+          <h2 id="free-title" data-adon-title>
+            Three pages.
+            <br />
+            No card.
+          </h2>
+          <p class="ai-section-lede">
+            Start with the {freeMonitors} pages a client would notice first. Upgrade when you look after more sites or
+            want to hear about changes sooner.
+          </p>
+        </div>
+      </div>
+      <dl class="cso-facts">
+        <div>
+          <dt>[ FREE ]</dt>
+          <dd>
+            <strong>{freeMonitors} monitors</strong>, checked {freeSchedule}
+          </dd>
+        </div>
+        <div>
+          <dt>[ FREE ]</dt>
+          <dd>
+            <strong>{free.quota} screenshots</strong> a month; the checks use about {freeChecks}
+          </dd>
+        </div>
+        <div>
+          <dt>[ FREE ]</dt>
+          <dd>
+            <strong>Branded reports</strong> with client sign-off from a link
+          </dd>
+        </div>
+        <div>
+          <dt>[ {dailyPlan.name.toUpperCase()} AND UP ]</dt>
+          <dd>
+            <strong>Daily checks</strong> and up to {WATCH_LIMIT[dailyPlan.id]} monitors
+          </dd>
+        </div>
+        <div>
+          <dt>[ {pdfPlan.name.toUpperCase()} AND UP ]</dt>
+          <dd>
+            <strong>PDF reports</strong> to keep with your records
+          </dd>
+        </div>
+        <div>
+          <dt>[ {whiteLabelPlan.name.toUpperCase()} AND UP ]</dt>
+          <dd>
+            <strong>White-label reports</strong> without our name
+          </dd>
+        </div>
+      </dl>
+      <p class="cso-free-foot">
+        <a href={pricingHref}>Compare every plan ↗</a>
+      </p>
+    </section>
+
+    <section class="ai-faq" aria-labelledby="faq-title">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ GOOD QUESTIONS ]</span>
+        <h2 id="faq-title" data-adon-title>
+          Before you
+          <br />
+          send the link.
+        </h2>
+      </div>
+      <div class="ai-faq-list">
+        {
+          faqs.map((faq, index) => (
+            <details>
+              <summary>
+                <span>[ 0{index + 1} ]</span>
+                {faq.q}
+                <i aria-hidden="true">+</i>
+              </summary>
+              <p>{faq.a}</p>
+            </details>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="cta-area-17">
+      <div class="ai-section-head">
+        <span class="section-subtitle-5">[ YOUR NEXT MOVE ]</span>
+        <div>
+          <h2 class="cso-cta-title" data-adon-title>
+            Start with
+            <br />
+            <span class="ai-orange-text">three pages.</span>
+          </h2>
+          <div class="ai-actions cso-cta">
+            <a class="rr-btn-classic" href={startHref}>
+              {user ? 'Set up a monitor' : `Watch ${freeMonitors} pages free`} <span aria-hidden="true">↗</span>
+            </a>
+            <a class="rr-btn-classic ai-btn-outline" href={pricingHref}>
+              Compare plans <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </AiPage>
+</Base>
+
+<script>
+  import '../scripts/adon-ai';
+</script>
+
+<style>
+  .cso-offer {
+    border-top: 0;
+  }
+  .cso-step-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: var(--paper);
+  }
+  .cso-step-list > li {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+  .cso-step-list > li:last-child {
+    border-bottom: 0;
+  }
+  .cso-step-num {
+    padding: 30px 20px;
+    border-right: 1px solid var(--line);
+    font: 10px/1.5 var(--mono);
+  }
+  .cso-step-copy {
+    padding: 30px 28px;
+    min-width: 0;
+  }
+  .cso-step-copy h3 {
+    font: 300 clamp(24px, 2.4vw, 34px) / 1 var(--font_astronebula);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .cso-step-copy p {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--muted);
+    max-width: 60ch;
+  }
+  .cso-step-art {
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    border-left: 1px solid var(--line);
+    background-image: radial-gradient(#1112 0.8px, transparent 0.8px);
+    background-size: 10px 10px;
+    min-width: 0;
+  }
+  .cso-stamp {
+    display: grid;
+    gap: 6px;
+    width: min(100%, 190px);
+    padding: 14px;
+    background: white;
+    border: 2px solid var(--ink);
+    box-shadow: 6px 6px 0 #11111117;
+  }
+  .cso-stamp span {
+    justify-self: start;
+    padding: 3px 6px;
+    background: var(--theme);
+    font: 9px var(--mono);
+  }
+  .cso-stamp strong {
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .cso-stamp small {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cso-log {
+    width: min(100%, 210px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: white;
+    border: 2px solid var(--ink);
+    box-shadow: 6px 6px 0 #11111117;
+  }
+  .cso-log li {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .cso-log li:last-child {
+    border-bottom: 0;
+  }
+  .cso-log span {
+    display: block;
+    font: 8px var(--mono);
+    color: var(--muted);
+  }
+  .cso-demo-grid {
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    background: var(--paper);
+  }
+  .cso-demo-copy {
+    display: grid;
+    gap: 20px;
+    align-content: start;
+    padding: 32px 28px 36px;
+    min-width: 0;
+  }
+  .cso-demo-copy p {
+    font-size: 16px;
+    line-height: 1.8;
+    max-width: 60ch;
+  }
+  .cso-demo-copy ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--line);
+    max-width: 60ch;
+  }
+  .cso-demo-copy li {
+    position: relative;
+    padding: 11px 0 11px 24px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .cso-demo-copy li::before {
+    content: '+';
+    position: absolute;
+    left: 0;
+    font-family: var(--mono);
+    color: var(--theme-text);
+  }
+  .cso-demo-copy .rr-btn-classic {
+    max-width: 340px;
+  }
+  .cso-demo-art {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 30px 20px;
+    border-left: 1px solid var(--line);
+    color: var(--ink);
+    background-image: radial-gradient(#1112 0.8px, transparent 0.8px);
+    background-size: 10px 10px;
+  }
+  .cso-demo-art span {
+    font: 8px var(--mono);
+    text-align: center;
+  }
+  .cso-demo-art:hover {
+    background-color: #ffe4cf;
+  }
+  .cso-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    background: var(--paper);
+  }
+  .cso-facts > div {
+    padding: 26px 25px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    min-width: 0;
+  }
+  .cso-facts > div:nth-child(3n) {
+    border-right: 0;
+  }
+  .cso-facts dt {
+    font: 9px/1.5 var(--mono);
+    margin-bottom: 12px;
+  }
+  .cso-facts dd {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .cso-facts strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .cso-free-foot {
+    padding: 20px 25px;
+    background: var(--paper);
+    font-size: 14px;
+  }
+  .cso-free-foot a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--green);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  /* Longer than the homepage's two words, so smaller than its closing title. */
+  .cta-area-17 .cso-cta-title {
+    font-size: clamp(44px, 7.5vw, 112px);
+  }
+  .cso-cta {
+    margin-top: 35px;
+  }
+  .cta-area-17 .cso-cta .rr-btn-classic {
+    margin-top: 0;
+  }
+  @media (max-width: 1100px) {
+    .cso-step-list > li {
+      grid-template-columns: 1fr 3fr;
+    }
+    .cso-step-art {
+      display: none;
+    }
+    .cso-facts {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .cso-facts > div:nth-child(3n) {
+      border-right: 1px solid var(--line);
+    }
+    .cso-facts > div:nth-child(2n) {
+      border-right: 0;
+    }
+  }
+  @media (max-width: 767px) {
+    .cso-step-list > li {
+      grid-template-columns: 1fr;
+    }
+    .cso-step-num {
+      padding: 15px;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 8px;
+    }
+    .cso-step-copy {
+      padding: 22px 15px 26px;
+    }
+    .cso-demo-grid {
+      grid-template-columns: 1fr;
+    }
+    .cso-demo-copy {
+      padding: 22px 15px 26px;
+    }
+    .cso-demo-art {
+      border-left: 0;
+      border-top: 1px solid var(--line);
+    }
+    .cso-facts {
+      grid-template-columns: 1fr;
+    }
+    .cso-facts > div {
+      padding: 20px 15px;
+      border-right: 0;
+    }
+    .cso-free-foot {
+      padding: 14px 15px;
+    }
+  }
+</style>

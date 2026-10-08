@@ -1,0 +1,133 @@
+---
+import ToolShell from '../../components/ToolShell.astro';
+import ToolForm from '../../components/ToolForm.astro';
+import ToolCta from '../../components/ToolCta.astro';
+import { handleToolRequest } from '../../lib/tool-pages';
+import { imageDataUrl } from '../../lib/free-tools';
+import { displayUrl } from '../../lib/capture-options';
+import { changedAreas } from '../../lib/change-highlights';
+
+export const prerender = false;
+
+const run = await handleToolRequest(Astro, 'compare-pages');
+const result = run.result?.tool === 'compare-pages' ? run.result : null;
+const device = run.input.device === 'mobile' ? 'mobile' : 'desktop';
+const a = result ? imageDataUrl(result.a.image) : '';
+const b = result ? imageDataUrl(result.b.image) : '';
+const diff = result?.diff ?? null;
+const pct = diff ? `${diff.changedPct.toLocaleString('en-US', { maximumFractionDigits: 2 })}%` : '';
+const verdict = !diff
+  ? ''
+  : diff.identical
+    ? 'The two pages look the same.'
+    : diff.resized
+      ? `${pct} of the page changed, ${changedAreas(diff.regions)}. The pages are different lengths; the extra part counts as changed.`
+      : `${pct} of the page changed, ${changedAreas(diff.regions)}.`;
+---
+
+<ToolShell tool="compare-pages">
+  <ToolForm tool="compare-pages" run={run} action="Compare pages" working="Capturing both pages and comparing them">
+    <Fragment slot="fields">
+      <div class="tool-pair">
+        <label class="tool-field">
+          <span>[ PAGE A / FOR EXAMPLE STAGING ]</span>
+          <input
+            name="a_url"
+            type="text"
+            inputmode="url"
+            autocomplete="url"
+            spellcheck="false"
+            placeholder="staging.example.com"
+            required
+            maxlength="2048"
+            value={run.input.a_url}
+            aria-invalid={run.error?.param === 'a_url' ? 'true' : undefined}
+          />
+        </label>
+        <label class="tool-field">
+          <span>[ PAGE B / FOR EXAMPLE LIVE ]</span>
+          <input
+            name="b_url"
+            type="text"
+            inputmode="url"
+            autocomplete="url"
+            spellcheck="false"
+            placeholder="example.com"
+            required
+            maxlength="2048"
+            value={run.input.b_url}
+            aria-invalid={run.error?.param === 'b_url' ? 'true' : undefined}
+          />
+        </label>
+      </div>
+      <fieldset class="tool-choice">
+        <legend>[ DEVICE ]</legend>
+        <label><input type="radio" name="device" value="desktop" checked={device === 'desktop'} /> Desktop · 1440 px</label>
+        <label><input type="radio" name="device" value="mobile" checked={device === 'mobile'} /> Mobile · iPhone</label>
+      </fieldset>
+    </Fragment>
+    {
+      result && (
+        <div class="tool-output">
+          <div class="tool-output__head">
+            <span>[ RESULT ]</span>
+            <span>
+              {displayUrl(result.a.url)} → {displayUrl(result.b.url)}
+            </span>
+          </div>
+          {diff ? (
+            <div class="tool-verdict">
+              <strong>{diff.identical ? 'Same' : pct}</strong>
+              <p>{verdict}</p>
+            </div>
+          ) : (
+            <p class="tool-output__note">{result.detail}</p>
+          )}
+          <div class="tool-compare">
+            <figure class="tool-compare__side">
+              <figcaption>
+                <span>[ A ]</span>
+                <span>{displayUrl(result.a.url)}</span>
+              </figcaption>
+              <div class="tool-shot tool-shot--tall">
+                <img
+                  src={a}
+                  alt={`Page A: ${displayUrl(result.a.url)}`}
+                  width={result.a.image.width}
+                  height={result.a.image.height}
+                  data-tool-image
+                />
+              </div>
+              <a class="tool-download" href={a} download="page-a.jpg" data-tool-download>
+                Download A <span aria-hidden="true">↓</span>
+              </a>
+            </figure>
+            <figure class="tool-compare__side">
+              <figcaption>
+                <span>[ B{diff?.highlight ? ' / CHANGES BOXED' : ''} ]</span>
+                <span>{displayUrl(result.b.url)}</span>
+              </figcaption>
+              <div class="tool-shot tool-shot--tall">
+                <img
+                  src={diff?.highlight ?? b}
+                  alt={
+                    diff?.highlight
+                      ? `Page B: ${displayUrl(result.b.url)}, with the changed areas boxed in orange`
+                      : `Page B: ${displayUrl(result.b.url)}`
+                  }
+                  width={result.b.image.width}
+                  height={result.b.image.height}
+                  data-tool-image
+                />
+              </div>
+              <a class="tool-download" href={b} download="page-b.jpg" data-tool-download>
+                Download B <span aria-hidden="true">↓</span>
+              </a>
+            </figure>
+          </div>
+          <ToolCta tool="compare-pages" url={result.b.url} title="Get told when this page changes, free" />
+        </div>
+      )
+    }
+  </ToolForm>
+</ToolShell>

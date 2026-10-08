@@ -4,10 +4,13 @@ import AiPage from '../components/AiPage.astro';
 import AiPageHead from '../components/AiPageHead.astro';
 import { consumeVerificationToken } from '../lib/verification';
 import { safeNext } from '../lib/safe-next';
+import { rewardReferral } from '../lib/growth';
 
 const token = Astro.url.searchParams.get('token') ?? '';
 const userId = token ? await consumeVerificationToken(token) : null;
 const ok = Boolean(userId);
+// A referred account that has already captured counts from the moment it is confirmed.
+if (userId) await rewardReferral(userId, Astro.url.origin);
 // Set when the confirmation was asked for by something waiting on it, such as
 // a team invitation. Protected pages send a signed-out visitor through login
 // and back, so the link needs nothing more.

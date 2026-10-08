@@ -329,8 +329,16 @@ async function elementText(
   return { ...watched, text: normaliseText(decodeEntities(watched.text.join('')).slice(0, 2000)) };
 }
 
-/** The tags an SEO rule reads, where page-facts-fn reads them in the browser. */
-async function seoTags(Parser: Rewriter, html: string, hide: string[]) {
+/** How many h1s the SEO checker reads the text of; a monitor reads the first. */
+const MAX_H1S = 10;
+
+/**
+ * The tags an SEO rule reads, where page-facts-fn reads them in the browser.
+ * `extended` is the free SEO checker's reading (readSeoTags): Twitter tags, the
+ * viewport, the document's language and the text of several h1s besides. A
+ * monitor never asks for it, so its reading costs what it always did.
+ */
+async function seoTags(Parser: Rewriter, html: string, hide: string[], extended = false) {
   const tags = {
     title: null as string[] | null,
     inTitle: false,
@@ -340,7 +348,11 @@ async function seoTags(Parser: Rewriter, html: string, hide: string[]) {
     base: null as string | null,
     hreflang: [] as Array<{ lang: string; href: string }>,
     og: {} as Record<string, string>,
-    h1: [] as string[],
+    twitter: {} as Record<string, string>,
+    viewport: null as string | null,
+    lang: null as string | null,
+    /** The text of each h1 read: the first only, unless extended. */
+    h1s: [] as string[][],
     h1Count: 0,
     inH1: false,
   };
@@ -367,11 +379,21 @@ async function seoTags(Parser: Rewriter, html: string, hide: string[]) {
       return unavailable('hide_unsupported', `The hidden-element selector “${selector}” needs a full browser`);
     }
   }
+  // HTMLRewriter reports an inline SVG's <title> in the HTML namespace too, so the checker counts drawings itself.
+  // It takes no hidden-element selectors, which leaves the svg element's end tag to this handler alone.
+  let drawing = 0;
+  if (extended) {
+    rewriter = rewriter.on('svg', {
+      element(node) {
+        if (onEnd(node, () => drawing--)) drawing++;
+      },
+    });
+  }
   rewriter = rewriter
     .on('title', {
       element(node) {
         // The document's title is the first HTML one; an SVG's <title> names a drawing.
-        if (tags.title || template || node.namespaceURI !== HTML_NS) return;
+        if (tags.title || template || drawing || node.namespaceURI !== HTML_NS) return;
         tags.title = [];
         tags.inTitle = onEnd(node, () => (tags.inTitle = false));
       },
@@ -390,6 +412,11 @@ async function seoTags(Parser: Rewriter, html: string, hide: string[]) {
         if (property.startsWith('og:') && property.length > 3 && content && !(property.slice(3) in tags.og)) {
           tags.og[property.slice(3)] = content;
         }
+        if (!extended) return;
+        // X reads `name`, though many sites write `property` as for Open Graph.
+        const twitter = name.startsWith('twitter:') ? name : property.toLowerCase().startsWith('twitter:') ? property.toLowerCase() : '';
+        if (twitter.length > 8 && content && !(twitter.slice(8) in tags.twitter)) tags.twitter[twitter.slice(8)] = content;
+        if (name === 'viewport' && tags.viewport === null) tags.viewport = content;
       },
     })
     .on('link', {
@@ -414,12 +441,22 @@ async function seoTags(Parser: Rewriter, html: string, hide: string[]) {
         // A hidden h1 was marked by the hide handlers above, which run first.
         if (template || unseen) return;
         tags.h1Count++;
-        if (tags.h1Count === 1) tags.inH1 = onEnd(node, () => (tags.inH1 = false));
+        if (tags.h1Count === 1 || (extended && tags.h1Count <= MAX_H1S)) {
+          tags.h1s.push([]);
+          tags.inH1 = onEnd(node, () => (tags.inH1 = false));
+        }
       },
       text(chunk) {
-        if (tags.inH1 && !unseen) tags.h1.push(chunk.text);
+        if (tags.inH1 && !unseen) tags.h1s[tags.h1s.length - 1]!.push(chunk.text);
       },
     });
+  if (extended) {
+    rewriter = rewriter.on('html', {
+      element(node) {
+        if (tags.lang === null) tags.lang = attr(node, 'lang');
+      },
+    });
+  }
   await rewriter.transform(page(html)).arrayBuffer();
   return tags;
 }
@@ -467,7 +504,7 @@ export async function extractFast(rule: MonitorRule, page: RawPage, options: Ext
           canonical,
           robots: metaRobots,
           robots_header: headerOf(page.headers, 'x-robots-tag').slice(0, 500),
-          h1: normaliseText(decodeEntities(tags.h1.join(''))).slice(0, 500),
+          h1: normaliseText(decodeEntities((tags.h1s[0] ?? []).join(''))).slice(0, 500),
           h1_count: tags.h1Count,
           hreflang: tags.hreflang.map((entry) => ({ lang: entry.lang, href: resolve(entry.href, base) })).filter((entry) => entry.href),
           og: { title: tags.og.title ?? '', description: tags.og.description ?? '', image: tags.og.image ?? '' },
@@ -488,6 +525,56 @@ export async function extractFast(rule: MonitorRule, page: RawPage, options: Ext
   }
 
   return { ok: true, signature: await signatureOf(rule, values), values, textLength, html };
+}
+
+/** What the free SEO checker shows (seo-check.ts): an SEO rule's tags and a few more, as the HTML has them. */
+export interface SeoTags {
+  /** Null when the page has no title element at all. */
+  title: string | null;
+  description: string | null;
+  /** Absolute, against the page's `<base>` and address; '' when there is none. */
+  canonical: string;
+  /** As written, before resolving. Null when there is none. */
+  canonicalRaw: string | null;
+  /** The robots and googlebot meta tags, joined. */
+  robots: string;
+  robotsHeader: string;
+  /** The text of each of the first few h1s. */
+  h1: string[];
+  h1Count: number;
+  hreflang: Array<{ lang: string; href: string }>;
+  /** Every `og:` property, the prefix taken off, as written. */
+  og: Record<string, string>;
+  twitter: Record<string, string>;
+  viewport: string | null;
+  lang: string | null;
+  /** The response is a bot check standing in for the page. */
+  challenge: boolean;
+}
+
+/** Reads the SEO checker's tags from one response, with the same parser and decoding as an SEO rule. */
+export async function readSeoTags(page: RawPage, options: { Rewriter?: Rewriter } = {}): Promise<SeoTags> {
+  const tags = await seoTags(options.Rewriter ?? HTMLRewriter, page.html, [], true);
+  // Only hidden-element selectors make the reading unavailable, and there are none here.
+  if ('ok' in tags) throw new Error(tags.reason);
+  const base = resolve(tags.base ?? '', page.url) || page.url;
+  const text = (value: string) => normaliseText(decodeEntities(value));
+  return {
+    title: tags.title ? text(tags.title.join('')) : null,
+    description: tags.description === null ? null : normaliseText(tags.description),
+    canonical: resolve(tags.canonical ?? '', base),
+    canonicalRaw: tags.canonical,
+    robots: tags.robots.join(', ').slice(0, 500),
+    robotsHeader: headerOf(page.headers, 'x-robots-tag').slice(0, 500),
+    h1: tags.h1s.map((chunks) => text(chunks.join('')).slice(0, 300)),
+    h1Count: tags.h1Count,
+    hreflang: tags.hreflang.map((entry) => ({ lang: entry.lang, href: resolve(entry.href, base) || entry.href })),
+    og: tags.og,
+    twitter: tags.twitter,
+    viewport: tags.viewport,
+    lang: tags.lang || null,
+    challenge: isChallenge(page.status, page.headers, page.html),
+  };
 }
 
 /** The SEO signals as seo-signals compares them, for one page's tags or one capture's facts. */

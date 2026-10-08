@@ -19,6 +19,16 @@ declare namespace Cloudflare {
     APNS_TEAM_ID?: string;
     APNS_PRIVATE_KEY?: string;
     APNS_BUNDLE_ID?: string;
+    /**
+     * Web Push (VAPID). Optional; with all three set and migration 0018 applied,
+     * browsers and installed web apps can turn on change alerts. The public key
+     * is a base64url uncompressed P-256 point; the private key its base64url
+     * scalar or a PKCS8 PEM; the subject a `mailto:` or `https:` contact.
+     * `npm run vapid:keys` makes a pair.
+     */
+    VAPID_PUBLIC_KEY?: string;
+    VAPID_PRIVATE_KEY?: string;
+    VAPID_SUBJECT?: string;
     PUBLIC_SITE_URL: string;
     CAPTURE_HOST_DENYLIST?: string;
 
@@ -28,6 +38,13 @@ declare namespace Cloudflare {
      * sustained load — see the README.
      */
     BROWSER_KEEP_ALIVE_MS?: string;
+
+    /**
+     * Renders a day across every visitor of the free tools (/tools): screenshots,
+     * previews and comparisons together. Optional; 300 when unset, and "0" turns
+     * the browser tools off while the SEO checker stays up. See the README.
+     */
+    FREE_TOOLS_DAILY_RENDERS?: string;
 
     /** "1" gates capturing on a confirmed email — only when a mailer is configured. */
     REQUIRE_EMAIL_VERIFICATION?: string;
@@ -88,6 +105,20 @@ declare namespace Cloudflare {
      * plain-text variables with the ones in wrangler.jsonc.
      */
     BILLING_ALERT_EMAIL?: string;
+
+    /**
+     * Who may open the growth dashboard (/app/growth): a comma-separated list of
+     * account emails, compared without regard to case. Optional; unset, the page
+     * is a 404 for everyone. Set it as a secret for the same reason as above.
+     */
+    OWNER_EMAILS?: string;
+
+    /**
+     * "1" keeps where a visitor first came from in a 30-day cookie, sf_src, as
+     * well as in the links (lib/attribution.ts). Off by default: the cookie is
+     * not strictly necessary, so turning it on means asking for consent first.
+     */
+    ATTRIBUTION_COOKIE?: string;
 
     /** Recurring price ids (price_…) per plan and interval. */
     STRIPE_PRICE_PLUS_MONTHLY?: string;

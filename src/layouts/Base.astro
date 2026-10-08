@@ -11,6 +11,10 @@ interface Props {
   bodyClass?: string;
   /** Use the title as given, without " · Easy Screen Capture" (white-labelled review links). */
   plainTitle?: boolean;
+  /** Absolute URL of the page's one address, for `rel=canonical` and `og:url`. */
+  canonical?: string;
+  /** Absolute URL of the picture a shared link shows. */
+  ogImage?: string;
 }
 
 const {
@@ -19,6 +23,8 @@ const {
   themeColor = "#F5F5F5",
   bodyClass = "",
   plainTitle = false,
+  canonical,
+  ogImage,
 } = Astro.props;
 
 const isWorkspace = Astro.url.pathname.startsWith("/app");
@@ -69,7 +75,11 @@ const fullTitle =
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {canonical && <meta property="og:url" content={canonical} />}
+    {ogImage && <meta property="og:image" content={ogImage} />}
     <meta name="twitter:card" content="summary_large_image" />
+    <slot name="head" />
 
     <script is:inline>
       // Standalone (installed PWA) drops the desktop "phone frame" treatment.
@@ -115,12 +125,16 @@ const fullTitle =
         });
       }
 
-      // Remember the install prompt so the Account screen can offer it.
+      // Remember the install prompt so the app can offer it (scripts/install.ts).
       window.__escInstallPrompt = null;
       window.addEventListener("beforeinstallprompt", (event) => {
         event.preventDefault();
         window.__escInstallPrompt = event;
         document.dispatchEvent(new CustomEvent("esc:installable"));
+      });
+      // Installed from the browser's own menu, the kept prompt is spent too.
+      window.addEventListener("appinstalled", () => {
+        window.__escInstallPrompt = null;
       });
     </script>
     <script>

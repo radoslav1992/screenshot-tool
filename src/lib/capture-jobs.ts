@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { currentPeriod, toSessionUser, type SessionUser, type UserRow } from './auth';
+import { currentPeriod, loadSessionUser, type SessionUser } from './auth';
 import {
   assertPlanAllows,
   captureInsert,
@@ -352,9 +352,8 @@ async function settleBatch(batchId: string, origin: string): Promise<void> {
 async function notifyBatch(batch: BatchRow, origin: string): Promise<void> {
   if (!canSendEmail()) return;
   try {
-    const owner = await env.DB.prepare('SELECT email, plan FROM users WHERE id = ?')
-      .bind(batch.user_id)
-      .first<{ email: string; plan: string }>();
+    // The plan it acts on now, Pro trial included, which is what keeps its files.
+    const owner = await loadSessionUser(batch.user_id);
     if (!owner) return;
     const counts = await batchCounts(batch.id);
     const name = batch.label || 'Batch';
@@ -619,12 +618,12 @@ async function runJob(job: JobRow, origin: string): Promise<Outcome> {
     return capture.status;
   }
 
-  const owner = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(job.user_id).first<UserRow>();
-  if (!owner) {
+  // As the account is now: a Pro trial that ended while this waited no longer covers a PDF.
+  const user = await loadSessionUser(job.user_id);
+  if (!user) {
     await finishJob(job, 'cancelled', 'The account was deleted before the capture ran.', origin);
     return 'cancelled';
   }
-  const user = toSessionUser(owner);
 
   let options: CaptureOptions;
   try {

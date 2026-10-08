@@ -1,0 +1,46 @@
+# Uptime from the outside: every 30 minutes, does the site answer and is
+# /api/health green, the hourly sweep included? A failed run is GitHub's
+# "workflow run failed" email, which goes to whoever last changed the schedule
+# line below (Settings → Notifications → Actions decides how). The background
+# work is watched from inside, by the hourly self-check (src/lib/ops-watchdog.ts),
+# which emails OWNER_EMAILS.
+name: Uptime
+
+on:
+  schedule:
+    # Off the hour and the half hour, when GitHub's scheduler is busiest.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+
+jobs:
+  ping:
+    name: Site and health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITE: https://easyscreencapture.com
+    steps:
+      # Three tries a minute apart: one dropped request is not an outage.
+      - name: Check the site
+        run: |
+          health="${RUNNER_TEMP:-/tmp}/health.json"
+          check() {
+            home=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SITE/") || home=000
+            if [ "$home" != 200 ]; then echo "The home page answered $home."; return 1; fi
+            code=$(curl -sS -o "$health" -w '%{http_code}' --max-time 20 -H 'cache-control: no-cache' "$SITE/api/health") || code=000
+            if [ "$code" != 200 ]; then echo "/api/health answered $code."; cat "$health" 2>/dev/null; return 1; fi
+            if ! jq -e '.ok == true' "$health" > /dev/null; then echo '/api/health is not ok:'; jq '.checks' "$health"; return 1; fi
+            if ! jq -e '.checks.scheduler.ok != false' "$health" > /dev/null; then echo 'The hourly sweep has stopped:'; jq '.checks.scheduler' "$health"; return 1; fi
+            echo "Up. Last hourly sweep: $(jq -r '.checks.scheduler.lastRunAt // "not recorded yet"' "$health")."
+          }
+          for attempt in 1 2 3; do
+            if check; then exit 0; fi
+            [ "$attempt" = 3 ] || sleep 60
+          done
+          echo "::error::$SITE failed its uptime check three times in a row."
+          exit 1

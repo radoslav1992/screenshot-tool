@@ -23,3 +23,8 @@ for (const [name, size, inset] of [
     .toFile(new URL(`public/icons/${name}`, root).pathname);
   console.log(`${name}: ${size} × ${size}`);
 }
+// The notification badge is a mask: Android draws only its alpha, in one colour.
+// It is the mark's camera, the lens cut out, on nothing.
+const badge = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="6 6.5 52 52"><path fill="#fff" fill-rule="evenodd" d="M10 23H21L27 16H39L45 23H54V49H10V23ZM28 25H36L42 31V39L36 45H28L22 39V31L28 25Z"/><circle cx="32" cy="35" r="6" fill="#fff"/></svg>`;
+await sharp(Buffer.from(badge)).resize(96, 96).png().toFile(new URL("public/icons/badge-96.png", root).pathname);
+console.log("badge-96.png: 96 × 96");

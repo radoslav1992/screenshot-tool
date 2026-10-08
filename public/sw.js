@@ -4,9 +4,11 @@
  * - App shell + static assets: cache-first, revalidated in the background.
  * - HTML documents: network-first with an offline fallback page.
  * - API calls and rendered files: never cached (they are private and large).
+ * - Push: monitor change alerts (Web Push), shown as notifications that open
+ *   the monitor in the app.
  */
 
-const VERSION = 'v3-ai-pages';
+const VERSION = 'v4-web-push';
 const SHELL_CACHE = `esc-shell-${VERSION}`;
 const RUNTIME_CACHE = `esc-runtime-${VERSION}`;
 const OFFLINE_URL = '/offline';
@@ -112,4 +114,53 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'skip-waiting') self.skipWaiting();
+});
+
+/** Only a page on this site: anything else in a push opens the monitors list instead. */
+function appUrl(value) {
+  try {
+    const url = new URL(typeof value === 'string' ? value : '', self.location.origin);
+    if (url.origin === self.location.origin) return url.href;
+  } catch {
+    /* not a URL */
+  }
+  return new URL('/app/watches', self.location.origin).href;
+}
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    /* still show something: the subscription promised a visible notification */
+  }
+  const watch = typeof data.watch_id === 'string' && data.watch_id ? data.watch_id : '';
+  event.waitUntil(
+    self.registration.showNotification(typeof data.title === 'string' && data.title ? data.title : 'Easy Screen Capture', {
+      body: typeof data.body === 'string' ? data.body : '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/badge-96.png',
+      // One notification per monitor: a newer alert replaces the older one, and still alerts.
+      tag: watch || 'esc-alert',
+      renotify: true,
+      data: { url: appUrl(data.url) },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = appUrl(event.notification.data && event.notification.data.url);
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window' });
+      const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+      if (open) {
+        const focused = await open.focus().catch(() => open);
+        // navigate() needs a window this worker controls; failing that, open a new one.
+        if (await focused.navigate(target).catch(() => null)) return;
+      }
+      await self.clients.openWindow(target);
+    })(),
+  );
 });

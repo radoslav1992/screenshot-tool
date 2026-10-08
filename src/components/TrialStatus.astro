@@ -1,0 +1,142 @@
+---
+/**
+ * One line about the account's Pro trial: while it runs, how long is left and
+ * a way to keep Pro; for a month after it ends, that it has, until closed on
+ * this device. Nothing at all for an account without a trial, which is every
+ * account before migration 0019.
+ */
+import type { SessionUser } from '../lib/auth';
+import { getPlan } from '../lib/plans';
+import { formatDate } from '../lib/dates';
+import { trialDaysLeft, trialJustEnded } from '../lib/trial-plan';
+
+interface Props {
+  user: SessionUser;
+  /** A block of its own between two .app-wrap blocks, padded at the sides like them. */
+  inset?: boolean;
+  /** Spans every column of the grid it sits in. */
+  span?: boolean;
+}
+const { user, inset = false, span = false } = Astro.props;
+const trial = user.trial;
+const running = Boolean(trial?.active && user.plan !== user.ownPlan);
+const ended = !running && trialJustEnded(user);
+const days = running && trial ? trialDaysLeft(trial) : 0;
+const own = getPlan(user.ownPlan);
+const classes = ['trial-line', { 'app-wrap trial-line--inset': inset, 'trial-line--span': span }];
+---
+
+{
+  running && trial && (
+    <aside class:list={classes} aria-label="Pro trial">
+      <p class="trial-line__bar">
+        <span class="trial-line__label">[ TRIAL ]</span>
+        <span class="trial-line__text" title={`Ends ${formatDate(trial.endsAt)}, then back to ${own.name}`}>
+          Pro trial · {days} {days === 1 ? 'day' : 'days'} left · <a href="/pricing#plan-pro">Keep Pro</a>
+        </span>
+      </p>
+    </aside>
+  )
+}
+{
+  ended && trial && (
+    <aside class:list={classes} aria-label="Pro trial ended" data-trial-ended={`${user.id}:${trial.endsAt}`} hidden>
+      <div class="trial-line__bar">
+        <span class="trial-line__label">[ TRIAL ENDED ]</span>
+        <p class="trial-line__text">
+          Your Pro trial ended on {formatDate(trial.endsAt)}, and you are back on {own.name}.{' '}
+          <a href="/pricing#plan-pro">Keep Pro</a>
+        </p>
+        <button type="button" class="trial-line__close" data-trial-close aria-label="Dismiss the trial notice">
+          ×
+        </button>
+      </div>
+    </aside>
+  )
+}
+
+<style>
+  /* Under the block before it, which brings its own padding; room below for what follows. */
+  .trial-line--inset {
+    padding-top: 0;
+    padding-bottom: 12px;
+  }
+  .trial-line--span {
+    grid-column: 1 / -1;
+  }
+  .trial-line__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 12px;
+    min-height: 44px;
+    margin: 0;
+    padding: 4px 4px 4px 14px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--theme);
+    background: white;
+  }
+  .trial-line__label {
+    flex: none;
+    font: 500 10px/1 var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--green);
+  }
+  .trial-line__text {
+    flex: 1 1 220px;
+    min-width: 0;
+    margin: 0;
+    padding: 8px 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+  .trial-line__text a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin-block: -14px;
+    font-weight: 600;
+    color: var(--green);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .trial-line__close {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    font: 400 22px/1 var(--sans);
+    color: var(--muted);
+  }
+  .trial-line__close:hover,
+  .trial-line__close:focus-visible {
+    color: var(--ink);
+  }
+</style>
+
+<script>
+  // Closed once, it stays closed on this device for this trial. Without storage it simply comes back.
+  const KEY = 'esc-trial-ended-dismissed';
+  const dismissed = () => {
+    try {
+      return localStorage.getItem(KEY);
+    } catch {
+      return null;
+    }
+  };
+  for (const notice of document.querySelectorAll<HTMLElement>('[data-trial-ended]')) {
+    const id = notice.dataset.trialEnded ?? '';
+    notice.hidden = dismissed() === id;
+    notice.querySelector('[data-trial-close]')?.addEventListener('click', () => {
+      try {
+        localStorage.setItem(KEY, id);
+      } catch {
+        /* private mode: it comes back next time, which is fine */
+      }
+      for (const other of document.querySelectorAll<HTMLElement>('[data-trial-ended]')) other.hidden = true;
+    });
+  }
+</script>

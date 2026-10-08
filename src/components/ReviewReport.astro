@@ -143,10 +143,12 @@ const regions = await reportRegions(
     {branding?.footer && <p class="ai-report-foot-line">{branding.footer}</p>}
     Images are retained under the account’s capture retention policy. This report does not extend retention.
     {
+      // Hidden entirely on a white-labelled report; otherwise it says where the
+      // workflow comes from, and `ref=report` counts the signups it brings.
       branding?.attribution && (
         <p class="ai-report-attribution">
           Shared with{' '}
-          <a href="/" rel="noreferrer">
+          <a href="/client-sign-off?ref=report" rel="noreferrer">
             Easy Screen Capture
           </a>
         </p>

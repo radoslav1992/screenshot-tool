@@ -4,17 +4,27 @@ import Icon from '../../components/Icon.astro';
 import { PLANS, PLAN_ORDER, getPlan, type PlanId } from '../../lib/plans';
 import { billingEnabled, getBillingRow, hasActiveSubscription, priceIdFor, type BillingInterval } from '../../lib/billing';
 import { fastChecksReady } from '../../lib/fast-checks';
+import { formatDate } from '../../lib/dates';
+import { TRIAL_DAYS, TRIAL_PLAN } from '../../lib/trial-plan';
+import { trialEmailConfirmed, trialOfferFor } from '../../lib/trials';
 import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
 const smart = await fastChecksReady();
-const plan = getPlan(user.plan);
+// The plan being paid for: a Pro trial changes what the account may use, not what it can change.
+const plan = getPlan(user.ownPlan);
 
 const billing = billingEnabled() ? await getBillingRow(user.id).catch(() => null) : null;
+// Only ever without a subscription (lib/trials.ts), so the two never share this page.
+const offerTrial = await trialOfferFor(user);
 
 // Without a subscription there is nothing to change — that is a purchase, and
-// pricing is where purchases start.
-if (!hasActiveSubscription(billing)) return Astro.redirect('/pricing', 302);
+// pricing is where purchases start. The one exception is the trial.
+if (!hasActiveSubscription(billing) && !offerTrial) return Astro.redirect('/pricing', 302);
+
+const trialPlan = getPlan(TRIAL_PLAN);
+const trialWaitsForEmail = offerTrial && !(await trialEmailConfirmed(user.id).catch(() => true));
+const trialEnds = formatDate(new Date(Date.now() + TRIAL_DAYS * 86_400_000));
 
 const current: BillingInterval = billing?.plan_interval === 'yearly' ? 'yearly' : 'monthly';
 
@@ -52,19 +62,68 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
   </header>
 
   <div class="app-wrap stack gap-20">
-    <div class="workspace-intro">
-      <div>
-        <span class="eyebrow">YOUR PLAN</span>
-        <h1>Change your plan.</h1>
-        <p>
-          You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Review any
-          credits, charges and the effective date in Stripe before confirming a change.
-        </p>
-      </div>
-    </div>
+    {
+      offerTrial ? (
+        <>
+          <div class="workspace-intro">
+            <div>
+              <span class="eyebrow">PRO TRIAL</span>
+              <h1>Try {trialPlan.name} for {TRIAL_DAYS} days.</h1>
+              <p>
+                Everything {trialPlan.name} includes, free for {TRIAL_DAYS} days and with no card. You are on{' '}
+                <strong>{plan.name}</strong>, and you go back to it automatically when the trial ends.
+              </p>
+            </div>
+          </div>
+
+          <section class="project-panel stack gap-12 trial-panel" id="trial" aria-labelledby="trial-heading">
+            <h2 class="section-heading" id="trial-heading">
+              <span>[ 01 ]</span> What the trial includes
+            </h2>
+            <ul class="upgrade__features">
+              {trialPlan.features
+                .filter((f) => f.included)
+                .map((feature) => (
+                  <li>
+                    <Icon name="check" size={14} /> <span>{feature.text}</span>
+                  </li>
+                ))}
+            </ul>
+            {trialWaitsForEmail && (
+              <div class="notice notice--info">
+                <strong>Confirm your email address first.</strong> We sent a link to {user.email}; you can ask for
+                another from <a href="/app/account">your account</a>.
+              </div>
+            )}
+            <form method="post" action="/api/trial">
+              <button type="submit" class="btn btn--lime trial-panel__start" disabled={trialWaitsForEmail}>
+                Start your {TRIAL_DAYS}-day {trialPlan.name} trial
+              </button>
+            </form>
+            <p class="xs muted-2">
+              Started today, it ends on {trialEnds}. Nothing to cancel: your account goes back to {plan.name} on its
+              own. Monitors beyond {plan.name}’s limit then pause, API keys stop working until you choose{' '}
+              {trialPlan.name} or Business, and {plan.name}’s {plan.historyDays}-day capture history applies again.
+              You can start one trial per account.
+            </p>
+          </section>
+        </>
+      ) : (
+        <div class="workspace-intro">
+          <div>
+            <span class="eyebrow">YOUR PLAN</span>
+            <h1>Change your plan.</h1>
+            <p>
+              You are on <strong>{plan.name}</strong>, billed {current === 'yearly' ? 'yearly' : 'monthly'}. Review any
+              credits, charges and the effective date in Stripe before confirming a change.
+            </p>
+          </div>
+        </div>
+      )
+    }
 
     {
-      options.length === 0 && !switchToYearly ? (
+      offerTrial ? null : options.length === 0 && !switchToYearly ? (
         <div class="notice notice--info">
           You are on the top plan. To change your card, download invoices or cancel, use{' '}
           <a href="/app/account">Billing on your account</a>.
@@ -143,7 +202,7 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
 
     <section class="project-panel stack gap-12" aria-labelledby="usage-heading">
       <h2 class="section-heading" id="usage-heading">
-        <span>[ {options.length === 0 && !switchToYearly ? '01' : '02'} ]</span> How screenshots are counted
+        <span>[ {options.length === 0 && !switchToYearly && !offerTrial ? '01' : '02'} ]</span> How screenshots are counted
       </h2>
       <p class="small muted">
         Manual captures and monitor checks share your monthly screenshot allowance. One daily monitor uses about 30
@@ -152,14 +211,21 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
         {smart &&
           ' That is for visual monitors, which compare screenshots. A text, price, element or SEO monitor reads the page and uses a screenshot only when something changes, plus a weekly full check.'}
       </p>
-      <p class="xs muted-2">
-        Stripe shows the payment details before you confirm. Credits and the timing of plan changes depend on the
-        billing settings. Screenshot quota still resets on the first day of each UTC calendar month.
-      </p>
+      {
+        offerTrial ? (
+          <p class="xs muted-2">Screenshot quota resets on the first day of each UTC calendar month.</p>
+        ) : (
+          <p class="xs muted-2">
+            Stripe shows the payment details before you confirm. Credits and the timing of plan changes depend on the
+            billing settings. Screenshot quota still resets on the first day of each UTC calendar month.
+          </p>
+        )
+      }
     </section>
 
     <nav class="link-row" aria-label="Account">
       <a href="/app/account">← Back to account</a>
+      {offerTrial && <a href="/pricing">See every plan and price</a>}
     </nav>
   </div>
 </AppShell>
@@ -167,6 +233,20 @@ const yearlySaving = (p: (typeof PLANS)[PlanId]) => Math.max(0, p.priceMonthly *
 <style>
   .upgrade__tagline {
     margin-top: 2px;
+  }
+  .trial-panel {
+    scroll-margin-top: 16px;
+  }
+  .trial-panel .upgrade__features {
+    margin-top: 0;
+  }
+  .trial-panel__start {
+    min-height: 44px;
+  }
+  @media (min-width: 600px) {
+    .trial-panel__start {
+      width: auto;
+    }
   }
   /* `.upgrade .btn` pushes the button to the bottom so a row of cards lines up. */
   .upgrade__head:has(+ .upgrade__action),

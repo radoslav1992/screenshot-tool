@@ -383,6 +383,88 @@ CREATE TABLE IF NOT EXISTS watch_fast_checks (
   updated_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS signup_sources (
+  user_id       TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  ref           TEXT,
+  source        TEXT,
+  medium        TEXT,
+  campaign      TEXT,
+  landing       TEXT,
+  referrer_host TEXT,
+  touched_at    TEXT,
+  ip_hash       TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS signup_sources_created ON signup_sources(created_at);
+CREATE TABLE IF NOT EXISTS referral_codes (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  code       TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS referrals (
+  id          TEXT PRIMARY KEY,
+  referrer_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  referred_id TEXT UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+  status      TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','rewarded','rejected')),
+  reason      TEXT,
+  created_at  TEXT NOT NULL,
+  rewarded_at TEXT
+);
+CREATE INDEX IF NOT EXISTS referrals_referrer ON referrals(referrer_id, status);
+CREATE INDEX IF NOT EXISTS referrals_created ON referrals(created_at);
+CREATE TABLE IF NOT EXISTS bonus_balances (
+  user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  screenshots INTEGER NOT NULL DEFAULT 0 CHECK(screenshots >= 0),
+  updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bonus_usage (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period  TEXT NOT NULL,
+  used    INTEGER NOT NULL DEFAULT 0,
+  token   TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, period)
+);
+
+CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  endpoint        TEXT NOT NULL UNIQUE,
+  p256dh          TEXT NOT NULL,
+  auth            TEXT NOT NULL,
+  user_agent      TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL,
+  last_success_at TEXT
+);
+CREATE INDEX IF NOT EXISTS web_push_subscriptions_user ON web_push_subscriptions(user_id, created_at);
+CREATE INDEX IF NOT EXISTS web_push_subscriptions_session ON web_push_subscriptions(session_id);
+CREATE TABLE IF NOT EXISTS web_push_deliveries (
+  run_id          TEXT NOT NULL REFERENCES watch_runs(id) ON DELETE CASCADE,
+  device_id       TEXT NOT NULL REFERENCES web_push_subscriptions(id) ON DELETE CASCADE,
+  session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL,
+  expires_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  reason          TEXT,
+  PRIMARY KEY(run_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS web_push_deliveries_due ON web_push_deliveries(status, next_attempt_at);
+
+CREATE TABLE IF NOT EXISTS plan_trials (
+  user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  plan        TEXT NOT NULL DEFAULT 'pro',
+  started_at  TEXT NOT NULL,
+  ends_at     TEXT NOT NULL,
+  reminded_at TEXT,
+  ended_at    TEXT,
+  ip_hash     TEXT
+);
+CREATE INDEX IF NOT EXISTS plan_trials_open ON plan_trials(ended_at, ends_at);
+CREATE INDEX IF NOT EXISTS plan_trials_ip ON plan_trials(ip_hash, started_at);
+CREATE INDEX IF NOT EXISTS plan_trials_started ON plan_trials(started_at);
+
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -405,3 +487,6 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0013_capture_jobs.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0014_pinned_baseline.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0015_report_signoff_branding.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0016_watch_fast_checks.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0017_growth.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0018_web_push.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0019_plan_trials.sql');

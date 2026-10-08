@@ -1,0 +1,334 @@
+---
+import AppShell from '../../layouts/AppShell.astro';
+import { growthAvailable, REFERRAL_BONUS, REFERRAL_CAP } from '../../lib/growth';
+import { growthReport, isOwner, WINDOWS, type Counts, type CountRow } from '../../lib/growth-report';
+import { formatDateTime } from '../../lib/dates';
+import { TRIAL_DAYS } from '../../lib/trial-plan';
+
+const user = Astro.locals.user!;
+// Not "forbidden": for everyone but the owner there is no such page.
+if (!isOwner(user.email)) return new Response('Not found', { status: 404 });
+
+Astro.response.headers.set('cache-control', 'private, no-store');
+Astro.response.headers.set('x-robots-tag', 'noindex, nofollow');
+
+const ready = await growthAvailable();
+const report = ready ? await growthReport() : null;
+const generated = formatDateTime(new Date());
+
+const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : '—');
+const overviewRows: Array<{ label: string; counts: Counts; share?: boolean }> = report
+  ? [
+      { label: 'Signups', counts: report.overview.signups },
+      { label: 'From report links (ref=report)', counts: report.overview.report, share: true },
+      { label: 'From tools (ref=tool-…)', counts: report.overview.tools, share: true },
+      { label: 'From referral links', counts: report.overview.referral, share: true },
+      { label: 'iOS app', counts: report.overview.ios, share: true },
+      { label: 'Direct (nothing noted)', counts: report.overview.direct, share: true },
+      { label: 'Activated: a capture or a monitor', counts: report.overview.active, share: true },
+      { label: 'On a paid plan now', counts: report.overview.paid, share: true },
+    ]
+  : [];
+const tables: Array<{ id: string; title: string; note: string; rows: CountRow[] }> = report
+  ? [
+      { id: 'by-ref', title: 'Signups by ref', note: 'The ?ref= a signup first arrived with.', rows: report.refs },
+      {
+        id: 'by-campaign',
+        title: 'Signups by source / medium / campaign',
+        note: 'utm_source, utm_medium and utm_campaign; the iOS app is source “ios”.',
+        rows: report.campaigns,
+      },
+      { id: 'by-site', title: 'Signups by referring site', note: 'Host names only, never full addresses.', rows: report.sites },
+      {
+        id: 'rejections',
+        title: 'Rejected referrals by reason',
+        note: 'same_person: same email domain and signup address · limit_reached: the referrer had every reward · account_deleted: the invited account was deleted first.',
+        rows: report.rejections,
+      },
+    ]
+  : [];
+---
+
+<AppShell title="Growth" tab="account">
+  <header class="appbar" slot="appbar">
+    <div class="appbar__title">Growth</div>
+    <span class="pill pill--quota">Owner only</span>
+  </header>
+
+  <div class="app-wrap stack gap-20 growth">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">OWNER / GROWTH</span>
+        <h1>Where signups come from.</h1>
+        <p>Signups, referrals, trials, activation and paid plans over the last 7, 30 and 90 days. Generated {generated}.</p>
+      </div>
+    </div>
+
+    {
+      !ready || !report ? (
+        <div class="notice notice--info" role="status">
+          <strong>Apply migration 0017 to start counting.</strong> Run <span class="mono">npm run db:migrate</span>, or
+          paste <span class="mono">db/0017-upgrade.sql</span> into the D1 console. Until then the attribution cookie is
+          set but nothing is saved, and the referral programme stays hidden. The page picks the tables up within a
+          minute.
+        </div>
+      ) : (
+        <>
+          <section class="growth-block" aria-labelledby="overview-title">
+            <div class="growth-head">
+              <h2 id="overview-title">Signups</h2>
+              <span>[ SINCE 0017 ]</span>
+            </div>
+            <p class="xs muted">Accounts created before migration 0017 have no source and are not counted.</p>
+            <div class="growth-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Measure</th>
+                    {WINDOWS.map((days) => <th scope="col">{days} days</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {overviewRows.map((row) => (
+                    <tr>
+                      <th scope="row">{row.label}</th>
+                      {row.counts.map((count, index) => (
+                        <td>
+                          {count.toLocaleString()}
+                          {row.share && <small>{pct(count, report.overview.signups[index]!)}</small>}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="growth-block" aria-labelledby="referrals-title">
+            <div class="growth-head">
+              <h2 id="referrals-title">Referrals</h2>
+              <span>[ BY DATE INVITED ]</span>
+            </div>
+            <p class="xs muted">
+              {REFERRAL_BONUS} bonus screenshots to each side once the invited account is confirmed and has captured; at most
+              {' '}{REFERRAL_CAP} rewards per referrer.
+            </p>
+            <div class="growth-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Referrals</th>
+                    {WINDOWS.map((days) => <th scope="col">{days} days</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(
+                    [
+                      ['Invited (signed up through a link)', report.referrals.invited],
+                      ['Pending', report.referrals.pending],
+                      ['Rewarded', report.referrals.rewarded],
+                      ['Rejected', report.referrals.rejected],
+                    ] as const
+                  ).map(([label, counts]) => (
+                    <tr>
+                      <th scope="row">{label}</th>
+                      {counts.map((count) => <td>{count.toLocaleString()}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {report.trials && (
+            <section class="growth-block" aria-labelledby="trials-title">
+              <div class="growth-head">
+                <h2 id="trials-title">Pro trials</h2>
+                <span>[ BY DATE STARTED ]</span>
+              </div>
+              <p class="xs muted">
+                {TRIAL_DAYS}-day Pro trials started in the window, and those whose account is on a Stripe plan now. No
+                trial starts with one, so that is a conversion; Apple purchases are not counted.
+              </p>
+              <div class="growth-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Trials</th>
+                      {WINDOWS.map((days) => <th scope="col">{days} days</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">Started</th>
+                      {report.trials.started.map((count) => <td>{count.toLocaleString()}</td>)}
+                    </tr>
+                    <tr>
+                      <th scope="row">Converted to paid</th>
+                      {report.trials.converted.map((count, index) => (
+                        <td>
+                          {count.toLocaleString()}
+                          <small>{pct(count, report.trials!.started[index]!)}</small>
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          <section class="growth-block" aria-labelledby="paid-title">
+            <div class="growth-head">
+              <h2 id="paid-title">Paid conversions by channel</h2>
+              <span>[ PAID / SIGNUPS ]</span>
+            </div>
+            <p class="xs muted">Signups in the window that are on a paid plan now, through Stripe or Apple.</p>
+            <div class="growth-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Channel</th>
+                    {WINDOWS.map((days) => <th scope="col">{days} days</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.paidByChannel.length === 0 && (
+                    <tr>
+                      <td colspan="4" class="growth-empty">No signups in the last 90 days.</td>
+                    </tr>
+                  )}
+                  {report.paidByChannel.map((row) => (
+                    <tr>
+                      <th scope="row">{row.label}</th>
+                      {row.paid.map((paid, index) => (
+                        <td>
+                          {paid.toLocaleString()} / {row.signups[index]!.toLocaleString()}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {tables.map((table) => (
+            <section class="growth-block" aria-labelledby={`${table.id}-title`}>
+              <div class="growth-head">
+                <h2 id={`${table.id}-title`}>{table.title}</h2>
+                <span>[ TOP 25 ]</span>
+              </div>
+              <p class="xs muted">{table.note}</p>
+              <div class="growth-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Value</th>
+                      {WINDOWS.map((days) => <th scope="col">{days} days</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {table.rows.length === 0 && (
+                      <tr>
+                        <td colspan="4" class="growth-empty">Nothing in the last 90 days.</td>
+                      </tr>
+                    )}
+                    {table.rows.map((row) => (
+                      <tr>
+                        <th scope="row">{row.label}</th>
+                        {row.counts.map((count) => <td>{count.toLocaleString()}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+        </>
+      )
+    }
+  </div>
+</AppShell>
+
+<style>
+  .growth-block {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+  .growth-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .growth-head h2 {
+    font: 700 15px var(--display);
+  }
+  .growth-head span {
+    font: 10px/1.5 var(--mono);
+    color: var(--muted);
+  }
+  .growth-table {
+    background: var(--white);
+    border: 1px solid var(--line-2);
+    min-width: 0;
+  }
+  .growth-table table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    text-align: left;
+  }
+  .growth-table th,
+  .growth-table td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line-2);
+    font-size: 13px;
+    line-height: 1.4;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+  .growth-table tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+  .growth-table thead th {
+    font: 10px/1.5 var(--mono);
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--paper);
+  }
+  .growth-table :is(thead, tbody) :is(th, td):not(:first-child) {
+    width: 22%;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .growth-table tbody th {
+    font-weight: 500;
+  }
+  .growth-table small {
+    display: block;
+    font: 10px var(--mono);
+    color: var(--muted);
+  }
+  .growth-table .growth-empty {
+    width: auto;
+    text-align: left;
+    color: var(--muted);
+  }
+  @media (max-width: 480px) {
+    .growth-table th,
+    .growth-table td {
+      padding: 10px 8px;
+      font-size: 12px;
+    }
+    .growth-table :is(thead, tbody) :is(th, td):not(:first-child) {
+      width: 19%;
+    }
+  }
+</style>

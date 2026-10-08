@@ -1,0 +1,56 @@
+# Every push to main deploys straight to production (Cloudflare Workers Builds),
+# so this is the gate in front of it: the same checks a contributor runs
+# locally, on every pull request and every push to main. Make "Typecheck, test
+# and build" a required check on main (Settings → Rules) to hold a merge until
+# it passes.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a pull request replaces the run in flight; on main every
+  # commit is a deploy, so each one is checked to the end.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # node:sqlite and --experimental-strip-types, both used by npm test.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The rendering checks drive a real Chromium through playwright-core. Take
+      # the build that matches the installed playwright-core and point the
+      # scripts at it (they read CHROME_PATH).
+      - name: Install Chromium for the rendering checks
+        run: |
+          npx playwright-core install --with-deps --no-shell chromium
+          echo "CHROME_PATH=$(node --input-type=module -e "const { chromium } = await import('playwright-core'); console.log(chromium.executablePath())")" >> "$GITHUB_ENV"
+
+      - name: Typecheck
+        run: npx astro check
+
+      - name: Test
+        run: npm test
+
+      # No Cloudflare login here: astro.config keeps remote bindings off, so the
+      # build needs no credentials and matches what Workers Builds deploys.
+      - name: Build
+        run: npm run build

@@ -1,5 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { SESSION_COOKIE, resolveSession } from './lib/auth';
+import { ATTRIBUTION_COOKIE, carriedTouch, firstTouchCookie, isLandingPath, withTouch } from './lib/attribution';
+import { attributionCookieEnabled } from './lib/growth';
 import { safeNext } from './lib/safe-next';
 
 /** Routes that require a signed-in user (prefix match). */
@@ -43,8 +45,47 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return withSecurityHeaders(context.redirect(landing, 302), context.url);
   }
 
-  return withSecurityHeaders(await next(), context.url);
+  const response = withSecurityHeaders(await next(), context.url);
+  if (context.locals.user || response.status >= 400) return response;
+  // Where a signed-out visitor first came from, for signup (lib/attribution.ts).
+  if (attributionCookieEnabled()) {
+    // Appended after the page has set its own headers, so it adds a cookie and
+    // changes nothing else about the response.
+    const touch = firstTouchCookie(context.request, context.url, context.cookies.get(ATTRIBUTION_COOKIE)?.value);
+    if (touch) response.headers.append('set-cookie', touch);
+    return response;
+  }
+  return carryTouch(context.request, context.url, response);
 });
+
+/**
+ * Without the cookie, a landing page carries the first touch in its links
+ * towards signing up, so the signup form can post it. Only signed-out GETs of
+ * HTML pages that say where the visitor came from are rewritten; everything
+ * else passes through untouched. A page rewritten from the Referer differs by
+ * visitor, so it is not cached for anyone else.
+ */
+function carryTouch(request: Request, url: URL, response: Response): Response {
+  if (request.method !== 'GET' || !isLandingPath(url.pathname)) return response;
+  if (!(response.headers.get('content-type') ?? '').includes('text/html') || typeof HTMLRewriter === 'undefined') {
+    return response;
+  }
+  const touch = carriedTouch(url, request.headers.get('referer'));
+  if (!touch) return response;
+  const rewritten = new HTMLRewriter()
+    .on('a[href]', {
+      element(link) {
+        // HTMLRewriter hands attributes over as written, entities and all
+        // (Astro writes `&` as `&amp;`), and writes them back as given.
+        const written = (link.getAttribute('href') ?? '').replace(/&amp;|&#0*38;|&#x0*26;/gi, '&');
+        const href = withTouch(written, touch, url.origin);
+        if (href) link.setAttribute('href', href.replace(/&/g, '&amp;'));
+      },
+    })
+    .transform(response);
+  rewritten.headers.set('cache-control', 'private, no-cache');
+  return rewritten;
+}
 
 /**
  * Baseline security headers. `nosniff` and HSTS go on every response; the

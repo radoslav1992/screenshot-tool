@@ -52,6 +52,21 @@ export async function checkRateLimit(
   return { ok: true, limit, remaining: Math.max(0, limit - current - cost), resetSeconds };
 }
 
+/**
+ * Gives back `cost` units drawn in the current window, for work that was
+ * counted and then never ran. Best effort, like the counter itself.
+ */
+export async function refundRateLimit(bucket: string, windowSeconds = 60, cost = 1): Promise<void> {
+  const key = `rl:${bucket}:${Math.floor(Math.floor(Date.now() / 1000) / windowSeconds)}`;
+  try {
+    const current = Number.parseInt((await env.RATE.get(key)) ?? '0', 10) || 0;
+    if (current <= 0) return;
+    await env.RATE.put(key, String(Math.max(0, current - cost)), { expirationTtl: Math.max(60, windowSeconds * 2) });
+  } catch (error) {
+    kvFailed(error);
+  }
+}
+
 let kvFailureLogged = false;
 
 /** Logged once per isolate: a struggling KV would otherwise log on every request. */

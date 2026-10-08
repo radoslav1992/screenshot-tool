@@ -5,6 +5,9 @@ import { watchSettingsReady } from './watch-settings';
 import { accountBrandingCleanup } from './branding';
 import { signoffsReady } from './signoff';
 import { captureJobsReady } from './capture-jobs';
+import { growthCleanup } from './growth';
+import { webPushTablesReady } from './push';
+import { trialCleanup } from './trials';
 
 export interface DeletionResult {
   /** R2 objects removed. */
@@ -115,13 +118,29 @@ export async function deleteAccount(userId: string): Promise<DeletionResult> {
         ),
       ]
     : [];
+  // Browser push subscriptions go with their sessions anyway; named here like everything else.
+  const webPushCleanup = (await webPushTablesReady())
+    ? [
+        env.DB.prepare('DELETE FROM web_push_deliveries WHERE device_id IN(SELECT id FROM web_push_subscriptions WHERE user_id=?)').bind(
+          userId,
+        ),
+        env.DB.prepare('DELETE FROM web_push_subscriptions WHERE user_id=?').bind(userId),
+      ]
+    : [];
+  // Signup source, referral code, bonus and referrals (lib/growth.ts).
+  const growthRows = await growthCleanup(userId);
+  // The Pro trial record, once migration 0019 exists.
+  const trialRows = await trialCleanup(userId);
   await env.DB.batch([
+    ...growthRows,
+    ...trialRows,
     ...collaborationCleanup,
     ...signoffCleanup,
     ...brandingCleanup,
     ...noiseCleanup,
     ...projectCleanup,
     ...jobCleanup,
+    ...webPushCleanup,
     env.DB.prepare('DELETE FROM watch_runs WHERE user_id=?').bind(userId),
     env.DB.prepare('DELETE FROM watches WHERE user_id=?').bind(userId),
     env.DB.prepare(`DELETE FROM captures WHERE user_id = ?`).bind(userId),

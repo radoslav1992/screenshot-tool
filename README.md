@@ -74,7 +74,7 @@ CI=1 npm run dev
 
 **Tests:** `npm test` runs every offline check (rendering, redaction, consent, diffs, projects, monitors,
 SEO rules, retention, push, Apple, commerce, capture engine, auth and billing, billing error pages, D1
-schema files) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
+schema files, signup attribution and referrals, web push and the install hint, Pro trials) against SQLite and local Chromium; no real email, webhook, Stripe or push call is made.
 Before changing an API the iOS app uses, also run
 `BASE=http://localhost:4321 npm run mobile:check` against a dev server: it drives the API exactly like the
 app (manual session cookie, JSON, no Origin header, redirects not followed) and asserts every response
@@ -132,6 +132,9 @@ npx wrangler kv namespace create RATE
    | `db/0014-upgrade.sql` | pinned baselines |
    | `db/0015-upgrade.sql` | report sign-off and branding |
    | `db/0016-upgrade.sql` | smart checks for rule-based monitors |
+   | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
+   | `db/0018-upgrade.sql` | web push for browsers and the installed app |
+   | `db/0019-upgrade.sql` | 14-day Pro trials |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -188,6 +191,31 @@ npx wrangler secret put CF_ACCOUNT_ID
 npx wrangler secret put CF_API_TOKEN
 ```
 
+### Checks before a deploy, and watching after it
+
+Every push to `main` deploys straight to production, so `.github/workflows/ci.yml` runs what a contributor
+runs — `npx astro check`, `npm test` (with the Chromium that matches `playwright-core`, through `CHROME_PATH`)
+and `npm run build` — on every pull request and every push to `main`. To make a merge wait for it, add a
+rule in **Settings → Rules → Rulesets** (or **Branches**) for `main` that requires the status check
+**Typecheck, test and build**.
+
+Once it is live, the service is watched from both sides:
+
+- **From outside**, `.github/workflows/uptime.yml` runs every 30 minutes: the home page must answer `200`
+  and `/api/health` must be `ok`, with the hourly sweep's heartbeat fresh. Three failures a minute apart fail
+  the run, and GitHub emails whoever last changed its `cron:` line (**Settings → Notifications → Actions**
+  decides how). If those emails do not arrive, edit that line once in GitHub's web editor to take them over.
+- **From inside**, the hourly cron runs a self-check (`src/lib/ops-watchdog.ts`) that nobody's page view
+  would catch: monitors more than two hours late, a capture queue that has stopped moving, most recent
+  monitor checks failing on our side (browser limits, rate limits, an unreachable renderer), a required
+  migration missing, or D1, R2 or KV unreachable. It emails each address in `OWNER_EMAILS` when that changes,
+  again once a day while it stays broken, and once when it is all clear. With `OWNER_EMAILS` unset it only
+  logs `[watchdog] …` lines.
+
+The self-check leaves its time in KV, and `/api/health` reports it as `checks.scheduler`: stale after
+2¼ hours means the cron itself has stopped, the one failure the self-check cannot email about. It is kept
+out of the top-level `ok`, which stays about serving requests; the uptime workflow checks both.
+
 ---
 
 ## API
@@ -227,7 +255,12 @@ Full reference: `/docs`.
   `share_target` so sharing a URL to Easy Screen Capture opens the capture form pre-filled.
 - `public/sw.js` — cache-first for fonts/icons/hashed assets, network-first for documents with an
   offline fallback. API responses and rendered files are never cached.
-- Install prompt is surfaced as a row on the Account screen.
+- Installing: Chromium's install prompt is a row on the Account screen, and a one-line hint on the capture
+  screen (`/app`) and Monitors (`/app/watches`) offers the same prompt, or the Share → Add to Home Screen steps in
+  iOS Safari. It is hidden in the installed app, in browsers that cannot install, and once closed on that device
+  (remembered in `localStorage`). The logic is shared in `src/scripts/install.ts`; never on marketing pages.
+- Change alerts as notifications: `sw.js` shows Web Push alerts and opens the monitor on a click — see *Web Push
+  for browsers and the installed app* below.
 - Fonts (Sora, IBM Plex Sans/Mono) are self-hosted latin subsets, so the shell renders offline and
   no third-party request is made.
 
@@ -259,6 +292,10 @@ matter are the ones protecting the render pool and storage rather than the month
   it saves. Set `BROWSER_KEEP_ALIVE_MS` (max 600000) once volume justifies it; the win at low volume
   is latency, not cost. If sessions are held open but not actually reused they accumulate against
   the concurrency cap, which surfaces as a `browser_unavailable` error naming the setting.
+
+- **Free tools.** The public tools under `/tools` render without an account, so they have limits of their
+  own: 5 renders per visitor a day, a daily cap across everyone (`FREE_TOOLS_DAILY_RENDERS`, default 300, `0`
+  to switch them off), and they start only when the browser pool has sessions to spare. See *Free tools* below.
 
 - **Email verification.** Optional and off by default. Set `REQUIRE_EMAIL_VERIFICATION=1` *and*
   configure a transport to require a confirmed address before capturing. The gate only engages when
@@ -339,10 +376,12 @@ matter are the ones protecting the render pool and storage rather than the month
   With no AI binding, or on any model failure, the alert falls back to the plain list of added and removed
   lines: an alert that arrives plain beats one that does not arrive.
 
-  The `ai` binding ships **commented out** in `wrangler.jsonc`. An AI binding has no local implementation —
-  the adapter proxies it to the real service — so `astro build` and `astro dev` fail with *user auth missing
-  api token* on any machine not logged into Cloudflare. Uncomment it when you want the summaries and every
-  build runs authenticated.
+  The `ai` binding is on in `wrangler.jsonc`; it uses the account's Workers AI, with nothing to create. An AI
+  binding has no local implementation — with remote bindings on, the adapter proxies it to the real service and
+  `astro build` and `astro dev` fail with *user auth missing api token* on any machine not logged into
+  Cloudflare. So `astro.config.mjs` keeps remote bindings off unless `CLOUDFLARE_REMOTE_BINDINGS=1`: builds, dev
+  servers and CI need no login, production gets the real binding at deploy time, and alerts made locally fall
+  back to the plain list.
 
 - **Compare two pages.** `POST /v1/compare` (and `/api/compare`) captures two URLs and measures how much of the
   picture differs, reusing the watch diff engine. Each side takes the usual capture parameters prefixed `a_` and
@@ -811,6 +850,193 @@ stays hidden in the app. Apply it with `npm run db:migrate`, or paste `db/0016-u
 console; it is picked up within a minute. `npm run fast:check` runs the HTML reader in workerd (through
 Miniflare, against the real `HTMLRewriter`) and the check flow against SQLite with and without the table.
 
+### Free tools (no migration)
+
+Four public pages under `/tools`, for anyone, with no account: a full-page screenshot, a responsive preview
+(phone, tablet and desktop, first screen, side by side), an SEO tag checker, and a visual comparison of two
+pages with the changed areas boxed. `/tools` lists them; they are in the sitemap (`/sitemap.xml`, with
+`/robots.txt` pointing at it), the footer and the features page. Each result ends with "Monitor this page free",
+linking to `/signup?next=/app/watches/setup?url=…&ref=tool-<name>` (signed in, straight to the setup page,
+which takes the `url` prefill).
+
+- **Plain forms first.** Each page posts to itself and comes back with the result in it; `scripts/tools.ts`
+  posts the same form with `fetch()`, shows the seconds while it works, swaps in the result from the same
+  markup and turns the inline images into object URLs. Same origin only: a POST needs an `Origin` that matches,
+  or `Sec-Fetch-Site: same-origin`. There is no API and no key access.
+- **Nothing stored.** Images go back inline in the response and nowhere else — no D1 row, no R2 object, no KV
+  entry — and nothing logs the visitor or the page. The comparison hands the two images to the diff as data URLs.
+- **Few renders per visitor.** `lib/free-tools.ts`: 5 renders per visitor per UTC day across the browser tools
+  (a screenshot 1, a preview 3, a comparison 2) and 30 SEO checks an hour, counted in KV `RATE` under a SHA-256
+  of the address (an IPv6 one by its /64) and the date, so no key holds an address and keys change daily.
+  Counters fail open, as `rate-limit.ts` does.
+- **Few renders in all.** A daily cap across every visitor, 300 by default, set with the optional
+  `FREE_TOOLS_DAILY_RENDERS` var; `0` switches the browser tools off (the SEO checker stays). Past it visitors
+  are told the tools are busy and offered a free account.
+- **Customers first.** A free render starts only when the Browser Rendering pool has more than 2 sessions
+  spare (`spareSessions`, from `limits()`), and it never waits for one: `acquireBrowser({ wait: false })`
+  answers a full pool with "busy, try again in a minute" at once, and the renders drawn for it are given back.
+  Nothing anonymous goes through the capture queue.
+- **Bounded renders.** Built in `toolOptions` from the address and a preset device alone: scale 1 everywhere
+  (`sizes` included), JPEG at quality 70, a full page cut at 8,000 px (the mark placed inside the cut), the
+  free-plan mark on every image, the normal 100 s capture deadline, ads blocked and consent dismissed, and
+  the same private-address and `CAPTURE_HOST_DENYLIST` checks. No credentials, headers, cookies, actions or
+  other options exist on this path. The renderer reads these limits from `CaptureOptions.bounded`, which only
+  this module sets.
+- **SEO checker without a browser.** `lib/seo-check.ts` fetches with `safe-fetch.ts` (each redirect hop checked,
+  10 s, 3 MB) and reads with `fast-extract.ts`'s `readSeoTags` — the SEO rule's HTMLRewriter reading plus
+  Twitter tags, the viewport, `lang` and several h1s, which monitors never ask for — then words its findings
+  (missing or long title and description, noindex in meta or `X-Robots-Tag`, a canonical elsewhere, several
+  h1s, no `og:image`, redirect chains, hreflang without the page itself, …) with a Google and a share preview.
+
+`npm run tools:check` covers the limits and their fail-open, the refusals, the cost weights, the bounded
+render (through the real renderer against a fake page), same-origin enforcement and the `ref` on every call to
+action, and runs the SEO checker in workerd against HTML fixtures and fixture redirects.
+
+### Signup sources, referrals and the growth dashboard (0017)
+
+Growth built into the product, for the freelancers and small agencies who look after client websites.
+
+- **First-touch attribution** (`lib/attribution.ts`, `src/middleware.ts`). Where a signed-out visitor came
+  from — `?ref=`, `utm_source`, `utm_medium`, `utm_campaign`, or a `Referer` from another site — is noted
+  (the ref, the three UTM values, the landing path without its query, the referring host name, never a URL,
+  and the time, each sanitised and capped) and saved to `signup_sources` when they sign up. **By default
+  nothing is stored in the browser:** the landing page's links towards signing up (`/signup`, `/pricing`,
+  `/client-sign-off`, `/sample-report`, `/features`, `/tools`) carry it in a `src` parameter, rewritten by the
+  middleware with HTMLRewriter on signed-out GETs of HTML pages, and the signup form posts it in a hidden
+  field. A cookie that is not strictly necessary needs consent under the EU's ePrivacy rules and the site asks
+  for none, so a visitor who leaves and comes back later is not remembered. Set `ATTRIBUTION_COOKIE=1` to keep
+  the first touch in a 30-day first-party cookie, `sf_src`, as well — only once the site asks for consent; the
+  privacy page follows the setting. The app, the APIs, files, share links (`/r/…`), `/verify` and
+  `/reset-password` are never landings. The iOS app signs up with JSON, no Origin and nothing carried: that is
+  recorded as `source = 'ios'`, and the response is unchanged. Each signup also keeps a shortened SHA-256 of its
+  IP address, used only by the referral rules below. No third-party analytics.
+- **Referral programme** (`lib/growth.ts`). Every account gets a stable code and the link `/join/<code>`
+  (`/r/` is taken by share links). The link redirects to `/signup`, which explains the offer, carrying
+  `ref=referral:<code>` in its `src` (with the cookie on, it notes it there instead — over an earlier
+  non-referral first touch, keeping its campaign and landing; the first referral link followed wins). `/join` is limited to 30 links an hour per address in KV.
+  The referred account is rewarded once its email is confirmed (only asked for when this deployment can send
+  mail) and it has a finished capture or monitor check: both sides get **100 bonus screenshots**, the referrer is
+  emailed once. The check runs after every successful capture, on `/verify` and on the account page; most calls
+  end at one indexed read.
+- **Abuse rules.** One referral per referred account (`referrals.referred_id` is unique). Rejected at signup
+  when the referrer has the same email domain *and* the same signup IP hash (`same_person`), or already has
+  20 rewarded referrals (`limit_reached`, also enforced inside the reward batch). Deleting a referred account
+  keeps the referrer's bonus and their row (pointing nowhere); a pending one is closed as `account_deleted`.
+- **Bonus screenshots** (`lib/captures.ts`). A balance in `bonus_balances` that never expires and is spent only
+  once the month's allowance is: `reserveQuota` tries the allowance alone first (unchanged), then takes what is
+  left of it plus the rest from the bonus in one batch of conditional UPDATEs, coordinated by a token on the
+  month's `bonus_usage` row. `refundQuota` gives back bonus screenshots first, up to what the month drew from it.
+  `getUsage().remaining` includes the bonus, so every capture path, batches, the queue, monitors' quota skip and
+  smart checks honour it; `quota` stays the plan's allowance and `used` its use. `/api/mobile/profile` adds
+  `usage.bonus` and `referral_url`, both optional.
+- **Report attribution.** "Shared with Easy Screen Capture" under a shared report links to
+  `/client-sign-off?ref=report`; a white-labelled report still shows no line and no link. PDF exports carry no
+  attribution, as before.
+- **Landing page.** `/client-sign-off`: the monitor → highlight → branded report → client approval → proof
+  workflow, the free offer (3 monitors checked weekly, from `lib/plans.ts`), the sample report and an FAQ. Its
+  signup and pricing links carry `ref=client-sign-off`.
+- **Owner dashboard.** `/app/growth`, for the emails in `OWNER_EMAILS` only (a 404 for everyone else): signups
+  by ref, UTM and referring site, report-link and `tool-…` signups, referrals and rejection reasons, activation
+  (a capture or a monitor) and paid plans by channel, over 7, 30 and 90 days. Every query reads at most 90
+  days through a `created_at` index. Set the list as a secret:
+
+  ```bash
+  npx wrangler secret put OWNER_EMAILS   # e.g. you@example.com,partner@example.com
+  ```
+
+**Before the migration** nothing is saved (links still carry the touch, the cookie is still set where it is on), the invite section and the signup offer
+stay hidden, `/join` just redirects to signup, quotas count the allowance alone, the landing page and report link
+work, and `/app/growth` asks for 0017. Apply it with `npm run db:migrate`, or paste `db/0017-upgrade.sql` into
+the D1 console; it is picked up within a minute. `npm run growth:check` covers all of it against SQLite.
+
 ### iOS push notifications
 
 Native push support uses APNs and authenticated per-session device registrations. Apply `migrations/0010_mobile_push.sql` and configure `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID` as Worker secrets. Setup and separate console SQL blocks: https://github.com/radoslav1992/screenshot-tool-ios/blob/main/PUSH_SETUP.md . Run `npm run push:check` for mocked-delivery and SQLite integration checks. No secrets means push stays dormant; email continues independently.
+
+### Web Push for browsers and the installed app (0018)
+
+The same monitor change alerts the iOS app gets, in Chrome, Edge, Firefox, Safari on macOS and, from iOS 16.4,
+web apps added to the Home Screen. Standard Web Push, written on WebCrypto with no dependency
+(`src/lib/web-push.ts`): a VAPID ES256 JWT per push service (RFC 8292) and the alert encrypted to the browser's
+keys with `aes128gcm` (RFC 8291, RFC 8188). The alert carries the APNs wording, never the monitored URL, label or
+page content: `{title, body, url: "/app/watches/<id>", watch_id, run_id}`.
+
+- **Queue** (`src/lib/push.ts`). `web_push_deliveries` has `push_deliveries`' columns, so one queue serves both: a
+  changed run commits one insert per kind of device in the same batch as the run, then is drained; the hourly
+  cron sweeps retries. Claims stop double sends, three attempts at most, retries on the next hour, a day to
+  deliver (`TTL` to match, `Urgency: normal`), and an unknown transport outcome is never resent. Push service
+  answers: 201/202 delivered, 404/410 deletes the subscription, 429/5xx retried, anything else (413 included)
+  failed and kept. `/api/mobile/push` and everything the iOS app uses are unchanged.
+- **Subscriptions.** One per signed-in browser, tied to its session, so signing out removes it. Endpoints must be
+  https on `fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.notify.windows.com` or `*.push.apple.com` (the
+  server POSTs there); `p256dh` must be a 65-byte P-256 point on the curve and `auth` 16 bytes. Subscribing again
+  re-binds the endpoint to whoever is signed in; past ten per account the oldest goes.
+- **API** (same-origin, signed in): `GET /api/push/web` → `{available, publicKey, subscribed}`;
+  `POST /api/push/web` with `PushSubscription.toJSON()`; `DELETE /api/push/web` with `{endpoint}`;
+  `POST /api/push/web/test` sends a test alert to this browser, five an hour per account.
+- **UI.** *Change alerts on this device* on the Account screen says whether this browser can't, needs the app
+  installed first (iOS), is blocked in its settings, is off or on. Permission is asked only when *Turn on* is
+  clicked. The monitor page's *Where alerts go* links to it.
+
+**Turning it on.** Generate a key pair locally and set the three secrets (the script prints the commands, and
+`.dev.vars` lines for local development):
+
+```bash
+npm run vapid:keys -- mailto:you@example.com
+printf '%s' '<public>'  | npx wrangler secret put VAPID_PUBLIC_KEY   # base64url uncompressed P-256 point
+printf '%s' '<private>' | npx wrangler secret put VAPID_PRIVATE_KEY  # base64url scalar, or a PKCS8 PEM
+printf '%s' 'mailto:you@example.com' | npx wrangler secret put VAPID_SUBJECT
+```
+
+Then apply `npm run db:migrate`, or paste `db/0018-upgrade.sql` into the D1 console; it is picked up within a
+minute. **Without the migration or any of the three secrets** nothing changes: the Account card and the monitor
+page note are not rendered, `/api/push/web` reports `available: false` and refuses to subscribe, and nothing is
+queued; APNs and email alerts carry on as before. Keep the key pair once it is in use: every subscription is tied
+to the public key it was made with, so a new pair stops alerts to every browser until each turns them on again.
+`npm run webpush:check` covers the RFC 8291 test vector, VAPID, subscriptions, delivery beside APNs, the test-alert
+limit, dormancy and account deletion against SQLite with a mocked `fetch`.
+
+### Pro trials (0019)
+
+Free and Lite accounts can try Pro for 14 days, once, with no card, and go back to their own plan on their own
+when it ends.
+
+- **One plan decision** (`lib/trial-plan.ts`, `toSessionUser` in `lib/auth.ts`). Every user has two plans:
+  `ownPlan`, what the account holds through Stripe or Apple (or Free), and `plan`, what it acts on — Pro while a
+  trial runs on top of a plan below Pro. The trial is read with the user row by one `LEFT JOIN plan_trials` once
+  the table exists (probed in `sqlite_master`, cached per isolate), so sessions, API keys (`authenticateApiKey`),
+  the monitor sweep (`runWatch`), alert retries, queued captures and `/api/mobile/profile` all get the same plan;
+  retention and report branding use the same rule in SQL (`planSql`). Everything that reads `plan` follows: the
+  monthly quota, monitor limits and schedules, API access and its rate, PDF and custom sizes, the watermark,
+  history days, batch and hourly limits, and the white label. `users.plan` is never written by a trial.
+- **Billing keeps to the real plan.** The pricing page's "Current plan", the account screen's billing rows, the
+  upgrade page and the plan-change diagnosis read `ownPlan`, so a trialing Free account can still buy Lite, Plus
+  or Pro, and the Apple purchase check reads the database as before. A Stripe subscription to Pro or Business
+  closes a running trial without its ended email.
+- **Quota.** Pro's 2,000 for the month while the trial runs; when it ends mid-month the account's own allowance
+  applies for the rest of it, and what was already used still counts.
+- **Starting one.** `POST /api/trial` (same-origin, signed in) answers `201 {plan: "pro", ends_at}`, or
+  `409 trial_used`, `409 already_paid` (not Free or Lite, or an active Stripe subscription), `403
+  verification_required` (the email is not confirmed: required wherever mail can be sent, even with
+  `REQUIRE_EMAIL_VERIFICATION` off, since two weeks of Pro would otherwise be worth a throwaway signup),
+  `429 rate_limited` (5 an hour per account, 20 per address,
+  in KV) or `429 trial_limit` (3 trials per hashed address in 30 days, hashed like the signup address in
+  `lib/growth.ts`, checked in the same statement that inserts the row). A form post lands on the account screen.
+- **The end.** The hourly cron (`runTrialLifecycle`) emails a reminder three days before the end and a note once
+  it has ended, each claimed in `reminded_at` / `ended_at` before sending, so each goes at most once; both link
+  to Pro on the pricing page. The plan itself changes the moment `ends_at` passes. On their next check, monitors
+  beyond the own plan's limit pause ("Paused: your Pro trial ended; your plan includes 3 monitors.") and those on
+  schedules it lacks pause too; API keys are kept but answer `403 plan_required`, saying the trial ended.
+- **UI.** The pricing page's Pro card links to the trial under its orange button (signed out, to signup with
+  `ref=trial` and `next=/app/upgrade#trial`); `/app/upgrade` and the account screen offer "Start your 14-day Pro
+  trial" as their one orange action while it is on offer. During a trial the capture and account screens show
+  "Pro trial · 9 days left · Keep Pro"; for a month after it, a notice that can be closed on that device. The iOS
+  app offers nothing: `/api/mobile/profile` keeps `plan` as the plan acted on and adds an optional
+  `trial: {plan, ends_at}` while a trial is what that plan reflects.
+- **Owner dashboard.** `/app/growth` counts trials started and those now on a Stripe plan, by window.
+
+**Before the migration** nothing changes: no account has a trial, nothing offers one, `POST /api/trial` answers
+404 and the cron sends nothing. Apply it with `npm run db:migrate`, or paste `db/0019-upgrade.sql` into the D1
+console; it is picked up within a minute. Deleting an account deletes its trial row. `npm run trial:check` covers
+eligibility, the plan during and after a trial, quota, monitors, the API, checkout, both emails, paying during a
+trial, the iOS profile, deletion and the no-migration fallback against SQLite.

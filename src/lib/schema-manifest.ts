@@ -118,6 +118,24 @@ export const MIGRATIONS: MigrationManifest[] = [
     indexes: ['report_signoffs_report'],
   },
   { name: '0016_watch_fast_checks.sql', optional: true, tables: ['watch_fast_checks'] },
+  {
+    name: '0017_growth.sql',
+    optional: true,
+    tables: ['signup_sources', 'referral_codes', 'referrals', 'bonus_balances', 'bonus_usage'],
+    indexes: ['signup_sources_created', 'referrals_referrer', 'referrals_created'],
+  },
+  {
+    name: '0018_web_push.sql',
+    optional: true,
+    tables: ['web_push_subscriptions', 'web_push_deliveries'],
+    indexes: ['web_push_subscriptions_user', 'web_push_subscriptions_session', 'web_push_deliveries_due'],
+  },
+  {
+    name: '0019_plan_trials.sql',
+    optional: true,
+    tables: ['plan_trials'],
+    indexes: ['plan_trials_open', 'plan_trials_ip', 'plan_trials_started'],
+  },
 ];
 
 /** The tables `/api/health` has always required. */

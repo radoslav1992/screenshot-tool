@@ -6,6 +6,9 @@ import PasswordField from "../components/PasswordField.astro";
 import { PLANS } from "../lib/plans";
 import { safeNext } from "../lib/safe-next";
 import { takeFlash } from "../lib/flash";
+import { ATTRIBUTION_COOKIE, carriedTouch, parseAttribution, referralCode, touchParam } from "../lib/attribution";
+import { REFERRAL_BONUS, attributionCookieEnabled, growthAvailable } from "../lib/growth";
+import { canSendEmail } from "../lib/mailer";
 
 const next = safeNext(Astro.url.searchParams.get("next"), Astro.url.origin);
 const url = Astro.url.searchParams.get("url") ?? "";
@@ -13,6 +16,12 @@ const url = Astro.url.searchParams.get("url") ?? "";
 const initialError = takeFlash(Astro.cookies, Astro.url.pathname);
 const target = url ? `/app?url=${encodeURIComponent(url)}` : next;
 const loginHref = next === "/app" ? "/login" : `/login?next=${encodeURIComponent(next)}`;
+// Where the visitor first came from (lib/attribution.ts): carried here in the
+// link's `src`, or in the cookie where that is switched on. The form posts it.
+const cookieTouch = attributionCookieEnabled() ? parseAttribution(Astro.cookies.get(ATTRIBUTION_COOKIE)?.value) : null;
+const touch = cookieTouch ? null : carriedTouch(Astro.url, Astro.request.headers.get("referer"));
+// Followed a referral link (/join): say what both sides get.
+const invited = Boolean(referralCode(cookieTouch ?? touch)) && (await growthAvailable());
 ---
 
 <Base title="Create your account">
@@ -30,6 +39,14 @@ const loginHref = next === "/app" ? "/login" : `/login?next=${encodeURIComponent
             Free plan, no card needed. {PLANS.free.quota} screenshots a month on
             us.
           </p>
+          {invited && (
+            <p class="notice notice--info" style="margin-top: 16px" role="status">
+              <strong>You were invited.</strong>{" "}
+              {canSendEmail() ? "Confirm your email and take your first capture" : "Take your first capture"},
+              and you and the friend who invited you each get {REFERRAL_BONUS}
+              bonus screenshots. They never expire.
+            </p>
+          )}
 
           <form
             id="signup-form"
@@ -40,6 +57,7 @@ const loginHref = next === "/app" ? "/login" : `/login?next=${encodeURIComponent
             novalidate
           >
             <input type="hidden" name="next" value={target} />
+            {touch && <input type="hidden" name="src" value={touchParam(touch)} />}
 
             <div
               class="notice notice--error"

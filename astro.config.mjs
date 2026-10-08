@@ -7,6 +7,12 @@ export default defineConfig({
   output: 'server',
   adapter: cloudflare({
     imageService: 'compile',
+    // Workers AI has no local implementation, so with remote bindings on, every
+    // build and dev server proxies it to Cloudflare and fails without a login.
+    // Production gets the real binding at deploy time either way; locally and in
+    // CI the summaries fall back to plain text. CLOUDFLARE_REMOTE_BINDINGS=1
+    // turns the proxy back on for a logged-in machine.
+    remoteBindings: process.env.CLOUDFLARE_REMOTE_BINDINGS === '1',
   }),
   site: process.env.PUBLIC_SITE_URL || 'https://easyscreencapture.com',
   security: {

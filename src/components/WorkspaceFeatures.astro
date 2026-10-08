@@ -1,12 +1,14 @@
 ---
-import { PLANS, PLAN_ORDER, RULE_ONLY_FREQUENCY, WATCH_FREQUENCIES, batchLimit, watchLimit } from '../lib/plans';
+import { LINKS_PER_PAGE, PLANS, PLAN_ORDER, RULE_ONLY_FREQUENCY, UPTIME_MINUTES, WATCH_FREQUENCIES, batchLimit, watchLimit } from '../lib/plans';
 import { captureJobsAvailable } from '../lib/capture-jobs';
 import { fastChecksReady } from '../lib/fast-checks';
+import { siteHealthAvailable } from '../lib/site-health-summary';
 
-// Background batches arrive with migration 0013, and smart checks with 0016;
-// until then a batch is the synchronous 25-screenshot queue and every monitor
-// check is a screenshot, and the copy says so.
-const [background, smart] = await Promise.all([captureJobsAvailable(), fastChecksReady()]);
+// Background batches arrive with migration 0013, smart checks with 0016 and
+// site health with 0020; until then a batch is the synchronous 25-screenshot
+// queue, every monitor check is a screenshot and sites are not checked, and
+// the copy says so.
+const [background, smart, health] = await Promise.all([captureJobsAvailable(), fastChecksReady(), siteHealthAvailable()]);
 
 /** A plan's monitor schedules, shortest first, as the table shows them. */
 const SCHEDULE_WORDS: Record<string, string> = { [RULE_ONLY_FREQUENCY]: '15 min (rules)', hourly: 'hourly', daily: 'daily', weekly: 'weekly' };
@@ -105,6 +107,14 @@ const notes = [
             <td>{schedules(id)}</td>
           ))}
         </tr>
+        {health && (
+          <tr>
+            <th scope="row">Site uptime, SSL, domain &amp; link checks</th>
+            {PLAN_ORDER.map((id) => (
+              <td>Uptime {UPTIME_MINUTES[id] === 15 ? 'every 15 min' : 'hourly'}</td>
+            ))}
+          </tr>
+        )}
         <tr>
           <th scope="row">API access</th>
           {PLAN_ORDER.map((id) => (
@@ -140,6 +150,10 @@ const notes = [
           : 'Batch queues support 25 screenshots; desktop/mobile launch checks support 12 URLs.'
       }
       Weekly digests are opt-in and sent to each recipient’s verified account email.
+      {
+        health &&
+          `Every monitored site also gets its certificate checked daily, and its domain registration and the links on each monitored page (up to ${LINKS_PER_PAGE} a page) weekly, with no screenshots used; downtime and expiring certificates and domains are emailed.`
+      }
     </p>
     <a class="rr-btn-classic ai-btn-outline" href="/sample-report">
       See an illustrative client report <span aria-hidden="true">↗</span>

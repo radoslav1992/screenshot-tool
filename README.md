@@ -135,6 +135,7 @@ npx wrangler kv namespace create RATE
    | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
    | `db/0018-upgrade.sql` | web push for browsers and the installed app |
    | `db/0019-upgrade.sql` | 14-day Pro trials |
+   | `db/0020-upgrade.sql` | site health: uptime, SSL, domain and broken-link checks |
    | `db/0022-upgrade.sql` | which client approval pinned a monitor baseline |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
@@ -1082,3 +1083,76 @@ when it ends.
 console; it is picked up within a minute. Deleting an account deletes its trial row. `npm run trial:check` covers
 eligibility, the plan during and after a trial, quota, monitors, the API, checkout, both emails, paying during a
 trial, the iOS profile, deletion and the no-migration fallback against SQLite.
+
+### Site health checks (0020)
+
+For every site behind an account's active monitors (each distinct `scheme://host` of a monitor with `status =
+'active'`), the hourly sweep and the minute cron check uptime, the SSL certificate, the domain registration and the
+links on each monitored page (`lib/site-health.ts`). None of it takes a screenshot or spends quota. The sites are kept
+in step with the monitors in SQL, each hour: a new origin gets a row with its first checks due at once, the oldest
+active monitor's page is the one uptime fetches, and a site nobody monitors any more stops being checked.
+
+| Check | Free, Lite | Plus, Pro, Business |
+| --- | --- | --- |
+| Uptime of the first monitored page | hourly | every 15 minutes |
+| SSL certificate | daily | daily |
+| Domain registration (RDAP) | weekly | weekly |
+| Broken links, per monitored page, at most 100 | weekly | weekly |
+
+The tiers are `UPTIME_MINUTES`, `SSL_CHECK_HOURS`, `DOMAIN_CHECK_HOURS`, `LINK_CHECK_HOURS` and `LINKS_PER_PAGE` in
+`lib/plans.ts`, read through the plan an account acts on, so a Pro trial gets 15-minute uptime.
+
+- **Uptime.** A GET of the page through `fetchPublic` (every redirect hop checked, 10 s). Down: no answer, a timeout,
+  a TLS failure or a 5xx. A 4xx is "up but erroring": shown, never downtime. A bot check (`isChallenge`) is up. Two
+  down checks in a row open an incident, dated from the first; the first up check closes it. Every check adds to its
+  hour's row in `site_uptime_hourly` (checks, down, total ms), so a month's uptime is at most 720 small rows. Runs at
+  :15, :30 and :45 on the minute cron and on the hour, 300 sites a tick, eight at a time, taken under a short lease.
+- **SSL** (`lib/tls-probe.ts`). Workers' `fetch` validates a certificate but reveals nothing about it, so the probe
+  opens a plain socket (`connect()` from `cloudflare:sockets`, `secureTransport: 'off'`), sends a TLS 1.2 ClientHello
+  (SNI, ECDHE/RSA suites, groups, point formats, signature algorithms), reads the ServerHello and the Certificate
+  message, which TLS 1.2 sends in the clear, and closes the socket without finishing the handshake. A small DER parser
+  reads the leaf's validity, issuer and subjectAltName names; it reads at most 64 KB in 10 s and checks every length.
+  A HEAD over HTTPS says whether the chain is trusted (a 525/526 or a TLS error means it is not). States: `ok`,
+  `expiring` (14 days or less), `expired`, `invalid` (untrusted, the wrong name, not yet valid), `no_https` (a site
+  monitored over plain HTTP whose host has no working HTTPS, never an error) and `unknown` (no answer at all).
+- **What the probe cannot read.** A server that only speaks TLS 1.3 answers the hello with an alert, and Workers may
+  not open sockets to Cloudflare's own addresses, so sites behind Cloudflare cannot be read either. Then the HEAD is
+  the answer: HTTPS works and the certificate is trusted, with the expiry shown as unknown and the reason said
+  plainly. A Certificate Transparency lookup was considered and left out: it lists certificates issued, not the one
+  served, so it cannot tell that a server still serves the old one after a renewal, it needs a paid key to be
+  dependable, and it would send customers' host names to a third party.
+- **Domain** (`lib/rdap.ts`). RDAP, with IANA's bootstrap (`data.iana.org/rdap/dns.json`) cached in KV for a day and
+  `rdap.org` when it cannot be had. With no Public Suffix List here, the last two labels are asked for and a 404 means
+  try three, with common two-label suffixes (`co.uk`, `com.au`, …) known up front. Reads the `expiration` event, the
+  registrar and the status. `expiring` at 30 days; a registry that publishes no expiry (`.de`) is `unknown`, said so.
+  One lookup per registration a sweep: `www.` and `shop.` share it. A registry that could not be asked is asked again
+  the next day.
+- **Broken links** (`lib/link-check.ts`). The page's `<a href>` links (comments, scripts, styles and templates left
+  out), resolved against the final URL or `<base>`, http(s) only, deduplicated, the first 100. Each is asked with HEAD,
+  GET (cut off at the headers) when HEAD answers 405 or 501, six at a time, 8 s each. Broken: 404, 410, 5xx, a dead
+  host or a redirect loop. Couldn't verify: 401, 403, 429, bot checks, timeouts. Private addresses are never asked.
+  `site_broken_links` keeps each breakage with when it was first seen and when a later check found it working or gone
+  from the page, so a report can say "3 fixed this month". Up to 30 pages and 2,000 requests per hourly sweep.
+- **Shared requests.** Within a tick, identical requests are made once: fifty accounts on one site cost one uptime
+  request, one certificate read, one registry lookup and one request per link. Each account keeps its own results.
+- **Alerts** (plain-text email, linking to the monitor page's panel): an incident opening and closing (with how long
+  it lasted); a certificate at 14 days, again at 3, and when expired or invalid; a domain at 30 days and again at 7.
+  Each is claimed in the database before it is sent, so it goes once per change of state; a renewal starts the
+  warnings afresh. They go to the owner when any active monitor on the site has email alerts on (`notify_email`).
+  Broken links are never emailed.
+- **UI.** A Site health panel on the monitor page (uptime over 24 hours, 7 and 30 days and the last incident; when the
+  certificate expires and its issuer; the domain's expiry and registrar; this page's broken links and how many links
+  were checked), in pending, healthy, needs-a-look and problem states, and a small tag per monitor on the list.
+- **For the care report.** `siteHealthForWatches(userId, watchIds, from, to)` in `lib/site-health-summary.ts`: one
+  entry per origin with uptime and incidents in the window, the latest SSL and domain state, the latest broken links
+  and how many were fixed in the window. Seven indexed queries, the account's own rows only.
+- **Retention.** Rollups, closed incidents and fixed links older than 13 months, and sites unused for as long, are
+  pruned in the hourly sweep in bounded batches. Deleting an account deletes its rows; deleting a monitor its link
+  results.
+
+**Before the migration** nothing is checked, fetched or sent, the panel and the tags are not rendered and the summary
+is empty. Apply it with `npm run db:migrate`, or paste `db/0020-upgrade.sql` into the D1 console; it is picked up within
+a minute, and the first checks run within the hour. `npm run health:check` covers the ClientHello, a real TLS 1.2
+handshake against a `node:tls` server with certificates built in the test (and a TLS 1.3-only one), corrupted and
+truncated certificates, RDAP, uptime and incidents, links, alerts, the summary, pruning, deletion and dormancy against
+SQLite with a mocked network.

@@ -137,6 +137,19 @@ export const MIGRATIONS: MigrationManifest[] = [
     indexes: ['plan_trials_open', 'plan_trials_ip', 'plan_trials_started'],
   },
   {
+    name: '0020_site_health.sql',
+    optional: true,
+    tables: ['site_health_sites', 'site_uptime_hourly', 'site_uptime_incidents', 'site_link_checks', 'site_broken_links'],
+    indexes: [
+      'site_health_uptime_due',
+      'site_health_ssl_due',
+      'site_health_domain_due',
+      'site_uptime_incidents_site',
+      'site_link_checks_due',
+      'site_broken_links_fixed',
+    ],
+  },
+  {
     name: '0022_baseline_approvals.sql',
     optional: true,
     tables: ['baseline_approvals'],

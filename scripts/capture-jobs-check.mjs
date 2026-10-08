@@ -806,6 +806,7 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,
     './lib/ops-watchdog': record('runWatchdog'),
     './lib/trials': record('runTrialLifecycle'),
+    './lib/site-health': `${record('runSiteHealthSweep')}\n${record('runUptimeChecks')}`,
   });
   cc.results = {
     runCaptureJobs: { due: 0, recovered: 0, expired: 0 },
@@ -816,6 +817,8 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     pruneQuietRuns: 0,
     runWatchdog: { sent: null, failing: [] },
     runTrialLifecycle: { reminded: 0, ended: 0, closed: 0 },
+    runUptimeChecks: { due: 0 },
+    runSiteHealthSweep: { ssl: { due: 0 }, domain: { due: 0 }, links: { due: 0 }, pruned: null },
   };
   const fire = async (cron) => {
     cc.calls.length = 0;
@@ -835,7 +838,9 @@ await section('the minute cron runs the queue only; the hourly cron runs the swe
     'retryAlerts',
     'runDueWatches',
     'runProjectDigests',
+    'runSiteHealthSweep',
     'runTrialLifecycle',
+    'runUptimeChecks',
     'runWatchdog',
     'sweepExpiredCaptures',
   ];

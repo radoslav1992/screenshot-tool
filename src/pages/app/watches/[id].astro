@@ -24,6 +24,7 @@ import { PINNED_ALERTS, pinReady } from '../../../lib/baseline-pin';
 import { approvalProvenance } from '../../../lib/approval-baseline';
 import { changedAreas, highlightUrl } from '../../../lib/change-highlights';
 import { webPushReady } from '../../../lib/push';
+import SiteHealthPanel from '../../../components/SiteHealthPanel.astro';
 
 const user = Astro.locals.user!;
 const watch = await getWatch(Astro.params.id ?? '');
@@ -219,6 +220,8 @@ const seoSignals = seo ? describeSeo(seo, rule.selector) : [];
           </div>
         </div>
       </section>
+
+      <SiteHealthPanel user={user} watch={watch} />
 
       {smart && (
         <section class="card card--pad stack gap-10" id="check-card" data-watch={watch.id} aria-labelledby="check-heading">

@@ -24,8 +24,9 @@ export type FetchProblem =
 /** Why an address could not be read, for the caller to word in its own terms. */
 export class FetchFailure extends Error {
   readonly problem: FetchProblem;
-  constructor(problem: FetchProblem, message: string) {
-    super(message);
+  /** `cause` is the runtime's own error, when there was one: site health tells a certificate failure apart by it. */
+  constructor(problem: FetchProblem, message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = 'FetchFailure';
     this.problem = problem;
   }
@@ -40,6 +41,8 @@ export interface PublicFetchOptions {
    */
   signal: () => AbortSignal;
   headers?: Record<string, string>;
+  /** GET unless told otherwise; the link checker asks with HEAD first. */
+  method?: 'GET' | 'HEAD';
   /** Told of each redirect followed, before the next hop is asked: the SEO checker lists them. */
   onRedirect?: (hop: { url: string; status: number }) => void;
 }
@@ -58,13 +61,18 @@ export async function fetchPublic(raw: string, options: PublicFetchOptions): Pro
   for (let hop = 0; ; hop++) {
     let response: Response;
     try {
-      response = await fetch(url.toString(), { redirect: 'manual', signal: options.signal(), headers: options.headers });
+      response = await fetch(url.toString(), {
+        method: options.method ?? 'GET',
+        redirect: 'manual',
+        signal: options.signal(),
+        headers: options.headers,
+      });
     } catch (error) {
       // DNS failures, refused connections and the timeout all land here, and
       // all of them are about the address given, not about this service.
       throw timedOut(error)
-        ? new FetchFailure('timeout', 'The address took too long to answer.')
-        : new FetchFailure('unreachable', 'The address could not be reached.');
+        ? new FetchFailure('timeout', 'The address took too long to answer.', { cause: error })
+        : new FetchFailure('unreachable', 'The address could not be reached.', { cause: error });
     }
     const location = response.headers.get('location');
     if (response.status < 300 || response.status >= 400 || !location) return { response, url };

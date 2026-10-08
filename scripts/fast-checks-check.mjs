@@ -944,7 +944,12 @@ try {
   await section('the minute cron runs only 15-minute monitors at :15, :30 and :45; the hourly sweep runs everything, never twice', async () => {
     const calls = [];
     globalThis.__fcCalls = calls;
-    const quiet = { failStrandedCaptures: 0, pruneQuietRuns: 0, sweepExpiredCaptures: { scanned: 0, deleted: 0, filesDeleted: 0, bytesFreed: 0, tokensPurged: 0, failed: 0, truncated: false } };
+    const quiet = {
+      failStrandedCaptures: 0,
+      pruneQuietRuns: 0,
+      sweepExpiredCaptures: { scanned: 0, deleted: 0, filesDeleted: 0, bytesFreed: 0, tokensPurged: 0, failed: 0, truncated: false },
+      runSiteHealthSweep: { ssl: { due: 0 }, domain: { due: 0 }, links: { due: 0 }, pruned: null },
+    };
     globalThis.__fcQuiet = quiet;
     const record = (name) =>
       `export const ${name} = async (...args) => { globalThis.__fcCalls.push([${JSON.stringify(name)}, ...args.slice(1)]);` +
@@ -959,11 +964,12 @@ try {
       './lib/capture-jobs': `${record('runCaptureJobs')}\n${record('pruneCaptureJobs')}`,
       './lib/ops-watchdog': record('runWatchdog'),
       './lib/trials': record('runTrialLifecycle'),
+      './lib/site-health': `${record('runUptimeChecks')}\n${record('runSiteHealthSweep')}`,
     };
     const exact = {
       name: 'worker-stubs',
       setup(b) {
-        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog|trials))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
+        b.onResolve({ filter: /^(@astrojs\/cloudflare\/entrypoints\/server|\.\/lib\/(apple-billing|push|retention|watches|digests|capture-jobs|ops-watchdog|trials|site-health))$/ }, (args) => ({ path: args.path, namespace: 'worker' }));
         b.onLoad({ filter: /.*/, namespace: 'worker' }, (args) => ({ contents: workerStubs[args.path], loader: 'js' }));
       },
     };
@@ -973,15 +979,24 @@ try {
       const waited = [];
       await worker.default.scheduled({ cron, scheduledTime: Date.parse(iso) }, {}, { waitUntil: (promise) => waited.push(promise) });
       await Promise.all(waited);
-      return calls.filter(([name]) => name === 'runDueWatches' || name === 'runCaptureJobs').map(([name, ...args]) => [name, ...args.slice(1)]);
+      const timed = ['runDueWatches', 'runCaptureJobs', 'runUptimeChecks', 'runSiteHealthSweep'];
+      return calls.filter(([name]) => timed.includes(name)).map(([name, ...args]) => [name, ...args.slice(1)]);
     };
     for (const minute of ['15', '30', '45']) {
-      assert.deepEqual(await fire('* * * * *', `2026-10-03T14:${minute}:00Z`), [['runCaptureJobs'], ['runDueWatches', { frequency: 'quarter-hourly' }]], `:${minute}`);
+      assert.deepEqual(
+        await fire('* * * * *', `2026-10-03T14:${minute}:00Z`),
+        [['runCaptureJobs'], ['runDueWatches', { frequency: 'quarter-hourly' }], ['runUptimeChecks']],
+        `:${minute}: the queue, the 15-minute monitors and the site uptime checks that are due`,
+      );
     }
     for (const minute of ['00', '07', '59']) {
       assert.deepEqual(await fire('* * * * *', `2026-10-03T14:${minute}:00Z`), [['runCaptureJobs']], `:${minute} is the queue alone`);
     }
-    assert.deepEqual(await fire('0 * * * *', '2026-10-03T14:00:00Z'), [['runDueWatches']], 'the hourly sweep takes everything, as before');
+    assert.deepEqual(
+      await fire('0 * * * *', '2026-10-03T14:00:00Z'),
+      [['runDueWatches'], ['runUptimeChecks'], ['runSiteHealthSweep']],
+      'the hourly sweep takes everything, as before, with uptime and the site health sweep',
+    );
     delete globalThis.__fcCalls;
     delete globalThis.__fcQuiet;
 

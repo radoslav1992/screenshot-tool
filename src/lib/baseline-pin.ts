@@ -91,6 +91,24 @@ export async function lastAlertWhilePinned(
   return alerted?.capture_id ?? null;
 }
 
+/** Why one of a monitor's own captures cannot be pinned. */
+export type PinRefusal = 'files_gone' | 'outdated';
+
+/**
+ * pinBaseline's rules on the capture itself, as a reason rather than an error,
+ * for callers with nobody to show an error to: a client's approval pins this
+ * way (approval-baseline.ts) and must not fail because of it. Null when it can
+ * be pinned. Whether the capture is this monitor's is the caller's question.
+ */
+export function pinRefusal(capture: Pick<CaptureRow, 'status' | 'files' | 'device'> | null): PinRefusal | null {
+  // A capture whose files are gone cannot be compared against.
+  if (!capture || capture.status !== 'done' || !safeParseFiles(capture.files).length) return 'files_gone';
+  // The next check would replace it rather than compare (see capture-engine),
+  // so a pin on it would be released straight away.
+  if (shouldRefreshBaseline(capture)) return 'outdated';
+  return null;
+}
+
 /**
  * Pins the current baseline, or one of this monitor's earlier captures: the
  * baseline itself, or one a check took or compared against. A capture whose
@@ -120,12 +138,11 @@ export async function pinBaseline(watch: WatchRow, userId: string, captureId?: s
     );
   // The same answer for someone else's capture and another monitor's, so neither can be probed.
   if (!capture || !ours) throw new HttpError(404, 'not_found', 'No such capture on this monitor.');
-  if (capture.status !== 'done' || !safeParseFiles(capture.files).length) {
+  const refusal = pinRefusal(capture);
+  if (refusal === 'files_gone') {
     throw badRequest('That screenshot is no longer available. Choose a more recent check.', 'capture_id');
   }
-  // The next check would replace it rather than compare (see capture-engine),
-  // so a pin on it would be released straight away.
-  if (shouldRefreshBaseline(capture)) {
+  if (refusal === 'outdated') {
     throw new HttpError(
       409,
       'baseline_outdated',

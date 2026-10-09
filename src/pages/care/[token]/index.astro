@@ -1,0 +1,125 @@
+---
+import Base from '../../../layouts/Base.astro';
+import AiPageHead from '../../../components/AiPageHead.astro';
+import CareReport from '../../../components/CareReport.astro';
+import { sharedCareReport } from '../../../lib/care-reports';
+import { projectBranding } from '../../../lib/branding';
+import { loadSessionUser } from '../../../lib/auth';
+import { careReportsIncluded } from '../../../lib/plans';
+import { formatDay } from '../../../lib/care-period';
+import '../../../styles/adon/ai-source.css';
+import '../../../styles/adon/ai-landing.css';
+import '../../../styles/adon/ai-pages.css';
+
+/**
+ * A care report as its client reads it: no account, the link is the
+ * credential. Every link that does not open a report — malformed, unknown,
+ * expired or revoked, or before migration 0021 — gets the same 404, which
+ * names nobody and says nothing about the report.
+ */
+const token = Astro.params.token ?? '';
+let data;
+try {
+  data = await sharedCareReport(token, true);
+} catch {
+  data = null;
+}
+Astro.response.headers.set('cache-control', 'private, no-store');
+Astro.response.headers.set('referrer-policy', 'no-referrer');
+Astro.response.headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
+if (!data) Astro.response.status = 404;
+
+/** Branding is an extra, as on review links: if it cannot be read the report still opens. */
+const branding = data ? await projectBranding(data.project).catch(() => null) : null;
+const owner = data ? await loadSessionUser(data.project.user_id).catch(() => null) : null;
+const pdf = !!owner && careReportsIncluded(owner.plan);
+const whiteLabel = !!branding && !branding.attribution;
+const s = data?.snapshot;
+const brand = s ? s.project.brand || s.project.name : '';
+const title = !s ? 'Report unavailable' : whiteLabel ? `${brand} · Website care report · ${s.period.label}` : `Website care report · ${s.period.label}`;
+---
+
+<Base title={title} plainTitle={!s || whiteLabel} description="A private website care report." bodyClass="care-body">
+  <meta slot="head" name="robots" content="noindex, nofollow, noarchive" />
+  {
+    data && s ? (
+      <main class="wrap care-shared">
+        <p class="care-shared__notice">
+          <strong>Shared report</strong> · Anyone with this link can read it until {formatDay(data.report.expires_at, s.period.timezone)},
+          unless it is revoked earlier.
+        </p>
+        <CareReport snapshot={s} branding={branding} mode="client">
+          {pdf && (
+            <Fragment slot="actions">
+              <a class="rr-btn-classic" href={`/care/${token}/pdf`} rel="nofollow">
+                Download PDF <span aria-hidden="true">↓</span>
+              </a>
+              <p>A copy to keep or forward. The web page stays the latest version you were sent.</p>
+            </Fragment>
+          )}
+        </CareReport>
+      </main>
+    ) : (
+      <div class="page ai-landing care-missing">
+        <main id="main-content" class="ai-grid wrap">
+          <AiPageHead label="REPORT LINK" meta="UNAVAILABLE" aside="Error 404">
+            <Fragment slot="title">
+              Link <span>unavailable</span>
+            </Fragment>
+            <p>
+              This report link has expired, was revoked, or is not complete. Ask whoever sent it to you for a new
+              link.
+            </p>
+          </AiPageHead>
+        </main>
+      </div>
+    )
+  }
+</Base>
+<style>
+  .care-shared {
+    padding-block: 32px 64px;
+  }
+  .care-shared__notice {
+    padding: 14px 22px;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    background: var(--lime-tint);
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .care-shared__notice strong {
+    font-weight: 600;
+  }
+  .care-shared :global(.rr-btn-classic) {
+    width: auto;
+    min-width: 220px;
+  }
+  .care-missing {
+    min-height: 100vh;
+  }
+  @media (max-width: 767px) {
+    .care-shared {
+      padding-block: 16px 40px;
+    }
+    .care-shared__notice {
+      padding: 14px;
+    }
+    .care-shared :global(.rr-btn-classic) {
+      width: 100%;
+    }
+  }
+  @media print {
+    :global(body.care-body) {
+      background: #fff;
+    }
+    .care-shared {
+      padding: 0;
+      width: auto;
+    }
+    .care-shared__notice {
+      display: none;
+    }
+  }
+</style>

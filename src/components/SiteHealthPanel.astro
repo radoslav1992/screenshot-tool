@@ -1,0 +1,338 @@
+---
+import type { SessionUser } from '../lib/auth';
+import { displayUrl } from '../lib/capture-options';
+import { formatDate, formatDateTime } from '../lib/dates';
+import { siteHealthPanel, type Tone } from '../lib/site-health';
+
+/**
+ * The monitor page's Site health panel: uptime, certificate, domain and
+ * broken links for the site behind this monitor (lib/site-health.ts). It
+ * loads its own data, and renders nothing at all before migration 0020.
+ */
+interface Props {
+  user: Pick<SessionUser, 'id' | 'plan'>;
+  watch: { id: string; url: string };
+}
+
+const { user, watch } = Astro.props;
+const health = await siteHealthPanel(user, watch).catch((error) => {
+  console.error('[site-health] panel failed', error);
+  return null;
+});
+
+const TONES: Record<Tone, string> = { pending: 'Pending', healthy: 'Healthy', neutral: 'Healthy', warning: 'Needs a look', problem: 'Problem' };
+const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+const pct = (value: number | null) => (value === null ? '—' : `${value}%`);
+const sentence = (text: string) => text.replace(/\.?$/, '.');
+const minutes = (n: number) => (n < 120 ? plural(n, 'minute') : `${plural(Math.floor(n / 60), 'hour')} ${plural(n % 60, 'minute')}`);
+
+const uptime = health?.uptime;
+const ssl = health?.ssl;
+const domain = health?.domain;
+const links = health?.links;
+
+const uptimeHeadline = !uptime
+  ? null
+  : uptime.state === 'down'
+    ? 'Down'
+    : uptime.state === 'error'
+      ? `Up, answering HTTP ${uptime.code ?? 'errors'}`
+      : 'Up';
+const sslHeadline = !ssl
+  ? null
+  : {
+      ok: ssl.daysLeft !== null ? `Expires in ${plural(ssl.daysLeft, 'day')}` : 'HTTPS works',
+      expiring: `Expires in ${plural(Math.max(0, ssl.daysLeft ?? 0), 'day')}`,
+      expired: 'Expired',
+      invalid: 'Not trusted',
+      no_https: 'No HTTPS',
+      unknown: "Couldn't check",
+    }[ssl.status];
+const domainHeadline = !domain
+  ? null
+  : domain.status === 'unknown'
+    ? domain.registrar
+      ? 'Expiry not published'
+      : "Couldn't check"
+    : domain.status === 'expired'
+      ? 'Expired'
+      : domain.status === 'expiring'
+        ? `Expires in ${plural(Math.max(0, domain.daysLeft ?? 0), 'day')}`
+        : `Expires ${formatDate(domain.expiresAt)}`;
+---
+
+{
+  health && (
+    <section class="card card--pad stack gap-12 site-health" id="site-health" aria-labelledby="site-health-heading">
+      <div class="site-health__head">
+        <h2 class="h4" id="site-health-heading">
+          Site health
+        </h2>
+        <span class={`health-tag health-tag--${health.tone}`}>
+          <span class="health-dot" aria-hidden="true" />[ {TONES[health.tone].toUpperCase()} ]
+        </span>
+      </div>
+      <p class="xs muted-2">
+        {health.host} · uptime every {health.uptimeMinutes === 15 ? '15 minutes' : 'hour'}, certificate daily, domain and
+        links weekly
+      </p>
+      {health.tone === 'pending' && <p class="small muted">The first check runs within the hour.</p>}
+
+      <div class="health-parts">
+        <article class="health-part" data-tone={uptime?.tone ?? 'pending'} aria-labelledby="health-uptime">
+          <span class="health-part__label" id="health-uptime">
+            [ UPTIME ]
+          </span>
+          {uptime ? (
+            <>
+              <strong class="health-part__value">{uptimeHeadline}</strong>
+              <dl class="health-pct">
+                <div>
+                  <dt>24 h</dt>
+                  <dd>{pct(uptime.pct.day)}</dd>
+                </div>
+                <div>
+                  <dt>7 d</dt>
+                  <dd>{pct(uptime.pct.week)}</dd>
+                </div>
+                <div>
+                  <dt>30 d</dt>
+                  <dd>{pct(uptime.pct.month)}</dd>
+                </div>
+              </dl>
+              <p class="xs muted">
+                {sentence(uptime.detail)} Checked {formatDateTime(uptime.checkedAt)}.
+              </p>
+              <p class="xs muted">
+                {uptime.lastIncident
+                  ? uptime.lastIncident.endedAt
+                    ? `Last incident: down ${minutes(uptime.lastIncident.minutes)} from ${formatDateTime(uptime.lastIncident.startedAt)}. ${sentence(uptime.lastIncident.detail)}`
+                    : `Down since ${formatDateTime(uptime.lastIncident.startedAt)}. ${sentence(uptime.lastIncident.detail)}`
+                  : 'No incidents recorded.'}
+              </p>
+            </>
+          ) : (
+            <p class="small muted">Not checked yet.</p>
+          )}
+        </article>
+
+        <article class="health-part" data-tone={ssl?.tone ?? 'pending'} aria-labelledby="health-ssl">
+          <span class="health-part__label" id="health-ssl">
+            [ SSL CERTIFICATE ]
+          </span>
+          {ssl ? (
+            <>
+              <strong class="health-part__value">{sslHeadline}</strong>
+              {(ssl.status === 'ok' || ssl.status === 'expiring') && ssl.validTo ? (
+                <p class="xs muted">
+                  {ssl.issuer ? `Issued by ${ssl.issuer}, ` : ''}valid until {formatDate(ssl.validTo)}.
+                </p>
+              ) : (
+                <p class="xs muted">{ssl.detail}</p>
+              )}
+              <p class="xs muted-2">Checked {formatDateTime(ssl.checkedAt)}.</p>
+            </>
+          ) : (
+            <p class="small muted">Not checked yet.</p>
+          )}
+        </article>
+
+        <article class="health-part" data-tone={domain?.tone ?? 'pending'} aria-labelledby="health-domain">
+          <span class="health-part__label" id="health-domain">
+            [ DOMAIN ]
+          </span>
+          {domain ? (
+            <>
+              <strong class="health-part__value">{domainHeadline}</strong>
+              <p class="xs muted">
+                {domain.domain}
+                {domain.expiresAt && domain.status !== 'ok' && `, ${domain.status === 'expired' ? 'expired' : 'until'} ${formatDate(domain.expiresAt)}`}
+                {domain.registrar && ` · registrar: ${domain.registrar}`}
+              </p>
+              {(domain.status === 'unknown' || domain.status === 'expired') && <p class="xs muted">{domain.detail}</p>}
+              <p class="xs muted-2">Checked {formatDateTime(domain.checkedAt)}.</p>
+            </>
+          ) : (
+            <p class="small muted">Not checked yet.</p>
+          )}
+        </article>
+
+        <article class="health-part" data-tone={links?.tone ?? 'pending'} aria-labelledby="health-links">
+          <span class="health-part__label" id="health-links">
+            [ LINKS ON THIS PAGE ]
+          </span>
+          {links?.checkedAt ? (
+            <>
+              <strong class="health-part__value">
+                {links.brokenCount ? plural(links.brokenCount, 'broken link') : 'No broken links'}
+              </strong>
+              {links.broken.length > 0 && (
+                <ul class="broken-links">
+                  {links.broken.map((link) => (
+                    <li>
+                      <a href={link.url} target="_blank" rel="noopener nofollow noreferrer" title={link.url}>
+                        <span class="broken-links__url">{displayUrl(link.url)}</span>
+                        <span class="broken-links__why">
+                          {link.reason}
+                          {link.text && ` · “${link.text}”`}
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {links.brokenCount > links.broken.length && (
+                <p class="xs muted">…and {plural(links.brokenCount - links.broken.length, 'more')}.</p>
+              )}
+              <p class="xs muted">
+                Checked {plural(links.checked, 'link')} on {formatDate(links.checkedAt)}
+                {links.unverified > 0 && ` · ${links.unverified.toLocaleString()} couldn't be verified (a login or bot check in the way)`}
+                {links.fixedRecently > 0 && ` · ${links.fixedRecently.toLocaleString()} fixed in the last 30 days`}.
+              </p>
+              {links.detail && <p class="xs muted">Last attempt: {sentence(links.detail)}</p>}
+            </>
+          ) : links?.detail ? (
+            <p class="small muted">{sentence(links.detail)} It is tried again tomorrow.</p>
+          ) : (
+            <p class="small muted">Queued for its first check.</p>
+          )}
+        </article>
+      </div>
+      <p class="xs muted">
+        Checked from Cloudflare’s network with a plain request, no screenshot: none of this uses your allowance. Down
+        alerts and certificate and domain warnings follow this monitor’s email setting; broken links are only shown here
+        and in reports.
+      </p>
+    </section>
+  )
+}
+
+<style>
+  .site-health__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+  }
+  .health-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font: 500 11px/1 var(--mono);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    color: var(--muted-2);
+  }
+  .health-dot {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    background: currentColor;
+  }
+  .health-tag--pending .health-dot {
+    background: none;
+    border: 1px solid currentColor;
+  }
+  .health-tag--healthy {
+    color: var(--ink);
+  }
+  .health-tag--warning {
+    color: var(--theme-text-sm);
+  }
+  .health-tag--problem {
+    color: var(--danger);
+  }
+  .health-parts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: 10px;
+  }
+  .health-part {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--line-2);
+    border-top: 3px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+  .health-part[data-tone='healthy'],
+  .health-part[data-tone='neutral'] {
+    border-top-color: var(--ink);
+  }
+  .health-part[data-tone='warning'] {
+    border-top-color: var(--theme);
+  }
+  .health-part[data-tone='problem'] {
+    border-top-color: var(--danger);
+  }
+  .health-part__label {
+    font: 500 11px/1.4 var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--muted-2);
+  }
+  .health-part__value {
+    font: 600 17px/1.3 var(--display);
+  }
+  .health-part[data-tone='problem'] .health-part__value {
+    color: var(--danger);
+  }
+  .health-part[data-tone='warning'] .health-part__value {
+    color: var(--theme-text-sm);
+  }
+  .health-pct {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 2px 0;
+  }
+  .health-pct div {
+    border: 1px solid var(--line-3);
+    padding: 6px 8px;
+  }
+  .health-pct dt {
+    font: 500 10px/1.4 var(--mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+  }
+  .health-pct dd {
+    margin: 0;
+    font: 600 14px/1.3 var(--display);
+  }
+  .broken-links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line-3);
+  }
+  .broken-links li {
+    border-bottom: 1px solid var(--line-3);
+  }
+  /* Each link is a whole row to tap, at least 44px tall. */
+  .broken-links a {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 44px;
+    padding: 6px 0;
+    min-width: 0;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .broken-links a:hover .broken-links__url {
+    text-decoration: underline;
+  }
+  .broken-links__url {
+    font: 500 12px/1.4 var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .broken-links__why {
+    font-size: 12px;
+    color: var(--muted);
+  }
+</style>

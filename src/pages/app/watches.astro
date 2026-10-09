@@ -21,6 +21,7 @@ import {
 import { WATCH_LIMIT } from '../../lib/plans';
 import { budgetSchedules, listWatches } from '../../lib/watches';
 import { fastChecksReady } from '../../lib/fast-checks';
+import { siteHealthTones } from '../../lib/site-health';
 import '../../styles/projects.css';
 
 const user = Astro.locals.user!;
@@ -34,6 +35,9 @@ const [watches, usage, health, smart] = await Promise.all([
 ]);
 const schedules = await budgetSchedules(watches);
 const budget = forecast(schedules, usage);
+// Site health per monitor (migration 0020): an empty map before it, so no tag shows.
+const siteTones = await siteHealthTones(user.id, watches).catch(() => new Map<string, string>());
+const SITE_TAGS: Record<string, string> = { healthy: 'SITE OK', warning: 'SITE NEEDS A LOOK', problem: 'SITE PROBLEM' };
 
 // Quick add makes a visual monitor, which never runs every 15 minutes.
 const frequencies = FREQUENCIES.filter((entry) => visualFrequencies(user.plan).includes(entry.id));
@@ -124,6 +128,11 @@ const plural = (count: number, word: string) => `${count.toLocaleString()} ${wor
                     {watch.baseline_pinned_at && (
                       <span class="pin-tag" title={`Baseline pinned on ${formatDate(watch.baseline_pinned_at)}`}>
                         [ PINNED BASELINE ]
+                      </span>
+                    )}
+                    {SITE_TAGS[siteTones.get(watch.id) ?? ''] && (
+                      <span class={`site-tag site-tag--${siteTones.get(watch.id)}`}>
+                        <span class="site-tag__dot" aria-hidden="true" />[ {SITE_TAGS[siteTones.get(watch.id)!]} ]
                       </span>
                     )}
                     <span class="xs muted-2">
@@ -336,6 +345,28 @@ const plural = (count: number, word: string) => `${count.toLocaleString()} ${wor
     font: 500 10px/1.4 var(--mono);
     letter-spacing: 0.08em;
     color: var(--theme-text-sm);
+  }
+  /* Site health (uptime, certificate, domain, links): a square in the tone beside the words, never colour alone. */
+  .site-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: 500 10px/1.4 var(--mono);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    color: var(--muted-2);
+  }
+  .site-tag__dot {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    background: currentColor;
+  }
+  .site-tag--warning {
+    color: var(--theme-text-sm);
+  }
+  .site-tag--problem {
+    color: var(--danger);
   }
   .quick-add {
     border-top: 1px solid var(--line);

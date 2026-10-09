@@ -21,6 +21,12 @@ export interface Mail {
   to: string;
   subject: string;
   text: string;
+  /**
+   * Where a reply goes instead of the sender, for mail sent on someone's
+   * behalf: a care report to a client answers to the agency that sent it.
+   * One plain address; anything else is dropped (see replyAddress).
+   */
+  replyTo?: string;
 }
 
 export interface Sender {
@@ -61,16 +67,30 @@ export function canSendEmail(): boolean {
   return mailTransport() !== 'none';
 }
 
+/**
+ * A Reply-To both transports can carry as given: one address, no display name,
+ * nothing that could end a header line. Anything else is left out rather than
+ * sent, since the message is still worth delivering without it.
+ */
+export function replyAddress(value: string | undefined): string | null {
+  const address = (value ?? '').trim();
+  if (!address || address.length > 254 || !/^[^\s@<>",;:()\[\]\\]+@[^\s@<>",;:()\[\]\\]+\.[^\s@<>",;:()\[\]\\]+$/.test(address)) return null;
+  return address;
+}
+
 async function sendViaBinding(mail: Mail, from: Sender): Promise<void> {
+  const replyTo = replyAddress(mail.replyTo);
   await env.EMAIL!.send({
     from: from.name ? { name: from.name, email: from.email } : from.email,
     to: mail.to,
     subject: mail.subject,
     text: mail.text,
+    ...(replyTo ? { replyTo } : {}),
   });
 }
 
 async function sendViaResend(mail: Mail, from: Sender): Promise<void> {
+  const replyTo = replyAddress(mail.replyTo);
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -82,6 +102,7 @@ async function sendViaResend(mail: Mail, from: Sender): Promise<void> {
       to: [mail.to],
       subject: mail.subject,
       text: mail.text,
+      ...(replyTo ? { reply_to: replyTo } : {}),
     }),
   });
 

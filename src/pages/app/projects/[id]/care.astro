@@ -1,0 +1,321 @@
+---
+import AppShell from '../../../../layouts/AppShell.astro';
+import ProjectForms from '../../../../components/ProjectForms.astro';
+import { ownProject, projectsReady } from '../../../../lib/projects';
+import {
+  CARE_EMAIL_PLANS,
+  CARE_REPORT_PLANS,
+  careReportsReady,
+  careSettings,
+  listCareReports,
+} from '../../../../lib/care-reports';
+import { CARE_LIMITS, CARE_MAX_RECIPIENTS } from '../../../../lib/care-rules';
+import { formatDayTime, manualPeriods, periodLabel } from '../../../../lib/care-period';
+import { careEmailsIncluded, careReportsIncluded } from '../../../../lib/plans';
+import { hasConfirmedEmail } from '../../../../lib/verification';
+import { canSendEmail } from '../../../../lib/mailer';
+import { trialOfferFor } from '../../../../lib/trials';
+import { TRIAL_DAYS } from '../../../../lib/trial-plan';
+import { formatDateTime } from '../../../../lib/dates';
+import '../../../../styles/projects.css';
+
+const user = Astro.locals.user!;
+if (!(await projectsReady()) || !(await careReportsReady().catch(() => false))) return new Response('Not found', { status: 404 });
+let project;
+try {
+  project = await ownProject(user.id, Astro.params.id!);
+} catch {
+  return new Response('Project not found', { status: 404 });
+}
+const reports = careReportsIncluded(user.plan);
+const emails = careEmailsIncluded(user.plan);
+const [settings, list, confirmed, offerTrial] = await Promise.all([
+  careSettings(project.id),
+  listCareReports(project.id),
+  hasConfirmedEmail(user.id),
+  reports ? Promise.resolve(false) : trialOfferFor(user),
+]);
+const now = new Date();
+const periods = manualPeriods(settings.timezone, now);
+const live = (r: (typeof list)[number]) => !r.revoked_at && r.expires_at > now.toISOString();
+const linkWords = (r: (typeof list)[number]) =>
+  r.revoked_at ? 'links revoked' : live(r) ? `links until ${formatDateTime(r.expires_at).replace(/, \d\d:\d\d UTC$/, '')}` : 'links expired';
+---
+
+<AppShell title={`Care reports · ${project.name}`} tab="projects">
+  <header class="appbar" slot="appbar">
+    <a href={`/app/projects/${project.id}`}>← {project.name}</a>
+    <div class="appbar__title truncate">Care reports</div>
+  </header>
+  <div class="app-wrap stack gap-20">
+    <div class="workspace-intro">
+      <div>
+        <span class="eyebrow">MONTHLY WEBSITE CARE</span>
+        <h1>Care reports</h1>
+        <p>
+          A branded summary of {project.name}’s month for your client: checks and changes, sign-offs, SEO findings, site
+          health and the next steps. Frozen when made, shared by link.
+        </p>
+      </div>
+      {
+        reports ? (
+          <form data-project-form data-endpoint="/api/care" data-pending="Generating…">
+            <input type="hidden" name="action" value="generate" />
+            <input type="hidden" name="project_id" value={project.id} />
+            <input type="hidden" name="period" value={periods[0]} />
+            <button class="btn btn--lime" type="submit">
+              Generate this month so far
+            </button>
+            <p role="status" />
+          </form>
+        ) : offerTrial ? (
+          <a class="btn btn--lime" href="/app/upgrade#trial">
+            Try Pro free for {TRIAL_DAYS} days
+          </a>
+        ) : (
+          <a class="btn btn--lime" href="/app/upgrade">
+            Upgrade
+          </a>
+        )
+      }
+    </div>
+
+    {
+      !reports && (
+        <p class="notice notice--info">
+          Care reports are included on {CARE_REPORT_PLANS}; emailing them to your client on the 1st is included on{' '}
+          {CARE_EMAIL_PLANS}.
+        </p>
+      )
+    }
+
+    <div class="project-grid">
+      <section class="project-panel care-list" aria-labelledby="care-list-heading">
+        <h2 class="section-heading" id="care-list-heading"><span>[ 01 ]</span> Reports</h2>
+        {!list.length && <p class="small muted">No care reports yet. Generate this month so far to see one.</p>}
+        <div class="project-items">
+          {
+            list.map((r) => (
+              <article class="project-item care-item">
+                <div class="care-item__head">
+                  <a href={`/app/care/${r.id}`}>
+                    {periodLabel(r.period)}
+                    {r.partial ? ' so far' : ''} →
+                  </a>
+                  <span class="signoff-tag">[ {r.kind === 'scheduled' ? 'SCHEDULED' : 'MANUAL'} ]</span>
+                </div>
+                <p class="small muted">
+                  Generated {formatDateTime(r.generated_at)} · {linkWords(r)} · {r.access_count.toLocaleString()} view
+                  {r.access_count === 1 ? '' : 's'}
+                  {r.sent > 0 && <> · emailed to {r.sent}</>}
+                </p>
+                <div class="care-item__actions">
+                  {reports && (
+                    <form method="post" action={`/api/care/${r.id}/pdf`}>
+                      <button class="btn btn--sm btn--outline" type="submit">
+                        PDF
+                      </button>
+                    </form>
+                  )}
+                  {reports && (
+                    <form
+                      data-project-form
+                      data-endpoint="/api/care"
+                      data-pending="Making a link…"
+                      data-confirm={r.has_link ? 'Make a new link? The one you copied before stops working; links emailed to clients keep working.' : undefined}
+                    >
+                      <input type="hidden" name="action" value="link" />
+                      <input type="hidden" name="report_id" value={r.id} />
+                      <button class="btn btn--sm btn--outline" type="submit">
+                        Copy link
+                      </button>
+                      <p role="status" />
+                    </form>
+                  )}
+                  {emails && live(r) && (
+                    <form
+                      data-project-form
+                      data-endpoint="/api/care"
+                      data-pending="Sending…"
+                      data-confirm="Email this report now to every recipient who has not had it?"
+                    >
+                      <input type="hidden" name="action" value="send" />
+                      <input type="hidden" name="report_id" value={r.id} />
+                      <button class="btn btn--sm btn--outline" type="submit" disabled={!settings.recipients.length || !canSendEmail()}>
+                        Send now
+                      </button>
+                      <p role="status" />
+                    </form>
+                  )}
+                  {!r.revoked_at && (
+                    <form
+                      data-project-form
+                      data-endpoint="/api/care"
+                      data-pending="Revoking…"
+                      data-confirm="Revoke every link to this report? Your client loses access immediately, including the links in their emails."
+                    >
+                      <input type="hidden" name="action" value="revoke" />
+                      <input type="hidden" name="report_id" value={r.id} />
+                      <button class="btn btn--sm btn--danger-outline" type="submit">
+                        Revoke
+                      </button>
+                      <p role="status" />
+                    </form>
+                  )}
+                </div>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      {
+        reports && (
+          <section class="project-panel" aria-labelledby="care-generate-heading">
+            <h2 class="section-heading" id="care-generate-heading"><span>[ 02 ]</span> Generate a month</h2>
+            <p class="small muted">
+              Reads the month in {settings.timezone} and freezes it as a report. Generating a month again replaces its
+              manual report, and keeps its link; the scheduled one is never replaced. Up to {CARE_LIMITS.generate.limit} an
+              hour.
+            </p>
+            <form data-project-form data-endpoint="/api/care" data-pending="Generating…">
+              <input type="hidden" name="action" value="generate" />
+              <input type="hidden" name="project_id" value={project.id} />
+              <label>
+                Month
+                <select class="input" name="period">
+                  {periods.map((key, i) => (
+                    <option value={key} selected={i === 1}>
+                      {periodLabel(key)}
+                      {i === 0 ? ' (so far)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div class="btn-row">
+                <button class="btn btn--outline-ink" type="submit">
+                  Generate report
+                </button>
+              </div>
+              <p role="status" />
+            </form>
+          </section>
+        )
+      }
+
+      <section class="project-panel" id="care-settings" aria-labelledby="care-settings-heading">
+        <h2 class="section-heading" id="care-settings-heading"><span>[ 03 ]</span> Monthly email</h2>
+        <p class="small muted">
+          On the 1st at 09:00 in the project’s timezone, last month’s report is made and emailed to your client, each
+          address with its own link, once.
+          {Boolean(settings.enabled) && settings.next_run_at && <> Next: {formatDayTime(settings.next_run_at, settings.timezone)} ({settings.timezone}).</>}
+        </p>
+        {
+          emails && !confirmed && (
+            <p class="notice notice--info">Confirm your email address first: reports go to clients only from confirmed accounts.</p>
+          )
+        }
+        {
+          reports ? (
+            <form data-project-form data-endpoint="/api/care" data-pending="Saving…">
+              <input type="hidden" name="action" value="settings" />
+              <input type="hidden" name="project_id" value={project.id} />
+              <label class="brand-check">
+                <input type="checkbox" name="enabled" value="1" checked={!!settings.enabled} disabled={!emails} />
+                Email the report to my client every month
+              </label>
+              <label>
+                Client addresses
+                <textarea
+                  class="input"
+                  name="recipients"
+                  rows="3"
+                  maxlength="1400"
+                  disabled={!emails}
+                  placeholder="client@example.com"
+                  aria-describedby="care-recipients-help"
+                >{settings.recipients.join('\n')}</textarea>
+              </label>
+              <p class="small muted" id="care-recipients-help">
+                Up to {CARE_MAX_RECIPIENTS}, one per line. Used only to send these reports. Replies go to {user.email}.
+              </p>
+              <label>
+                Timezone
+                <input class="input" name="timezone" required maxlength="64" value={settings.timezone} placeholder="Europe/Sofia" data-care-timezone={settings.created_at ? undefined : ''} />
+              </label>
+              <label class="brand-check">
+                <input type="checkbox" name="owner_copy" value="1" checked={!!settings.owner_copy} disabled={!emails} />
+                Email me a copy
+              </label>
+              {!emails && (
+                <p class="small muted">
+                  Emailing reports to clients is included on {CARE_EMAIL_PLANS}. The timezone sets each report’s month.
+                </p>
+              )}
+              <div class="btn-row">
+                <button class="btn btn--outline-ink" type="submit">
+                  Save settings
+                </button>
+              </div>
+              <p role="status" />
+            </form>
+          ) : (
+            <p class="small muted">Included on {CARE_REPORT_PLANS}.</p>
+          )
+        }
+      </section>
+    </div>
+  </div>
+  <ProjectForms />
+  <script>
+    // Before the first save, offer the browser's own timezone rather than UTC.
+    const field = document.querySelector<HTMLInputElement>('input[data-care-timezone]');
+    try {
+      const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (field && zone && field.value === 'UTC') field.value = zone;
+    } catch {
+      /* UTC stays */
+    }
+  </script>
+</AppShell>
+<style>
+  .care-item {
+    display: grid;
+    gap: 8px;
+  }
+  .care-item__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 14px;
+    font-weight: 600;
+  }
+  .care-item__head a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .care-item__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .care-item__actions form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .care-item__actions .btn {
+    width: auto;
+    height: 44px;
+    min-height: 44px;
+  }
+  .care-item__actions [role='status'] {
+    flex-basis: 100%;
+  }
+  .care-list {
+    grid-column: 1 / -1;
+  }
+</style>

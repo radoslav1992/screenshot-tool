@@ -38,7 +38,7 @@ export const PLANS: Record<PlanId, Plan> = {
     priceYearly: 0,
     tagline: 'Your first client capture and web report',
     description:
-      '20 screenshots a month and 3 website monitors checked weekly. Every device, capture mode and ready-made size. Files carry a small easyscreencapture.com mark.',
+      '20 screenshots a month and 3 website monitors checked weekly. Every device, capture mode and ready-made size. Files carry a small easyscreencapture.com mark. The sites behind your monitors get hourly uptime checks, daily SSL checks and weekly domain and broken-link checks.',
     quota: 20,
     api: false,
     formats: ['png', 'jpg'],
@@ -50,6 +50,7 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: 'Private projects & batch captures', included: true },
       { text: 'PNG/JPG & shareable web reports', included: true },
       { text: '3 monitors, checked weekly', included: true },
+      { text: 'Hourly uptime, SSL, domain & link checks', included: true },
       { text: 'Without the watermark', included: false },
     ],
     cta: 'Start free',
@@ -58,7 +59,7 @@ export const PLANS: Record<PlanId, Plan> = {
   lite: {
     id: 'lite', name: 'Lite', priceMonthly: 2.99, priceYearly: 24.99,
     tagline: 'Everyday screenshots, saved and shared',
-    description: '500 screenshots per calendar month, no watermark, 30 days of cloud history and 10 website monitors checked daily or weekly. Save and share full-page screenshots across your devices.',
+    description: '500 screenshots per calendar month, no watermark, 30 days of cloud history and 10 website monitors checked daily or weekly. Save and share full-page screenshots across your devices. The sites behind your monitors get hourly uptime checks, daily SSL checks and weekly domain and broken-link checks.',
     quota: 500, api: false, formats: ['png', 'jpg'], customViewport: false,
     historyDays: 30, watermark: false,
     priceEnv: { monthly: 'STRIPE_PRICE_LITE_MONTHLY', yearly: 'STRIPE_PRICE_LITE_YEARLY' },
@@ -68,6 +69,7 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: 'Full-page PNG/JPG screenshots', included: true },
       { text: '30-day cloud history', included: true },
       { text: '10 monitors, daily or weekly', included: true },
+      { text: 'Hourly uptime, SSL, domain & link checks', included: true },
     ], cta: 'Get Lite',
   },
 
@@ -78,7 +80,7 @@ export const PLANS: Record<PlanId, Plan> = {
     priceYearly: 67,
     tagline: 'Clean reports and daily website checks',
     description:
-      '500 screenshots a month with no watermark. Every device, capture mode and ready-made size, plus PDF export, custom viewports, 30 days of capture history and 25 website monitors checked daily or weekly.',
+      '500 screenshots a month with no watermark. Every device, capture mode and ready-made size, plus PDF export, custom viewports, 30 days of capture history, 25 website monitors checked daily or weekly and a monthly care report for each client project, shared by link. The sites behind your monitors get uptime checks every 15 minutes, daily SSL checks and weekly domain and broken-link checks.',
     quota: 500,
     api: false,
     formats: ['png', 'jpg', 'pdf'],
@@ -92,6 +94,8 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: 'Branded PDF reports & custom sizes', included: true },
       { text: '30-day history', included: true },
       { text: '25 monitors, daily or weekly', included: true },
+      { text: '15-minute uptime, SSL, domain & link checks', included: true },
+      { text: 'Monthly client care reports', included: true },
     ],
     cta: 'Go Plus',
   },
@@ -102,7 +106,7 @@ export const PLANS: Record<PlanId, Plan> = {
     priceYearly: 182,
     tagline: 'For freelancers automating client work',
     description:
-      '2,000 screenshots a month with no watermark, plus full API access at 60 requests a minute. Every device, mode and size, PDF export, custom viewports, 30 days of capture history and 100 website monitors checked as often as hourly, or every 15 minutes for text, price and SEO rules.',
+      '2,000 screenshots a month with no watermark, plus full API access at 60 requests a minute. Every device, mode and size, PDF export, custom viewports, 30 days of capture history and 100 website monitors checked as often as hourly, or every 15 minutes for text, price and SEO rules. The sites behind your monitors get uptime checks every 15 minutes, daily SSL checks and weekly domain and broken-link checks. Monthly care reports are emailed to your clients.',
     quota: 2000,
     api: true,
     formats: ['png', 'jpg', 'pdf'],
@@ -116,6 +120,8 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: 'Branded PDF reports & custom sizes', included: true },
       { text: '30-day capture history', included: true },
       { text: '100 monitors; hourly, or 15-minute rule checks', included: true },
+      { text: '15-minute uptime, SSL, domain & link checks', included: true },
+      { text: 'Care reports emailed to clients monthly', included: true },
     ],
     cta: 'Go Pro',
   },
@@ -126,7 +132,7 @@ export const PLANS: Record<PlanId, Plan> = {
     priceYearly: 758,
     tagline: 'For agencies reviewing work together',
     description:
-      '15,000 screenshots a month with no watermark, API access at 300 requests a minute, and three collaborators per project. Every device, mode and size, PDF export, custom viewports, a year of capture history and 300 website monitors checked as often as hourly, or every 15 minutes for text, price and SEO rules.',
+      '15,000 screenshots a month with no watermark, API access at 300 requests a minute, and three collaborators per project. Every device, mode and size, PDF export, custom viewports, a year of capture history and 300 website monitors checked as often as hourly, or every 15 minutes for text, price and SEO rules. The sites behind your monitors get uptime checks every 15 minutes, daily SSL checks and weekly domain and broken-link checks. Monthly care reports are emailed to your clients.',
     quota: 15000,
     api: true,
     formats: ['png', 'jpg', 'pdf'],
@@ -140,6 +146,8 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: '365-day capture history', included: true },
       { text: 'API: 300 requests / minute', included: true },
       { text: '300 monitors; hourly, or 15-minute rule checks', included: true },
+      { text: '15-minute uptime, SSL, domain & link checks', included: true },
+      { text: 'Care reports emailed to clients monthly', included: true },
     ],
     cta: 'Choose Business',
   },
@@ -310,3 +318,81 @@ export const REPORT_WHITE_LABEL: Record<PlanId, boolean> = {
   pro: true,
   business: true,
 };
+
+/* -------------------------------------------------------------------------- */
+/* Site health                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Minutes between uptime checks of each site an account monitors, by plan.
+ *
+ * An uptime check is one plain request to the site's first monitored page,
+ * with no screenshot, so it costs nothing from the quota. Every 15 minutes
+ * matches the most frequent monitor schedule and the minute cron's quarter
+ * ticks; Free and Lite get the hourly sweep, which still catches an outage the
+ * same hour. Two down checks in a row open an incident, so a 15-minute plan
+ * hears within half an hour and an hourly one within two.
+ */
+export const UPTIME_MINUTES: Record<PlanId, 15 | 60> = {
+  free: 60,
+  lite: 60,
+  plus: 15,
+  pro: 15,
+  business: 15,
+};
+
+/**
+ * How often the other checks run, on every plan. A certificate is checked
+ * daily, so the 14- and 3-day warnings land on the right day; a domain's
+ * registration moves on a scale of years, and registries limit how often they
+ * are asked, so weekly is plenty; a page's links weekly, at most
+ * LINKS_PER_PAGE of them, since each is a request to someone else's site.
+ */
+export const SSL_CHECK_HOURS = 24;
+export const DOMAIN_CHECK_HOURS = 168;
+export const LINK_CHECK_HOURS = 168;
+export const LINKS_PER_PAGE = 100;
+
+export function uptimeMinutes(id: string | null | undefined): 15 | 60 {
+  return UPTIME_MINUTES[getPlan(id).id];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Care reports                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Monthly care reports (lib/care-reports.ts): generating one, its share link,
+ * the owner's view and the PDF. Plus and above, alongside the PDF export a
+ * care report is mostly read as: a client summary is a deliverable, which is
+ * what the paid plans are for, and Free and Lite see what it would add.
+ */
+export const CARE_REPORTS: Record<PlanId, boolean> = {
+  free: false,
+  lite: false,
+  plus: true,
+  pro: true,
+  business: true,
+};
+
+/**
+ * Care reports emailed to the client, by the monthly schedule or "Send now".
+ * These are emails to people who never signed up, so they are kept to the
+ * plans for client work at volume, and a Pro trial counts as Pro; Plus shares
+ * the link itself.
+ */
+export const CARE_REPORT_EMAILS: Record<PlanId, boolean> = {
+  free: false,
+  lite: false,
+  plus: false,
+  pro: true,
+  business: true,
+};
+
+export function careReportsIncluded(id: string | null | undefined): boolean {
+  return CARE_REPORTS[getPlan(id).id];
+}
+
+export function careEmailsIncluded(id: string | null | undefined): boolean {
+  return CARE_REPORT_EMAILS[getPlan(id).id];
+}

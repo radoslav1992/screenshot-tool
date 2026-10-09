@@ -465,6 +465,141 @@ CREATE INDEX IF NOT EXISTS plan_trials_open ON plan_trials(ended_at, ends_at);
 CREATE INDEX IF NOT EXISTS plan_trials_ip ON plan_trials(ip_hash, started_at);
 CREATE INDEX IF NOT EXISTS plan_trials_started ON plan_trials(started_at);
 
+CREATE TABLE IF NOT EXISTS site_health_sites (
+  user_id            TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  origin             TEXT NOT NULL,
+  url                TEXT NOT NULL,
+  active             INTEGER NOT NULL DEFAULT 1,
+  created_at         TEXT NOT NULL,
+  uptime_next_at     TEXT NOT NULL,
+  uptime_state       TEXT CHECK(uptime_state IN ('up','down','error')),
+  uptime_code        INTEGER,
+  uptime_ms          INTEGER,
+  uptime_detail      TEXT,
+  uptime_checked_at  TEXT,
+  uptime_fails       INTEGER NOT NULL DEFAULT 0,
+  uptime_down_since  TEXT,
+  uptime_incident_id TEXT,
+  ssl_next_at        TEXT NOT NULL,
+  ssl_status         TEXT CHECK(ssl_status IN ('ok','expiring','expired','invalid','no_https','unknown')),
+  ssl_valid_to       TEXT,
+  ssl_issuer         TEXT,
+  ssl_names          TEXT,
+  ssl_detail         TEXT,
+  ssl_checked_at     TEXT,
+  ssl_alert          TEXT,
+  domain_next_at     TEXT NOT NULL,
+  domain_name        TEXT,
+  domain_status      TEXT CHECK(domain_status IN ('ok','expiring','expired','unknown')),
+  domain_expires_at  TEXT,
+  domain_registrar   TEXT,
+  domain_detail      TEXT,
+  domain_checked_at  TEXT,
+  domain_alert       TEXT,
+  PRIMARY KEY (user_id, origin)
+);
+CREATE INDEX IF NOT EXISTS site_health_uptime_due ON site_health_sites(active, uptime_next_at);
+CREATE INDEX IF NOT EXISTS site_health_ssl_due ON site_health_sites(active, ssl_next_at);
+CREATE INDEX IF NOT EXISTS site_health_domain_due ON site_health_sites(active, domain_next_at);
+
+CREATE TABLE IF NOT EXISTS site_uptime_hourly (
+  user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  origin   TEXT NOT NULL,
+  hour     TEXT NOT NULL,
+  checks   INTEGER NOT NULL DEFAULT 0,
+  down     INTEGER NOT NULL DEFAULT 0,
+  total_ms INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, origin, hour)
+);
+
+CREATE TABLE IF NOT EXISTS site_uptime_incidents (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  origin          TEXT NOT NULL,
+  started_at      TEXT NOT NULL,
+  ended_at        TEXT,
+  detail          TEXT NOT NULL DEFAULT '',
+  opened_alert_at TEXT,
+  closed_alert_at TEXT
+);
+CREATE INDEX IF NOT EXISTS site_uptime_incidents_site ON site_uptime_incidents(user_id, origin, started_at);
+
+CREATE TABLE IF NOT EXISTS site_link_checks (
+  watch_id   TEXT PRIMARY KEY REFERENCES watches(id) ON DELETE CASCADE,
+  user_id    TEXT NOT NULL,
+  next_at    TEXT NOT NULL,
+  checked_at TEXT,
+  page_url   TEXT,
+  checked    INTEGER NOT NULL DEFAULT 0,
+  broken     INTEGER NOT NULL DEFAULT 0,
+  unverified INTEGER NOT NULL DEFAULT 0,
+  detail     TEXT
+);
+CREATE INDEX IF NOT EXISTS site_link_checks_due ON site_link_checks(next_at);
+
+CREATE TABLE IF NOT EXISTS site_broken_links (
+  watch_id      TEXT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  url           TEXT NOT NULL,
+  user_id       TEXT NOT NULL,
+  status        INTEGER,
+  reason        TEXT NOT NULL,
+  link_text     TEXT NOT NULL DEFAULT '',
+  first_seen_at TEXT NOT NULL,
+  last_seen_at  TEXT NOT NULL,
+  fixed_at      TEXT,
+  PRIMARY KEY (watch_id, url, first_seen_at)
+);
+CREATE INDEX IF NOT EXISTS site_broken_links_fixed ON site_broken_links(fixed_at);
+
+CREATE TABLE IF NOT EXISTS care_report_settings (
+  project_id  TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  enabled     INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+  timezone    TEXT NOT NULL DEFAULT 'UTC',
+  recipients  TEXT NOT NULL DEFAULT '[]',
+  owner_copy  INTEGER NOT NULL DEFAULT 1 CHECK(owner_copy IN (0,1)),
+  next_run_at TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS care_report_settings_due ON care_report_settings(enabled, next_run_at);
+CREATE TABLE IF NOT EXISTS care_reports (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period         TEXT NOT NULL CHECK(length(period) = 7),
+  kind           TEXT NOT NULL CHECK(kind IN ('scheduled','manual')),
+  generated_at   TEXT NOT NULL,
+  snapshot       TEXT NOT NULL CHECK(length(snapshot) <= 262144),
+  token_hash     TEXT UNIQUE,
+  expires_at     TEXT NOT NULL,
+  revoked_at     TEXT,
+  access_count   INTEGER NOT NULL DEFAULT 0,
+  last_access_at TEXT,
+  UNIQUE(project_id, period, kind)
+);
+CREATE INDEX IF NOT EXISTS care_reports_user ON care_reports(user_id, generated_at);
+CREATE TABLE IF NOT EXISTS care_report_deliveries (
+  report_id  TEXT NOT NULL REFERENCES care_reports(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  role       TEXT NOT NULL CHECK(role IN ('client','owner')),
+  token_hash TEXT UNIQUE,
+  status     TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  opened_at  TEXT,
+  PRIMARY KEY(report_id, email)
+);
+CREATE INDEX IF NOT EXISTS review_reports_project ON review_reports(project_id, created_at);
+
+CREATE TABLE IF NOT EXISTS baseline_approvals (
+  id         TEXT PRIMARY KEY,
+  watch_id   TEXT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  capture_id TEXT NOT NULL,
+  report_id  TEXT NOT NULL REFERENCES review_reports(id) ON DELETE CASCADE,
+  signoff_id TEXT NOT NULL REFERENCES report_signoffs(id) ON DELETE CASCADE,
+  pinned_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS baseline_approvals_watch ON baseline_approvals(watch_id, pinned_at);
+
 CREATE TABLE IF NOT EXISTS d1_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT UNIQUE,
@@ -490,3 +625,6 @@ INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0016_watch_fast_checks.sql')
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0017_growth.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0018_web_push.sql');
 INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0019_plan_trials.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0020_site_health.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0021_care_reports.sql');
+INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0022_baseline_approvals.sql');

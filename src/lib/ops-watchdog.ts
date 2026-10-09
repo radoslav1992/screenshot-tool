@@ -222,7 +222,7 @@ function letter(kind: 'problem' | 'reminder' | 'recovered', checks: ServiceCheck
       `${kind === 'reminder' ? `Still failing since ${since}.` : 'The hourly self-check found a problem.'}\n\n` +
       failing.map((check) => `✗ ${check.title}\n  ${check.detail ?? 'Failed.'}`).join('\n\n') +
       `\n\nPassing: ${checks.filter((check) => check.ok).map((check) => check.title).join(', ') || 'nothing else'}.` +
-      `\n\nLive status: ${health}\nWorker logs: Cloudflare dashboard → Workers → screenify → Logs.\n\n` +
+      `\n\nLive status: ${health}\nWorker logs: Cloudflare dashboard → Workers & Pages → screenshot-tool → Logs.\n\n` +
       `You will hear again when it is fixed, or in a day if it is not.\n`,
   };
 }

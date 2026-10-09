@@ -11,13 +11,16 @@ import { describeChange, type TextChange } from './text-diff';
  * arrive.
  */
 
-/** Small and fast. The job is to compress a diff, not to reason about it. */
-const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+/**
+ * Small and fast. The job is to compress a diff, not to reason about it. The
+ * care report summary (lib/care-summary.ts) writes its paragraph with it too.
+ */
+export const MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 /** Lines each way. Beyond this the prompt costs more than the answer is worth. */
 const MAX_LINES = 12;
 
-function aiAvailable(): boolean {
+export function aiAvailable(): boolean {
   return Boolean((env as unknown as Record<string, unknown>).AI);
 }
 

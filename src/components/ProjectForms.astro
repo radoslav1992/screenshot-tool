@@ -51,6 +51,14 @@
           output.select();
           // A link now exists, so making another one replaces it.
           if (form.dataset.confirmReplace) form.dataset.confirm = form.dataset.confirmReplace;
+          // Something new was made with it (a care report): the link first, then the way to it.
+          if (result.redirect) {
+            const open = document.createElement('a');
+            open.href = result.redirect;
+            open.textContent = 'Open it →';
+            open.className = 'form-open';
+            status!.appendChild(open);
+          }
         } else if (result.redirect) location.assign(result.redirect);
         else if (form.dataset.stay) status!.textContent = 'Saved.';
         else location.reload();

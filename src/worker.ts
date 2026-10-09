@@ -9,6 +9,8 @@ import { pruneCaptureJobs, runCaptureJobs } from './lib/capture-jobs';
 import { RULE_ONLY_FREQUENCY } from './lib/plans';
 import { runWatchdog } from './lib/ops-watchdog';
 import { runTrialLifecycle } from './lib/trials';
+import { runSiteHealthSweep, runUptimeChecks } from './lib/site-health';
+import { runCareReports } from './lib/care-reports';
 
 /**
  * Worker entrypoint.
@@ -29,14 +31,18 @@ export default {
    * time limits: the minute one works the capture queue, and anything else —
    * the hourly `0 * * * *`, or a manual run with no cron at all — is the sweep
    * it always was, 15-minute monitors included. At a quarter past, half past
-   * and a quarter to, the minute one also runs the 15-minute monitors that are
-   * due, and nothing else; the hourly sweep has them on the hour.
+   * and a quarter to, the minute one also runs the 15-minute monitors and the
+   * site uptime checks that are due, and nothing else; the hourly sweep has
+   * them on the hour.
    */
   async scheduled(event: ScheduledController, _env: Env, ctx: ExecutionContext): Promise<void> {
     if (event.cron === JOBS_CRON) {
       const now = new Date(event.scheduledTime);
       ctx.waitUntil(runJobs(now));
-      if (now.getUTCMinutes() % 15 === 0 && now.getUTCMinutes() !== 0) ctx.waitUntil(quarterHourly(now));
+      if (now.getUTCMinutes() % 15 === 0 && now.getUTCMinutes() !== 0) {
+        ctx.waitUntil(quarterHourly(now));
+        ctx.waitUntil(uptime(now, '[uptime:15m]'));
+      }
       return;
     }
     hourly(event, ctx);
@@ -49,6 +55,20 @@ async function quarterHourly(now: Date): Promise<void> {
     logSweep(await runDueWatches(siteOrigin(), now, { frequency: RULE_ONLY_FREQUENCY }), '[watch:15m]');
   } catch (error) {
     console.error('[watch:15m] sweep failed', error);
+  }
+}
+
+/** Site uptime checks that are due: every 15 minutes on Plus and above, hourly below (lib/site-health.ts). */
+async function uptime(now: Date, tag = '[uptime]'): Promise<void> {
+  try {
+    const result = await runUptimeChecks(siteOrigin(), now);
+    if (!result.due) return;
+    console.log(
+      `${tag} due=${result.due} checked=${result.checked} fetched=${result.fetched} down=${result.down} ` +
+        `opened=${result.opened} closed=${result.closed} backlog=${result.backlog}`,
+    );
+  } catch (error) {
+    console.error(`${tag} sweep failed`, error);
   }
 }
 
@@ -105,6 +125,17 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
 
   ctx.waitUntil(runProjectDigests(siteOrigin(), now).catch((error) => console.error('[digest] sweep failed', error)));
 
+  // Monthly care reports: on the 1st at 09:00 in each project's timezone, last month's, emailed to the client.
+  ctx.waitUntil(
+    runCareReports(siteOrigin(), now)
+      .then((result) => {
+        if (result.due) {
+          console.log(`[care] due=${result.due} generated=${result.generated} emailed=${result.attempted} skipped=${result.skipped}`);
+        }
+      })
+      .catch((error) => console.error('[care] sweep failed', error)),
+  );
+
   // Pro trials: the reminder three days out and the note once one has ended.
   ctx.waitUntil(
     runTrialLifecycle(siteOrigin(), now)
@@ -143,6 +174,22 @@ function hourly(event: ScheduledController, ctx: ExecutionContext): void {
         if (result.jobs || result.batches) console.log(`[jobs] pruned jobs=${result.jobs} batches=${result.batches}`);
       })
       .catch((error) => console.error('[jobs] prune failed', error)),
+  );
+
+  // Sites behind monitors: uptime for everyone due this hour, then certificates, domains, links and pruning.
+  ctx.waitUntil(uptime(now));
+  ctx.waitUntil(
+    runSiteHealthSweep(siteOrigin(), now)
+      .then((result) => {
+        const { ssl, domain, links, pruned } = result;
+        if (!ssl.due && !domain.due && !links.due && !pruned?.hours && !pruned?.incidents && !pruned?.links) return;
+        console.log(
+          `[site-health] ssl=${ssl.checked}/${ssl.due} domain=${domain.checked}/${domain.due} lookups=${domain.lookups} ` +
+            `links=${links.pages}/${links.due} requests=${links.requests} broken=${links.broken} fixed=${links.fixed} ` +
+            `alerts=${ssl.alerts + domain.alerts} pruned=${pruned ? pruned.hours + pruned.incidents + pruned.links + pruned.sites : 0}`,
+        );
+      })
+      .catch((error) => console.error('[site-health] sweep failed', error)),
   );
 
   // The service checking its own background work, and telling the owners when that changes.

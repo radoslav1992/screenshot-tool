@@ -135,6 +135,9 @@ npx wrangler kv namespace create RATE
    | `db/0017-upgrade.sql` | signup sources, referrals and bonus screenshots |
    | `db/0018-upgrade.sql` | web push for browsers and the installed app |
    | `db/0019-upgrade.sql` | 14-day Pro trials |
+   | `db/0020-upgrade.sql` | site health: uptime, SSL, domain and broken-link checks |
+   | `db/0021-upgrade.sql` | monthly website care reports for client projects |
+   | `db/0022-upgrade.sql` | which client approval pinned a monitor baseline |
 
    `GET /api/health` lists which of these the database is missing (see *Checking a deployment*).
    Each file ends by recording its migration in `d1_migrations`, so `npm run db:migrate` skips it
@@ -742,6 +745,47 @@ checks run exactly as before. Apply it with `npm run db:migrate`, or paste `db/0
 the D1 console. `npm run highlights:check` covers the clustering in Chromium and the check flow with and
 without the column.
 
+### Client approval pins the baseline (0022)
+
+When a client approves a shared review report, every capture in it that one of the report owner's monitors
+took becomes that monitor's pinned baseline, so later checks compare against exactly what was approved
+(`pinApprovedCaptures` in `lib/approval-baseline.ts`, called by `POST /r/:token/signoff` once the decision
+is saved).
+
+- **Which monitor.** A capture is a monitor's when that monitor's check took it (`watch_runs.capture_id`) or
+  it is or was its baseline (`watches.baseline_capture_id`, `watch_runs.baseline_capture_id`) — the test
+  `pinBaseline` applies. Only monitors, runs and captures of the project's owner are read or written, so
+  someone else's capture or monitor is never touched, even where a run names it.
+- **Several from one monitor** (a before/after pair): the newest by `captures.created_at` is pinned, since
+  approving accepts the "after". A monitor whose only capture is the "before" of a newer screenshot from
+  elsewhere is not pinned: that would compare every check against the version the client moved away from.
+- **Never fails a sign-off.** The decision is recorded first, and `pinBaseline`'s rules (`pinRefusal` in
+  `lib/baseline-pin.ts`) skip a capture instead of throwing: its files are gone, it predates a capture engine
+  update, its monitor was deleted, pinning is not set up (no 0014), or the write failed. Each skip has a reason.
+- **Only `approved` pins.** Requesting changes and the owner's reset change nothing; an approval's pin stays until
+  the owner unpins it, and a later approval of another report pins again. The same approval twice writes
+  nothing the second time (the update is conditional), so the pinned-check alerting is not restarted.
+- **Provenance.** Each pin an approval writes adds a `baseline_approvals` row (watch, capture, report, sign-off
+  and `pinned_at`, exactly the `baseline_pinned_at` it wrote). The monitor page says "Pinned by client approval:
+  Jane Doe approved “Homepage refresh” on 8 Oct 2026", with a link to the report, only while the baseline is
+  still that capture with that pin time: a manual pin, an unpin or an engine refresh ends it.
+  `GET /api/watches/:id` adds an optional `pinned_by_approval: {name, report_id, report_title, approved_at}` on
+  the same rule; nothing else in the monitor JSON changes, so the iOS app decodes it as before.
+- **Owner email.** On approval it lists each monitor whose baseline was pinned, with a link, says "Unpin it on
+  the monitor page" to undo it, and lists any skipped and why. Plain text, as all mail here is.
+- **Screens.** The shared page adds one neutral line beside Approve — "Approving makes these screenshots the
+  reference that future checks compare against." — only when approving would pin at least one monitor; it names
+  none. The owner's report page shows the same note, then "Pinned as the baseline on N monitors" linking to them
+  (monitors now pinned to the capture the approval pins, whoever pinned it), and "Not pinned: …" while approved.
+
+Migration `0022_baseline_approvals.sql` is optional. Without it an approval still pins (that needs only 0014),
+and the monitor page and API just do not name the approval; without 0014 nothing is pinned and the shared page
+says nothing about it. Apply it with `npm run db:migrate`, or paste `db/0022-upgrade.sql` into the D1 console.
+Its rows go with their monitor, report or sign-off (`ON DELETE CASCADE`), and account deletion removes them by
+name. `npm run approval:check` covers the mapping, newest-wins, owner isolation, every skip, idempotency,
+provenance and what supersedes it, the email, the three pages rendered from their sources, account deletion,
+and both no-migration fallbacks against SQLite.
+
 ### Accounts: password reset and confirmation emails
 
 `/forgot-password` emails a single-use, one-hour reset link (tokens live hashed in the `RATE` KV, so no
@@ -906,7 +950,7 @@ Growth built into the product, for the freelancers and small agencies who look a
   field. A cookie that is not strictly necessary needs consent under the EU's ePrivacy rules and the site asks
   for none, so a visitor who leaves and comes back later is not remembered. Set `ATTRIBUTION_COOKIE=1` to keep
   the first touch in a 30-day first-party cookie, `sf_src`, as well — only once the site asks for consent; the
-  privacy page follows the setting. The app, the APIs, files, share links (`/r/…`), `/verify` and
+  privacy page follows the setting. The app, the APIs, files, share links (`/r/…`, `/care/…`), `/verify` and
   `/reset-password` are never landings. The iOS app signs up with JSON, no Origin and nothing carried: that is
   recorded as `source = 'ios'`, and the response is unchanged. Each signup also keeps a shortened SHA-256 of its
   IP address, used only by the referral rules below. No third-party analytics.
@@ -1040,3 +1084,134 @@ when it ends.
 console; it is picked up within a minute. Deleting an account deletes its trial row. `npm run trial:check` covers
 eligibility, the plan during and after a trial, quota, monitors, the API, checkout, both emails, paying during a
 trial, the iOS profile, deletion and the no-migration fallback against SQLite.
+
+### Site health checks (0020)
+
+For every site behind an account's active monitors (each distinct `scheme://host` of a monitor with `status =
+'active'`), the hourly sweep and the minute cron check uptime, the SSL certificate, the domain registration and the
+links on each monitored page (`lib/site-health.ts`). None of it takes a screenshot or spends quota. The sites are kept
+in step with the monitors in SQL, each hour: a new origin gets a row with its first checks due at once, the oldest
+active monitor's page is the one uptime fetches, and a site nobody monitors any more stops being checked.
+
+| Check | Free, Lite | Plus, Pro, Business |
+| --- | --- | --- |
+| Uptime of the first monitored page | hourly | every 15 minutes |
+| SSL certificate | daily | daily |
+| Domain registration (RDAP) | weekly | weekly |
+| Broken links, per monitored page, at most 100 | weekly | weekly |
+
+The tiers are `UPTIME_MINUTES`, `SSL_CHECK_HOURS`, `DOMAIN_CHECK_HOURS`, `LINK_CHECK_HOURS` and `LINKS_PER_PAGE` in
+`lib/plans.ts`, read through the plan an account acts on, so a Pro trial gets 15-minute uptime.
+
+- **Uptime.** A GET of the page through `fetchPublic` (every redirect hop checked, 10 s). Down: no answer, a timeout,
+  a TLS failure or a 5xx. A 4xx is "up but erroring": shown, never downtime. A bot check (`isChallenge`) is up. Two
+  down checks in a row open an incident, dated from the first; the first up check closes it. Every check adds to its
+  hour's row in `site_uptime_hourly` (checks, down, total ms), so a month's uptime is at most 720 small rows. Runs at
+  :15, :30 and :45 on the minute cron and on the hour, 300 sites a tick, eight at a time, taken under a short lease.
+- **SSL** (`lib/tls-probe.ts`). Workers' `fetch` validates a certificate but reveals nothing about it, so the probe
+  opens a plain socket (`connect()` from `cloudflare:sockets`, `secureTransport: 'off'`), sends a TLS 1.2 ClientHello
+  (SNI, ECDHE/RSA suites, groups, point formats, signature algorithms), reads the ServerHello and the Certificate
+  message, which TLS 1.2 sends in the clear, and closes the socket without finishing the handshake. A small DER parser
+  reads the leaf's validity, issuer and subjectAltName names; it reads at most 64 KB in 10 s and checks every length.
+  A HEAD over HTTPS says whether the chain is trusted (a 525/526 or a TLS error means it is not). States: `ok`,
+  `expiring` (14 days or less), `expired`, `invalid` (untrusted, the wrong name, not yet valid), `no_https` (a site
+  monitored over plain HTTP whose host has no working HTTPS, never an error) and `unknown` (no answer at all).
+- **What the probe cannot read.** A server that only speaks TLS 1.3 answers the hello with an alert, and Workers may
+  not open sockets to Cloudflare's own addresses, so sites behind Cloudflare cannot be read either. Then the HEAD is
+  the answer: HTTPS works and the certificate is trusted, with the expiry shown as unknown and the reason said
+  plainly. A Certificate Transparency lookup was considered and left out: it lists certificates issued, not the one
+  served, so it cannot tell that a server still serves the old one after a renewal, it needs a paid key to be
+  dependable, and it would send customers' host names to a third party.
+- **Domain** (`lib/rdap.ts`). RDAP, with IANA's bootstrap (`data.iana.org/rdap/dns.json`) cached in KV for a day and
+  `rdap.org` when it cannot be had. With no Public Suffix List here, the last two labels are asked for and a 404 means
+  try three, with common two-label suffixes (`co.uk`, `com.au`, …) known up front. Reads the `expiration` event, the
+  registrar and the status. `expiring` at 30 days; a registry that publishes no expiry (`.de`) is `unknown`, said so.
+  One lookup per registration a sweep: `www.` and `shop.` share it. A registry that could not be asked is asked again
+  the next day.
+- **Broken links** (`lib/link-check.ts`). The page's `<a href>` links (comments, scripts, styles and templates left
+  out), resolved against the final URL or `<base>`, http(s) only, deduplicated, the first 100. Each is asked with HEAD,
+  GET (cut off at the headers) when HEAD answers 405 or 501, six at a time, 8 s each. Broken: 404, 410, 5xx, a dead
+  host or a redirect loop. Couldn't verify: 401, 403, 429, bot checks, timeouts. Private addresses are never asked.
+  `site_broken_links` keeps each breakage with when it was first seen and when a later check found it working or gone
+  from the page, so a report can say "3 fixed this month". Up to 30 pages and 2,000 requests per hourly sweep.
+- **Shared requests.** Within a tick, identical requests are made once: fifty accounts on one site cost one uptime
+  request, one certificate read, one registry lookup and one request per link. Each account keeps its own results.
+- **Alerts** (plain-text email, linking to the monitor page's panel): an incident opening and closing (with how long
+  it lasted); a certificate at 14 days, again at 3, and when expired or invalid; a domain at 30 days and again at 7.
+  Each is claimed in the database before it is sent, so it goes once per change of state; a renewal starts the
+  warnings afresh. They go to the owner when any active monitor on the site has email alerts on (`notify_email`).
+  Broken links are never emailed.
+- **UI.** A Site health panel on the monitor page (uptime over 24 hours, 7 and 30 days and the last incident; when the
+  certificate expires and its issuer; the domain's expiry and registrar; this page's broken links and how many links
+  were checked), in pending, healthy, needs-a-look and problem states, and a small tag per monitor on the list.
+- **For the care report.** `siteHealthForWatches(userId, watchIds, from, to)` in `lib/site-health-summary.ts`: one
+  entry per origin with uptime and incidents in the window, the latest SSL and domain state, the latest broken links
+  and how many were fixed in the window. Seven indexed queries, the account's own rows only.
+- **Retention.** Rollups, closed incidents and fixed links older than 13 months, and sites unused for as long, are
+  pruned in the hourly sweep in bounded batches. Deleting an account deletes its rows; deleting a monitor its link
+  results.
+
+**Before the migration** nothing is checked, fetched or sent, the panel and the tags are not rendered and the summary
+is empty. Apply it with `npm run db:migrate`, or paste `db/0020-upgrade.sql` into the D1 console; it is picked up within
+a minute, and the first checks run within the hour. `npm run health:check` covers the ClientHello, a real TLS 1.2
+handshake against a `node:tls` server with certificates built in the test (and a TLS 1.3-only one), corrupted and
+truncated certificates, RDAP, uptime and incidents, links, alerts, the summary, pruning, deletion and dormancy against
+SQLite with a mocked network.
+
+### Monthly care reports (0021)
+
+Every month, each client project gets a care report: a branded, client-facing summary the agency shares by link
+and, on Pro and Business, has emailed to the client on the 1st.
+
+- **What it says** (`lib/care-reports.ts`, `lib/care-rules.ts`). The project's month in its own timezone
+  (`lib/care-period.ts`; Intl handles DST and half-hour zones): a header with the project's branding, name, period and
+  generation date; 4–6 headline figures (checks run, changes found, review reports the client approved, and with site
+  health uptime, SSL and domain, broken links); one paragraph for the client; per monitor its checks, changes and the
+  newest ten changed checks (date, change %, the run's stored summary, "and N more"); review reports decided in the
+  month and those still awaiting sign-off, plus "baseline updated after approval" once migration 0022's
+  `baseline_approvals` exists; SEO and rule-monitor findings (left out when the project has none); site health from
+  `siteHealthForWatches` (hidden when it returns nothing); and short next steps ("Renew the SSL certificate for
+  example.com before 12 Oct.", "2 review reports are waiting for sign-off.", or "Nothing needs attention.").
+- **Frozen.** Everything is read once and stored as one JSON snapshot (capped at 256 KB by listing less, never by
+  refusing), so retention, renamed projects, removed monitors and reset sign-offs never change a report already
+  sent. Only presentation follows the project, as review links do: logo, accent, footer, and "Shared with Easy Screen
+  Capture" unless the owner's current plan white-labels it (`REPORT_WHITE_LABEL`). Every read is index-backed;
+  `review_reports_project` is added for the sign-off read.
+- **The paragraph** (`lib/care-summary.ts`) is written by Workers AI, as alert summaries are, from the snapshot's
+  counts and the monitors' names only, and used only if every number in it is one of those facts; otherwise, or with
+  no binding, a deterministic plain paragraph.
+- **Links.** Hashed like review links, 90 days, extendable and revocable. The owner's link is shown once when it is
+  made; each client gets their own link in their email, so a new owner link never breaks one already sent, and
+  revoking stops them all. Bad, unknown, expired and revoked links are the same neutral 404. Views are counted on the
+  report and a client's first open on their delivery. The client page (`/care/<token>`) is `noindex`, `no-store`,
+  prints cleanly and offers a PDF; it never links to a capture. The owner's view (`/app/care/<id>`) links changed
+  checks to their highlight through `/api/care/<id>/highlight`, behind sign-in.
+- **Schedule** (`runCareReports`, hourly cron). For enabled projects whose `next_run_at` has come — the 1st at 09:00
+  local — the slot is moved to next month by a write only one sweep can win, last month's report is made once
+  (`UNIQUE(project_id, period, kind)`), and each recipient is claimed in `care_report_deliveries` before their email
+  goes, so a report reaches an address at most once and an unknown outcome is never resent. Twenty projects a sweep,
+  oldest due first, within five minutes. "Generate this month so far" and any of the last twelve months make a
+  manual report; generating a month again replaces that manual snapshot and keeps its link. Scheduled ones are never
+  replaced.
+- **Email.** Plain text: the project and month in the subject, the headline figures, the next steps, the link and
+  "Sent by <owner> using Easy Screen Capture" (no product name when white-labelled), with `Reply-To` the owner's
+  address — `lib/mailer.ts` takes an optional `replyTo` for both the `EMAIL` binding and Resend, one plain address
+  or nothing. The owner's optional copy links to the report in the app.
+- **Gating and abuse limits** (`CARE_REPORTS`, `CARE_REPORT_EMAILS` in `lib/plans.ts`). Generating, viewing, links
+  and PDFs on Plus, Pro and Business; client emails on Pro and Business, a Pro trial included. Free and Lite see an
+  upsell ("Try Pro free for 14 days" while the trial is on offer). Client emails only from confirmed owners, to at
+  most five validated, lower-cased addresses per project (never the owner's own), one scheduled send a month,
+  "Send now" three a day per project and ten per account (KV), generating twenty an hour, PDFs six an hour for the
+  owner and, per client link, five an hour (ten per address).
+- **API** (same-origin, signed in, `{error:{type,message}}`): `POST /api/care` with `action` `settings`,
+  `generate`, `link`, `extend`, `revoke`, `send` or `delete`; `POST /api/care/<id>/pdf`;
+  `GET /api/care/<id>/highlight?run=`. Public: `GET /care/<token>` and `GET /care/<token>/pdf`.
+- **Site health** comes from `lib/site-health-summary.ts`. This branch ships a stub that reports nothing; the real
+  one arrives with migration 0020 and replaces it, and the section appears on its own.
+
+**Before the migration** the panels are not rendered, every care route answers 404 and the cron sends nothing.
+Apply it with `npm run db:migrate`, or paste `db/0021-upgrade.sql` into the D1 console; it is picked up within a
+minute. Deleting an account deletes its care reports, deliveries and settings, and deleting a project takes its
+own. `npm run care:check` covers periods across DST, the snapshot, site health, next steps, freezing, the schedule
+and deliveries, gating with a trial, recipients, throttles, links, ownership, white-label, the AI fallback,
+deletion, Reply-To, query plans and the no-migration fallback against SQLite.

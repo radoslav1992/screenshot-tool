@@ -7,6 +7,7 @@ import { checkRateLimit } from './rate-limit';
 import { oneLine } from './branding-rules';
 import { formatDateTime } from './dates';
 import { ownReport, sharedReport, type Project, type Report } from './projects';
+import type { ApprovalPins } from './approval-baseline';
 
 /**
  * Client sign-off on a shared review report.
@@ -215,10 +216,39 @@ function quote(text: string): string {
 }
 
 /**
+ * What an approval did to the owner's monitors, for the email: those whose
+ * baseline it pinned, with a link and how to undo it, then those it could not
+ * pin and why. Empty when the report has no monitor captures. Monitor names
+ * are the owner's own labels, kept to one line each.
+ */
+function baselineLines(pins: ApprovalPins | undefined, origin: string): string {
+  if (!pins) return '';
+  const lines: string[] = [];
+  if (pins.pinned.length) {
+    const which = pins.pinned.length === 1 ? 'this monitor' : `these ${pins.pinned.length} monitors`;
+    lines.push(`The approved screenshots are now the pinned baseline of ${which}, so future checks compare against them:`);
+    for (const pin of pins.pinned)
+      lines.push(
+        `- ${oneLine(pin.name).slice(0, 100)}${pin.already ? ' (already its pinned baseline)' : ''}: ${origin}/app/watches/${pin.watchId}`,
+      );
+    lines.push('Not what you want? Unpin it on the monitor page; checks then compare each one with the one before again.');
+  }
+  if (pins.skipped.length) {
+    if (lines.length) lines.push('');
+    lines.push(pins.pinned.length ? 'Not pinned:' : 'No monitor baseline was pinned:');
+    for (const skipped of pins.skipped) lines.push(`- ${oneLine(skipped.name).slice(0, 100)}: ${skipped.why}.`);
+  }
+  if (pins.failed)
+    lines.push('The monitors in this report could not be updated just now. Pin a baseline on the monitor page if you need one.');
+  return lines.length ? `${lines.join('\n')}\n\n` : '';
+}
+
+/**
  * The owner's notification. Plain text only, as all mail here is, so nothing
  * the client typed is ever interpreted as markup. The subject carries only the
  * owner's own report title; the client's name is one line in the body and the
- * note is quoted under it.
+ * note is quoted under it. After an approval, `pins` says which monitors now
+ * compare against the approved screenshots.
  */
 export function signoffEmail(input: {
   to: string;
@@ -226,6 +256,7 @@ export function signoffEmail(input: {
   project: Pick<Project, 'name'>;
   signoff: Pick<SignoffRow, 'decision' | 'name' | 'note' | 'created_at'>;
   origin: string;
+  pins?: ApprovalPins;
 }): Mail {
   const name = oneLine(input.signoff.name).slice(0, SIGNOFF_NAME_MAX) || 'Your client';
   const title = oneLine(input.report.title).slice(0, 100);
@@ -239,6 +270,7 @@ export function signoffEmail(input: {
       `${name} ${did} the review report “${title}” in the project “${oneLine(input.project.name).slice(0, 100)}”.\n\n` +
       (note ? `Their note:\n${quote(note)}\n\n` : '') +
       `Decided ${formatDateTime(input.signoff.created_at)} through the report’s review link.\n\n` +
+      (approved ? baselineLines(input.pins, input.origin) : '') +
       `Open the report, see the sign-off history or reset it:\n${input.origin}/app/reports/${input.report.id}\n\n` +
       'The review link needs no account, so the name is as the person typed it.',
   };
@@ -255,11 +287,12 @@ export async function notifySignoff(
   project: Project,
   signoff: SignoffRow,
   origin: string,
+  pins?: ApprovalPins,
 ): Promise<boolean> {
   if (!canSendEmail()) return false;
   const { limit, windowSeconds } = SIGNOFF_LIMITS.mail;
   if (!(await checkRateLimit(`signoff-mail:${report.id}`, limit, windowSeconds)).ok) return false;
   const owner = await env.DB.prepare('SELECT email FROM users WHERE id=?').bind(project.user_id).first<{ email: string }>();
   if (!owner?.email) return false;
-  return sendMail(signoffEmail({ to: owner.email, report, project, signoff, origin }));
+  return sendMail(signoffEmail({ to: owner.email, report, project, signoff, origin, pins }));
 }

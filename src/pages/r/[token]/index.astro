@@ -5,6 +5,7 @@ import ReportSignoff from '../../../components/ReportSignoff.astro';
 import { sharedReport, reportCaptures } from '../../../lib/projects';
 import { projectBranding } from '../../../lib/branding';
 import { currentSignoff, signoffsReady } from '../../../lib/signoff';
+import { approvalPinsMonitors } from '../../../lib/approval-baseline';
 import '../../../styles/projects.css';
 let data;
 try {
@@ -22,12 +23,15 @@ const optional = <T,>(work: Promise<T>, what: string) =>
     console.error(`[shared-report] ${what} unavailable`, error);
     return undefined;
   });
-const [captures, branding, signoff] = await Promise.all([
+// Whether approving would pin monitor baselines is only asked when there is a sign-off form to say it beside.
+const [captures, branding, [signoff, baselines]] = await Promise.all([
   reportCaptures(report, project.user_id),
   optional(projectBranding(project), 'branding'),
-  optional(
-    signoffsReady().then((ready) => (ready ? currentSignoff(report.id) : undefined)),
-    'sign-off',
+  optional(signoffsReady(), 'sign-off').then((ready) =>
+    Promise.all([
+      ready ? optional(currentSignoff(report.id), 'sign-off') : undefined,
+      ready ? optional(approvalPinsMonitors(report, project), 'baseline note') : false,
+    ]),
   ),
 ]);
 const whiteLabel = !!branding && !branding.attribution;
@@ -59,7 +63,12 @@ Astro.response.headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
     >
       {
         signoff && (
-          <ReportSignoff token={Astro.params.token!} signoff={signoff} status={Astro.url.searchParams.get('signoff')} />
+          <ReportSignoff
+            token={Astro.params.token!}
+            signoff={signoff}
+            status={Astro.url.searchParams.get('signoff')}
+            baselines={baselines === true}
+          />
         )
       }
     </ReviewReport>

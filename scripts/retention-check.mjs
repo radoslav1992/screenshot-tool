@@ -26,7 +26,7 @@ assert.equal(first.failed,2);assert(first.truncated);assert(deleted.has('paid-ol
 fail=false;await sweepExpiredCaptures(now);await sweepExpiredCaptures(now);assert(!db.prepare("SELECT id FROM captures WHERE id='fail'").get());assert.equal(db.prepare("SELECT count(*) AS n FROM captures WHERE id LIKE 'old-%'").get().n,0);assert(db.prepare("SELECT id FROM captures WHERE id='corrupt'").get());
 for(const id of ['change-before','change-after','retry-before','retry-after'])assert(!deleted.has(id),`${id} is still linked from an alert`);
 for(const id of ['stale-before','stale-after','done-before','done-after'])assert(deleted.has(id),`${id} is no longer linked from anything`);
-// Quiet monitor runs (read the page, nothing new, no screenshot) go after 30 days; every other run stays.
+// Quiet monitor runs (read the page, nothing new, no screenshot) go after 35 days; every other run stays.
 const runs=new DatabaseSync(':memory:');
 runs.exec(`CREATE TABLE watch_runs(id TEXT PRIMARY KEY,watch_id TEXT,capture_id TEXT,baseline_capture_id TEXT,status TEXT,changed INTEGER,created_at TEXT);
 INSERT INTO watch_runs VALUES('q-old','w',NULL,'cap','done',0,'2026-08-01T00:00:00Z'),('changed-old','w','cap',NULL,'done',1,'2026-08-01T01:00:00Z'),('error-old','w',NULL,NULL,'error',0,'2026-08-01T02:00:00Z'),('skipped-old','w',NULL,NULL,'skipped',0,'2026-08-01T03:00:00Z'),('shot-old','w','cap2','cap','done',0,'2026-08-01T04:00:00Z'),('q-old-2','w',NULL,'cap','done',0,'2026-08-02T00:00:00Z'),('q-recent','w',NULL,'cap','done',0,'2026-09-10T00:00:00Z');`);

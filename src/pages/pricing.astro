@@ -47,7 +47,7 @@ const trialRunning = user?.trial?.active && user.plan !== user.ownPlan ? user.tr
   <AiPage user={user}>
     <AiPageHead label="PRICING" meta={`${plans.length} PLANS / START FREE`} aside="Monthly or yearly billing">
       <Fragment slot="title">Simple <span>pricing</span></Fragment>
-      <p>Start with a client project. Upgrade for clean PDF exports, more frequent monitoring, API access or collaboration.</p>
+      <p>Start with a client project. Upgrade for clean PDF exports, monthly client care reports, more frequent monitoring, API access or collaboration.</p>
       <div class="switch" role="group" aria-label="Billing period">
         <button type="button" data-period="monthly" aria-pressed={!startYearly}>Monthly</button>
         <button type="button" data-period="yearly" aria-pressed={startYearly}>Yearly · save about 20%</button>

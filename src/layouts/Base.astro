@@ -3,6 +3,7 @@ import "../styles/global.css";
 import "../styles/studio.css";
 import "../styles/adon.css";
 import "../styles/adon/ai-system.css";
+import { BEACON_SRC, beaconToken } from "../lib/web-analytics";
 
 interface Props {
   title: string;
@@ -28,6 +29,8 @@ const {
 } = Astro.props;
 
 const isWorkspace = Astro.url.pathname.startsWith("/app");
+// Cloudflare Web Analytics, left off pages whose address carries a secret (lib/web-analytics.ts).
+const analyticsToken = beaconToken(Astro.url);
 const isAuth = ["/login", "/signup"].includes(Astro.url.pathname);
 const fullTitle =
   plainTitle || title === "Easy Screen Capture" ? title : `${title} · Easy Screen Capture`;
@@ -90,6 +93,16 @@ const fullTitle =
         document.documentElement.dataset.standalone = "true";
       }
     </script>
+    {
+      analyticsToken && (
+        <script
+          is:inline
+          type="module"
+          src={BEACON_SRC}
+          data-cf-beacon={JSON.stringify({ token: analyticsToken })}
+        />
+      )
+    }
   </head>
   <body
     class:list={[

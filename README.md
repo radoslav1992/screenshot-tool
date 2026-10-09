@@ -194,6 +194,16 @@ npx wrangler secret put CF_ACCOUNT_ID
 npx wrangler secret put CF_API_TOKEN
 ```
 
+### Web analytics
+
+Visits are counted with Cloudflare Web Analytics (`src/lib/web-analytics.ts`): page views, referrers, countries,
+browsers and Core Web Vitals, from a beacon that uses no cookies or local storage, so there is no consent banner. It is
+off until `WEB_ANALYTICS_TOKEN` holds the site token from the Cloudflare dashboard (**Analytics & Logs → Web Analytics →
+Add a site**, manual JS snippet: the token is public, it appears in every page). The layout renders the beacon itself
+rather than using Cloudflare's automatic injection, so pages whose address carries a secret are never measured: review
+and care report links, file links, invitations, email confirmation and password reset, and any address with a `token`,
+`t`, `code` or `key` parameter. The privacy page describes whichever state is live. `npm run analytics:check` covers it.
+
 ### Checks before a deploy, and watching after it
 
 Every push to `main` deploys straight to production, so `.github/workflows/ci.yml` runs what a contributor
